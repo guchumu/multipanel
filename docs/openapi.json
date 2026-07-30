@@ -1,0 +1,188 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MultiPanel ERP API",
+    "description": "REST API for Plex & Jellyfin management platform",
+    "version": "1.0.0",
+    "contact": { "name": "MultiPanel Support" }
+  },
+  "servers": [{ "url": "/api/v1", "description": "API v1" }],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health check",
+        "responses": {
+          "200": { "description": "System healthy" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login and obtain JWT",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "JWT tokens returned" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Current authenticated user",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "User profile" } }
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Dashboard statistics",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Stats object" } }
+      }
+    },
+    "/servers": {
+      "get": {
+        "tags": ["Servers"],
+        "summary": "List all servers",
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Server list" } }
+      },
+      "post": {
+        "tags": ["Servers"],
+        "summary": "Create server",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "type", "url", "port"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string", "enum": ["plex", "jellyfin"] },
+                  "url": { "type": "string" },
+                  "port": { "type": "integer" },
+                  "ssl": { "type": "boolean" },
+                  "token": { "type": "string" },
+                  "api_key": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Server created" } }
+      }
+    },
+    "/servers/{uuid}": {
+      "get": {
+        "tags": ["Servers"],
+        "summary": "Get server by UUID",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Server details" } }
+      },
+      "delete": {
+        "tags": ["Servers"],
+        "summary": "Delete server",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Server deleted" } }
+      }
+    },
+    "/servers/{uuid}/sync": {
+      "post": {
+        "tags": ["Servers"],
+        "summary": "Sync server with Plex/Jellyfin",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Sync result" } }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": ["Media Users"],
+        "summary": "List media users",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }
+        ],
+        "responses": { "200": { "description": "User list with pagination" } }
+      },
+      "post": {
+        "tags": ["Media Users"],
+        "summary": "Create media user",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username"],
+                "properties": {
+                  "username": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "max_streams": { "type": "integer" },
+                  "max_devices": { "type": "integer" },
+                  "expires_at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "User created" } }
+      }
+    },
+    "/users/{uuid}": {
+      "get": {
+        "tags": ["Media Users"],
+        "summary": "Get media user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "User details" } }
+      },
+      "patch": {
+        "tags": ["Media Users"],
+        "summary": "Update media user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "User updated" } }
+      },
+      "delete": {
+        "tags": ["Media Users"],
+        "summary": "Delete media user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "uuid", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "User deleted" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

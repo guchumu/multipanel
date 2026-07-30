@@ -1,0 +1,64 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "title": "Servidores online",
+      "type": "stat",
+      "targets": [{"expr": "multipanel_servers_online", "legendFormat": "online"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "title": "Usuarios activos",
+      "type": "stat",
+      "targets": [{"expr": "multipanel_media_users_active"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "title": "Suscripciones activas",
+      "type": "stat",
+      "targets": [{"expr": "multipanel_subscriptions_active"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "title": "Tickets abiertos",
+      "type": "stat",
+      "targets": [{"expr": "multipanel_tickets_open"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 5,
+      "title": "Revenue total (EUR)",
+      "type": "gauge",
+      "targets": [{"expr": "multipanel_revenue_total_eur"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "id": 6,
+      "title": "Jobs pendientes",
+      "type": "timeseries",
+      "targets": [{"expr": "multipanel_jobs_pending"}]
+    }
+  ],
+  "schemaVersion": 38,
+  "tags": ["multipanel"],
+  "title": "MultiPanel ERP",
+  "uid": "multipanel-erp",
+  "version": 1
+}

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:80"
+    volumes:
+      - ../storage:/var/www/html/storage
+      - ../.env:/var/www/html/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_DATABASE: multipanel
+      DB_USERNAME: multipanel
+      DB_PASSWORD: secret
+
+  db:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: multipanel
+      MYSQL_USER: multipanel
+      MYSQL_PASSWORD: secret
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cron:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      sh -c "while true; do php /var/www/html/cron/run.php all; sleep 300; done"
+    depends_on:
+      - app
+      - db
+    volumes:
+      - ../storage:/var/www/html/storage
+      - ../.env:/var/www/html/.env
+
+volumes:
+  mysql_data:

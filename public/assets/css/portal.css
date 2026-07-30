@@ -1,0 +1,5 @@
+.portal-body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+.portal-body .container { max-width: 960px; }
+.portal-card { border: none; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+.portal-login-card { max-width: 420px; margin: 10vh auto; }
+.status-badge { font-size: 0.85rem; }
