@@ -79,17 +79,32 @@ class MediaUserRepository
         }
 
         $like = '%' . $query . '%';
-        $params = [$tenantId, $like, $like, $like, $like];
+        $params = [$tenantId, $like, $like, $like];
+        $matchSql = '(
+                    mu.`username` LIKE ?
+                    OR mu.`email` LIKE ?
+                    OR mu.`display_name` LIKE ?';
+
+        if ($this->hasTelegramChatIdColumn()) {
+            $matchSql .= '
+                    OR mu.`telegram_chat_id` LIKE ?';
+            $params[] = $like;
+        }
+
+        if ($this->hasExternalIdColumn()) {
+            $matchSql .= '
+                    OR mu.`external_id` LIKE ?';
+            $params[] = $like;
+        }
+
+        $matchSql .= '
+                  )';
+
         $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
                 FROM `media_users` mu
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
-                  AND (
-                    mu.`username` LIKE ?
-                    OR mu.`email` LIKE ?
-                    OR mu.`display_name` LIKE ?
-                    OR mu.`telegram_chat_id` LIKE ?
-                  )';
+                  AND ' . $matchSql;
 
         if ($status !== null) {
             $sql .= ' AND mu.`status` = ?';
@@ -107,6 +122,42 @@ class MediaUserRepository
         $rows = Database::getInstance()->fetchAll($sql, $params);
 
         return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
+    private function hasTelegramChatIdColumn(): bool
+    {
+        return $this->hasColumn('media_users', 'telegram_chat_id');
+    }
+
+    private function hasExternalIdColumn(): bool
+    {
+        return $this->hasColumn('media_users', 'external_id');
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        static $cache = [];
+
+        $key = $table . '.' . $column;
+        if (array_key_exists($key, $cache)) {
+            return $cache[$key];
+        }
+
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS total
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?
+                   AND COLUMN_NAME = ?',
+                [$table, $column]
+            );
+            $cache[$key] = ((int) ($row['total'] ?? 0)) > 0;
+        } catch (\Throwable) {
+            $cache[$key] = false;
+        }
+
+        return $cache[$key];
     }
 
     public function backfillMissingServerIds(int $tenantId): int

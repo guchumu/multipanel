@@ -7,6 +7,7 @@
 
     const initialHtml = tbody.innerHTML;
     let timer = null;
+    let requestSeq = 0;
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -53,46 +54,43 @@
                 </td>
             </tr>`;
         }).join('');
-
-        bindInlineEditors();
     }
 
-    function bindInlineEditors() {
-        document.querySelectorAll('.expires-input').forEach((input) => {
-            input.addEventListener('change', async function () {
-                const res = await fetch(`/media-users/${this.dataset.uuid}/expires`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrf,
-                    },
-                    body: JSON.stringify({ expires_at: this.value }),
-                });
-                if (!res.ok) alert('Error al guardar fecha');
-            });
-        });
+    tbody.addEventListener('change', async (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement)) return;
 
-        document.querySelectorAll('.telegram-input').forEach((input) => {
-            input.addEventListener('change', async function () {
-                const res = await fetch(`/media-users/${this.dataset.uuid}/telegram`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrf,
-                    },
-                    body: JSON.stringify({ telegram_chat_id: this.value }),
-                });
-                if (!res.ok) alert('Error al guardar Telegram');
+        if (input.classList.contains('expires-input')) {
+            const res = await fetch(`/media-users/${input.dataset.uuid}/expires`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify({ expires_at: input.value }),
             });
-        });
-    }
+            if (!res.ok) alert('Error al guardar fecha');
+            return;
+        }
+
+        if (input.classList.contains('telegram-input')) {
+            const res = await fetch(`/media-users/${input.dataset.uuid}/telegram`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify({ telegram_chat_id: input.value }),
+            });
+            if (!res.ok) alert('Error al guardar Telegram');
+        }
+    });
 
     async function runSearch() {
         const q = searchInput.value.trim();
         if (q.length < 2) {
             tbody.innerHTML = initialHtml;
             meta?.classList.add('d-none');
-            bindInlineEditors();
             return;
         }
 
@@ -102,19 +100,38 @@
         if (status) params.set('status', status);
         if (serverId) params.set('server_id', serverId);
 
+        const seq = ++requestSeq;
+        if (meta) {
+            meta.textContent = 'Buscando…';
+            meta.classList.remove('d-none');
+        }
+
         try {
             const res = await fetch(`/media-users/search?${params.toString()}`, {
                 headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
             });
-            const data = await res.json();
+
+            const data = await res.json().catch(() => ({}));
+            if (seq !== requestSeq) return;
+
+            if (!res.ok) {
+                if (meta) {
+                    meta.textContent = data.error || `Error en la búsqueda (${res.status})`;
+                    meta.classList.remove('d-none');
+                }
+                return;
+            }
+
             renderRows(data.users || []);
             if (meta) {
                 meta.textContent = `${data.count || 0} resultado(s) para "${q}"`;
                 meta.classList.remove('d-none');
             }
         } catch (e) {
+            if (seq !== requestSeq) return;
             if (meta) {
-                meta.textContent = 'Error en la búsqueda';
+                meta.textContent = 'Error de red en la búsqueda';
                 meta.classList.remove('d-none');
             }
         }
@@ -122,8 +139,6 @@
 
     searchInput.addEventListener('input', function () {
         clearTimeout(timer);
-        timer = setTimeout(runSearch, 250);
+        timer = setTimeout(runSearch, 300);
     });
-
-    bindInlineEditors();
 })();

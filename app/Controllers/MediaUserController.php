@@ -40,8 +40,6 @@ class MediaUserController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $this->mediaUsers->backfillMissingServerIds($tenantId);
-        $this->mediaUsers->backfillTelegramChatIds($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
@@ -57,27 +55,35 @@ class MediaUserController extends Controller
 
     public function search(Request $request): Response
     {
-        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $q = trim((string) $request->input('q', ''));
-        $status = $request->input('status') ?: null;
-        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        try {
+            $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+            $q = trim((string) $request->input('q', ''));
+            $status = $request->input('status') ?: null;
+            $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
 
-        $users = $this->mediaUsers->search($tenantId, $q, 30, $status, $serverId);
+            $users = $this->mediaUsers->search($tenantId, $q, 50, $status, $serverId);
 
-        return $this->json([
-            'query' => $q,
-            'count' => count($users),
-            'users' => array_map(static fn (MediaUser $u): array => [
-                'uuid' => (string) $u->uuid,
-                'username' => (string) ($u->display_name ?? $u->username),
-                'email' => (string) ($u->email ?? ''),
-                'server_name' => (string) ($u->server_name ?? ''),
-                'status' => (string) $u->status,
-                'max_streams' => (int) $u->max_streams,
-                'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
-                'telegram_chat_id' => (string) ($u->telegram_chat_id ?? ''),
-            ], $users),
-        ]);
+            return $this->json([
+                'query' => $q,
+                'count' => count($users),
+                'users' => array_map(static fn (MediaUser $u): array => [
+                    'uuid' => (string) $u->uuid,
+                    'username' => (string) ($u->display_name ?? $u->username),
+                    'email' => (string) ($u->email ?? ''),
+                    'server_name' => (string) ($u->server_name ?? ''),
+                    'status' => (string) $u->status,
+                    'max_streams' => (int) $u->max_streams,
+                    'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
+                    'telegram_chat_id' => (string) ($u->telegram_chat_id ?? ''),
+                ], $users),
+            ]);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'error' => $e->getMessage(),
+                'users' => [],
+                'count' => 0,
+            ], 500);
+        }
     }
 
     public function create(Request $request): Response
