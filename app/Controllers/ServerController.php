@@ -213,13 +213,6 @@ class ServerController extends Controller
         $server->location = $request->input('location');
         $server->check_interval_minutes = (int) ($request->input('check_interval') ?? 5);
 
-        if ($request->input('is_default')) {
-            $this->setDefaultServer((int) $server->tenant_id, (int) $server->id);
-            $server->is_default = 1;
-        } else {
-            $server->is_default = 0;
-        }
-
         $token = trim((string) $request->input('token', ''));
         if ($token !== '') {
             $server->token = $token;
@@ -356,12 +349,29 @@ class ServerController extends Controller
         return $this->redirect('/servers');
     }
 
-    private function setDefaultServer(int $tenantId, int $serverId): void
+    public function setDefault(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['error' => 'Servidor no encontrado'], 404);
+        }
+
+        $this->setDefaultServer((int) $server->tenant_id, (int) $server->id, (string) $server->type);
+        $this->audit->log('server.set_default', 'server', (int) $server->id);
+
+        return $this->json([
+            'success' => true,
+            'message' => sprintf('"%s" es ahora el servidor %s por defecto.', $server->name, strtoupper($server->type)),
+            'type' => $server->type,
+        ]);
+    }
+
+    private function setDefaultServer(int $tenantId, int $serverId, string $type): void
     {
         $db = \Core\Database::getInstance();
         $db->query(
-            'UPDATE servers SET is_default = 0 WHERE tenant_id = ? AND deleted_at IS NULL',
-            [$tenantId]
+            'UPDATE servers SET is_default = 0 WHERE tenant_id = ? AND type = ? AND deleted_at IS NULL',
+            [$tenantId, $type]
         );
         $db->query(
             'UPDATE servers SET is_default = 1 WHERE id = ? AND tenant_id = ?',

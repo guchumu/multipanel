@@ -10,6 +10,11 @@
     </div>
 </div>
 
+<p class="text-muted small mb-3">
+    <i class="bi bi-star-fill text-warning me-1"></i>
+    Marca con la estrella el servidor por defecto para altas automáticas — uno para <strong>Plex</strong> y otro para <strong>Jellyfin</strong>.
+</p>
+
 <div class="card border-0 shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
@@ -32,10 +37,14 @@
                 <?php foreach ($servers as $server): ?>
                 <tr>
                     <td>
-                        <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium"><?= e($server->name) ?></a>
-                        <?php if (!empty($server->is_default)): ?>
-                        <span class="badge bg-info ms-1" title="Servidor por defecto">Default</span>
-                        <?php endif; ?>
+                        <button type="button"
+                                class="btn btn-link btn-sm p-0 me-1 align-middle btn-default-star <?= !empty($server->is_default) ? 'is-default' : '' ?>"
+                                data-uuid="<?= e($server->uuid) ?>"
+                                data-type="<?= e($server->type) ?>"
+                                title="<?= !empty($server->is_default) ? 'Servidor ' . strtoupper($server->type) . ' por defecto' : 'Marcar como predeterminado ' . strtoupper($server->type) ?>">
+                            <i class="bi bi-star<?= !empty($server->is_default) ? '-fill text-warning' : ' text-muted' ?>"></i>
+                        </button>
+                        <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium align-middle"><?= e($server->name) ?></a>
                         <div class="small text-muted d-md-none"><?= e($server->displayHost()) ?>:<?= (int) $server->port ?></div>
                     </td>
                     <td><span class="badge bg-<?= $server->type === 'plex' ? 'warning' : 'info' ?>"><?= e(strtoupper($server->type)) ?></span></td>

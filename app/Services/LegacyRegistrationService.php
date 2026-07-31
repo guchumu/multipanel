@@ -175,9 +175,10 @@ final class LegacyRegistrationService
             'created_at' => date('Y-m-d H:i:s'),
         ]);
 
-        $defaultServer = $this->servers->findDefaultByTenant($tenantId);
+        $serverType = $this->resolveServiceType($service);
+        $defaultServer = $this->servers->findDefaultByTenant($tenantId, $serverType);
         if ($defaultServer === null) {
-            throw new \RuntimeException('No hay servidor predeterminado configurado');
+            throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
         }
 
         $existing = $db->fetchOne(
@@ -305,6 +306,16 @@ final class LegacyRegistrationService
         }
 
         return $parts[2] . '/' . $parts[1] . '/' . $parts[0];
+    }
+
+    private function resolveServiceType(string $service): string
+    {
+        $service = strtolower(trim($service));
+
+        return match (true) {
+            str_contains($service, 'jelly') => 'jellyfin',
+            default => 'plex',
+        };
     }
 
     /** @return array<int, int> */

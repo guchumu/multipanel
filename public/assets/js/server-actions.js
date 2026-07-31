@@ -91,4 +91,19 @@
             }
         });
     });
+
+    document.querySelectorAll('.btn-default-star').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const uuid = this.dataset.uuid;
+            const type = (this.dataset.type || 'plex').toUpperCase();
+            showStatus(`Marcando servidor ${type} por defecto…`, 'info');
+            try {
+                const data = await postAction(`/servers/${uuid}/default`);
+                showStatus(data.message || 'Actualizado.', data.success ? 'success' : 'danger');
+                setTimeout(() => location.reload(), 600);
+            } catch (e) {
+                showStatus('Error al marcar predeterminado.', 'danger');
+            }
+        });
+    });
 })();

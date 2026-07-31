@@ -33,11 +33,15 @@ class ServerRepository
         return $row ? new Server($row) : null;
     }
 
-    public function findDefaultByTenant(int $tenantId): ?Server
+    public function findDefaultByTenant(int $tenantId, string $type = 'plex'): ?Server
     {
+        $type = in_array($type, ['plex', 'jellyfin'], true) ? $type : 'plex';
+
         $row = Database::getInstance()->fetchOne(
-            'SELECT * FROM `servers` WHERE `tenant_id` = ? AND `is_default` = 1 AND `deleted_at` IS NULL LIMIT 1',
-            [$tenantId]
+            'SELECT * FROM `servers`
+             WHERE `tenant_id` = ? AND `type` = ? AND `is_default` = 1 AND `deleted_at` IS NULL
+             LIMIT 1',
+            [$tenantId, $type]
         );
 
         if ($row) {
@@ -45,8 +49,10 @@ class ServerRepository
         }
 
         $row = Database::getInstance()->fetchOne(
-            'SELECT * FROM `servers` WHERE `tenant_id` = ? AND `deleted_at` IS NULL ORDER BY `sort_order`, `id` LIMIT 1',
-            [$tenantId]
+            'SELECT * FROM `servers`
+             WHERE `tenant_id` = ? AND `type` = ? AND `deleted_at` IS NULL
+             ORDER BY `sort_order`, `id` LIMIT 1',
+            [$tenantId, $type]
         );
 
         return $row ? new Server($row) : null;
