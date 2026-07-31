@@ -79,6 +79,46 @@ final class ServerSyncService
         }
     }
 
+    /** Conexión + info + sesiones activas, sin importar bibliotecas/usuarios (rápido). */
+    public function syncConnectionOnly(Server $server): bool
+    {
+        try {
+            $media = MediaServerFactory::make($server);
+
+            if (!$media->testConnection()) {
+                $error = $media instanceof PlexService
+                    ? ($media->getLastError() ?? 'Conexión fallida')
+                    : 'Conexión fallida';
+
+                return $this->failSync($server, $error);
+            }
+
+            $info = $media->getServerInfo();
+            if ($info) {
+                $server->machine_id = $info['machine_id'] ?? $server->machine_id;
+                $server->version = $info['version'] ?? $server->version;
+                $server->name = $info['name'] ?? $server->name;
+            }
+
+            $sessions = $media->getActiveSessions();
+            $server->active_sessions = count($sessions);
+            $server->status = 'online';
+            $server->last_check_at = now()->format('Y-m-d H:i:s');
+            $server->last_error = null;
+            if ($server->last_sync_at === null) {
+                $server->last_sync_at = $server->last_check_at;
+            }
+            $server->save();
+
+            $this->recordActiveSessions($server, $sessions);
+            $this->persistDebugLight($server, true);
+
+            return true;
+        } catch (\Throwable $e) {
+            return $this->failSync($server, $e->getMessage(), 'error');
+        }
+    }
+
     private function failSync(Server $server, string $error, string $status = 'offline'): bool
     {
         $server->status = $status;

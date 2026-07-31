@@ -191,14 +191,17 @@ function sessionCardHtml(s) {
     const label = playLabels[method] || method;
     const progress = Number(s.progress || 0);
     const thumb = s.thumb_url
-        ? `<img src="\${escapeHtml(s.thumb_url)}" alt="" class="object-fit-cover" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="d-none align-items-center justify-content-center h-100 text-white-50"><i class="bi bi-film fs-1"></i></div>`
+        ? `<img src="\${escapeHtml(s.thumb_url)}" alt="" class="object-fit-cover w-100 h-100" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="d-none align-items-center justify-content-center h-100 text-white-50 position-absolute top-0 start-0 w-100"><i class="bi bi-film fs-1"></i></div>`
         : '<div class="d-flex align-items-center justify-content-center h-100 text-white-50"><i class="bi bi-film fs-1"></i></div>';
+    const killBtn = s.can_kill && s.session_id
+        ? `<button type="button" class="btn btn-outline-danger btn-sm w-100 mt-2 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Detener reproducción</button>`
+        : '';
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
         <div class="card border-0 shadow-sm h-100 session-card">
-            <div class="ratio ratio-2x3 bg-dark rounded-top overflow-hidden">\${thumb}</div>
+            <div class="ratio ratio-2x3 bg-dark rounded-top overflow-hidden position-relative">\${thumb}</div>
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
                     <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
                     <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
                 </div>
@@ -207,8 +210,13 @@ function sessionCardHtml(s) {
                 <p class="small mb-1"><i class="bi bi-person me-1"></i>\${escapeHtml(s.user || '-')}</p>
                 <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
                 <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
+                <div class="small mb-2 text-muted">
+                    <span class="me-2"><i class="bi bi-camera-video me-1"></i>Vídeo: <strong>\${escapeHtml(s.video_label || s.video_decision || '-')}</strong></span>
+                    <span><i class="bi bi-music-note-beamed me-1"></i>Audio: <strong>\${escapeHtml(s.audio_label || s.audio_decision || '-')}</strong></span>
+                </div>
                 <div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
                 <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
+                \${killBtn}
             </div>
         </div>
     </div>`;
@@ -279,6 +287,33 @@ async function refreshSessions() {
 
 document.getElementById('refresh-btn').addEventListener('click', refreshSessions);
 setInterval(refreshSessions, 10000);
+
+document.addEventListener('click', async function (e) {
+    const btn = e.target.closest('.btn-kill-session');
+    if (!btn) return;
+    if (!confirm('¿Detener esta reproducción?')) return;
+    btn.disabled = true;
+    const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+    try {
+        const body = new URLSearchParams({
+            _token: csrf,
+            server_id: btn.dataset.serverId,
+            session_id: btn.dataset.sessionId,
+        });
+        const res = await fetch('/activity/kill', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        const data = await res.json();
+        if (data.success) {
+            btn.closest('.session-card')?.remove();
+            refreshSessions();
+        } else {
+            alert(data.message || 'No se pudo detener');
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Error de red');
+        btn.disabled = false;
+    }
+});
 </script>
 JS;
 include base_path('resources/views/layouts/app.php');

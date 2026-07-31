@@ -69,27 +69,6 @@
 <?php
 $content = ob_get_clean();
 $scripts = <<<'JS'
-<script>
-document.querySelectorAll('.btn-sync').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const uuid = this.dataset.uuid;
-        this.disabled = true;
-        const res = await fetch(`/servers/${uuid}/sync`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-        const data = await res.json();
-        alert(data.message);
-        location.reload();
-    });
-});
-document.querySelectorAll('.btn-test').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const uuid = this.dataset.uuid;
-        this.disabled = true;
-        const res = await fetch(`/servers/${uuid}/test`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-        const data = await res.json();
-        alert(data.message);
-        location.reload();
-    });
-});
-</script>
+<script src="/assets/js/server-actions.js"></script>
 JS;
 include base_path('resources/views/layouts/app.php');

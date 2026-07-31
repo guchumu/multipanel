@@ -261,15 +261,26 @@ class ServerController extends Controller
         }
 
         $debug = $this->sync->runFullDiagnose($server);
+        $synced = false;
 
         if (!empty($debug['connected'])) {
-            $this->sync->sync($server);
+            $synced = $this->sync->syncConnectionOnly($server);
+            if (!$synced) {
+                $this->sync->touchOnline($server, 0);
+            }
             $server = $this->servers->findByUuid($uuid) ?? $server;
         }
 
         return $this->json([
             'success' => !empty($debug['connected']),
+            'synced' => $synced,
             'status' => $server->status,
+            'active_sessions' => (int) $server->active_sessions,
+            'message' => !empty($debug['connected'])
+                ? ($synced
+                    ? 'Conexión OK. Servidor marcado online.'
+                    : 'Conexión detectada en debug; estado actualizado a online.')
+                : 'Debug fallido: ' . ($debug['final_error'] ?? $server->last_error ?? 'sin conexión'),
             'last_error' => $server->last_error,
             'debug' => $debug,
         ]);
@@ -282,8 +293,7 @@ class ServerController extends Controller
             return $this->json(['error' => 'Servidor no encontrado'], 404);
         }
 
-        $success = $this->sync->sync($server);
-        $stats = $this->sync->lastUserSyncStats();
+        $success = $this->sync->syncConnectionOnly($server);
 
         return $this->json([
             'connected' => $success,
@@ -291,7 +301,6 @@ class ServerController extends Controller
             'message' => $success
                 ? sprintf('Conexión OK. %d streams activos.', (int) $server->active_sessions)
                 : 'Conexión fallida: ' . ($server->last_error ?? 'no se pudo conectar.'),
-            'users' => $stats,
             'last_error' => $server->last_error,
             'debug' => $this->sync->lastDebug(),
         ]);

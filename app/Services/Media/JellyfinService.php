@@ -149,6 +149,7 @@ final class JellyfinService
                 }
 
                 $sessions[] = [
+                    'session_id' => (string) ($session['Id'] ?? ''),
                     'title' => $displayTitle,
                     'subtitle' => $subtitle,
                     'user' => (string) ($session['UserName'] ?? ''),
@@ -158,9 +159,10 @@ final class JellyfinService
                     'media_type' => (string) ($item['Type'] ?? 'video'),
                     'year' => (string) ($item['ProductionYear'] ?? ''),
                     'play_method' => $playMethod,
-                    'video_decision' => $transcoding['VideoCodec'] ?? null,
-                    'audio_decision' => $transcoding['AudioCodec'] ?? null,
+                    'video_decision' => (string) ($transcoding['VideoCodec'] ?? 'copy'),
+                    'audio_decision' => (string) ($transcoding['AudioCodec'] ?? 'copy'),
                     'progress' => $progress,
+                    'item_id' => (string) ($item['Id'] ?? ''),
                     'thumb_url' => $this->itemImageUrl($item),
                 ];
             }
@@ -185,6 +187,48 @@ final class JellyfinService
         $apiKey = trim((string) ($this->server->api_key ?? ''));
 
         return "{$base}/Items/{$itemId}/Images/Primary?maxHeight=400{$tag}" . ($apiKey !== '' ? '&api_key=' . rawurlencode($apiKey) : '');
+    }
+
+    public function fetchItemImage(string $itemId): ?array
+    {
+        if ($itemId === '') {
+            return null;
+        }
+
+        $apiKey = trim((string) ($this->server->api_key ?? ''));
+        $url = "/Items/{$itemId}/Images/Primary?maxHeight=600" . ($apiKey !== '' ? '&api_key=' . rawurlencode($apiKey) : '');
+
+        try {
+            $response = $this->client->get($url, [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            return [
+                'body' => $response->getBody()->getContents(),
+                'content_type' => $response->getHeaderLine('Content-Type') ?: 'image/jpeg',
+            ];
+        } catch (GuzzleException $e) {
+            Logger::debug('Jellyfin image fetch failed', ['item_id' => $itemId, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    public function terminateSession(string $sessionId): bool
+    {
+        if ($sessionId === '') {
+            return false;
+        }
+
+        try {
+            $this->client->post("/Sessions/{$sessionId}/Playing/Stop", [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Jellyfin stop session failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     public function createUser(string $username, string $password): ?array

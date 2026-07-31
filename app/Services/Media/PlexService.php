@@ -347,9 +347,10 @@ final class PlexService
 
         $user = is_array($session['User'] ?? null) ? $session['User'] : [];
         $player = is_array($session['Player'] ?? null) ? $session['Player'] : [];
-        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? '');
+        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? $session['grandparentThumb'] ?? $session['parentThumb'] ?? '');
 
         return [
+            'session_id' => (string) ($session['sessionKey'] ?? ''),
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($user['title'] ?? ''),
@@ -362,6 +363,7 @@ final class PlexService
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
             'progress' => $progress,
+            'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
     }
@@ -394,9 +396,10 @@ final class PlexService
         $duration = (int) ($session['duration'] ?? 0);
         $progress = $duration > 0 ? min(100, (int) round(($viewOffset / $duration) * 100)) : 0;
 
-        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? '');
+        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? $session['grandparentThumb'] ?? $session['parentThumb'] ?? '');
 
         return [
+            'session_id' => (string) ($session['sessionKey'] ?? ''),
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($session->User['title'] ?? ''),
@@ -409,6 +412,7 @@ final class PlexService
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
             'progress' => $progress,
+            'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
     }
@@ -437,6 +441,49 @@ final class PlexService
         $sep = str_contains($path, '?') ? '&' : '?';
 
         return $base . $path . ($token !== '' ? "{$sep}X-Plex-Token={$token}" : '');
+    }
+
+    public function fetchArtwork(string $path): ?array
+    {
+        if ($path === '' || !str_starts_with($path, '/')) {
+            return null;
+        }
+
+        try {
+            $response = $this->client->get($path, [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            return [
+                'body' => $response->getBody()->getContents(),
+                'content_type' => $response->getHeaderLine('Content-Type') ?: 'image/jpeg',
+            ];
+        } catch (GuzzleException $e) {
+            Logger::debug('Plex artwork fetch failed', ['path' => $path, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    public function terminateSession(string $sessionId): bool
+    {
+        if ($sessionId === '') {
+            return false;
+        }
+
+        try {
+            $this->client->get('/status/sessions/terminate', [
+                'headers' => $this->authHeaders(),
+                'query' => [
+                    'sessionId' => $sessionId,
+                    'reason' => 'serverStop',
+                ],
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Plex terminate session failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     public function createUser(string $username, string $password, ?string $email = null): ?array

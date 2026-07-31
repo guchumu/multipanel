@@ -38,7 +38,6 @@ class MediaUserController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $this->sync->refreshStaleServers($tenantId, 3);
         $this->mediaUsers->backfillMissingServerIds($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;

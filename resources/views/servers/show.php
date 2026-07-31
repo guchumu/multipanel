@@ -65,31 +65,6 @@
 <?php
 $content = ob_get_clean();
 $scripts = <<<'JS'
-<script>
-const csrf = document.querySelector('meta[name=csrf-token]').content;
-
-async function runAction(url) {
-    const res = await fetch(url, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf } });
-    return res.json();
-}
-
-document.querySelectorAll('.btn-sync, .btn-test').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        this.disabled = true;
-        const action = this.classList.contains('btn-sync') ? 'sync' : 'test';
-        const data = await runAction(`/servers/${this.dataset.uuid}/${action}`);
-        alert(data.message);
-        location.reload();
-    });
-});
-
-document.querySelector('.btn-debug')?.addEventListener('click', async function() {
-    this.disabled = true;
-    const res = await fetch(`/servers/${this.dataset.uuid}/debug`);
-    const data = await res.json();
-    alert(data.success ? 'Debug OK — servidor online.' : 'Debug: ' + (data.last_error || 'sigue offline'));
-    location.reload();
-});
-</script>
+<script src="/assets/js/server-actions.js"></script>
 JS;
 include base_path('resources/views/layouts/app.php');
