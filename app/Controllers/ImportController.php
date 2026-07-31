@@ -87,7 +87,7 @@ class ImportController extends Controller
                 } elseif (empty($probe['has_servers_marker']) && empty($probe['has_users_marker'])) {
                     $detail .= ' El contenido no parece un plex_manager.sql de phpMyAdmin.';
                 } elseif (!empty($probe['has_servers_marker']) || !empty($probe['has_users_marker'])) {
-                    $detail .= ' Los INSERT existen pero no se pudieron parsear — actualiza el código (git pull) e inténtalo de nuevo.';
+                    $detail .= ' Revisa errores abajo o confirma Parser 3.1 tras git pull.';
                 }
 
                 Session::getInstance()->flash('error', $detail);

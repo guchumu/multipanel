@@ -17,7 +17,7 @@ final class SqlInsertParserTest extends TestCase
         $probe = SqlInsertParser::probe($sql);
         $this->assertTrue($probe['has_servers_marker']);
         $this->assertTrue($probe['has_users_marker']);
-        $this->assertSame('3.0', $probe['parser']);
+        $this->assertSame('3.1', $probe['parser']);
     }
 
     public function test_extract_fixture_file(): void
@@ -94,6 +94,18 @@ SQL;
         $this->assertCount(2, $users);
         $this->assertSame('guchumu@gmail.com', $users[0]['email']);
         $this->assertSame('other@test.com', $users[1]['email']);
+    }
+
+    public function test_parse_row_matches_column_count_for_server_row(): void
+    {
+        $row = "1, 'Nucbox', '192.168.1.100:32400', 'http://lunasea.mooo.com:32500', 'admin@test.com', 'secret', 'tok1', 'abc111', 1, NULL, NULL, '2025-09-08 14:45:31', NULL";
+        $values = SqlInsertParser::parseRow($row);
+
+        $this->assertCount(13, $values);
+        $this->assertSame(1, $values[0]);
+        $this->assertSame('Nucbox', $values[1]);
+        $this->assertSame('tok1', $values[6]);
+        $this->assertNull($values[10]);
     }
 
     public function test_parse_row_with_nulls_and_strings(): void

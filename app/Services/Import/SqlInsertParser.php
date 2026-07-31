@@ -9,7 +9,7 @@ namespace App\Services\Import;
  */
 final class SqlInsertParser
 {
-    public const VERSION = '3.0';
+    public const VERSION = '3.1';
 
     /** @return array{file_bytes: int, has_servers_marker: bool, has_users_marker: bool, parser: string} */
     public static function probe(string $sql): array
@@ -225,41 +225,45 @@ final class SqlInsertParser
         for ($i = 0; $i < $len; $i++) {
             $ch = $row[$i];
 
-            if ($escape) {
-                $current .= $ch;
-                $escape = false;
-                continue;
-            }
+            if ($inString) {
+                if ($escape) {
+                    $current .= $ch;
+                    $escape = false;
+                    continue;
+                }
 
-            if ($ch === '\\' && $inString) {
+                if ($ch === '\\') {
+                    $escape = true;
+                    continue;
+                }
+
+                if ($ch === "'") {
+                    $inString = false;
+                    continue;
+                }
+
                 $current .= $ch;
-                $escape = true;
                 continue;
             }
 
             if ($ch === "'") {
-                if ($inString) {
-                    $values[] = self::unescapeString($current);
-                    $current = '';
-                }
-                $inString = !$inString;
+                $inString = true;
+                $current = '';
                 continue;
             }
 
-            if (!$inString && $ch === ',') {
+            if ($ch === ',') {
                 $values[] = self::castToken(trim($current));
                 $current = '';
                 continue;
             }
 
-            if ($inString || !ctype_space($ch)) {
+            if (!ctype_space($ch)) {
                 $current .= $ch;
             }
         }
 
-        if ($current !== '') {
-            $values[] = self::castToken(trim($current));
-        }
+        $values[] = self::castToken(trim($current));
 
         return $values;
     }
