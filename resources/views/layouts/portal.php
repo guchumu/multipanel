@@ -27,12 +27,10 @@
         </div>
     </nav>
     <div class="container py-4">
-        <?php
-        use Core\Session;
-        if ($err = Session::getInstance()->getFlash('error')): ?>
+        <?php if ($err = \Core\Session::getInstance()->getFlash('error')): ?>
         <div class="alert alert-danger"><?= e($err) ?></div>
         <?php endif;
-        if ($ok = Session::getInstance()->getFlash('success')): ?>
+        if ($ok = \Core\Session::getInstance()->getFlash('success')): ?>
         <div class="alert alert-success"><?= e($ok) ?></div>
         <?php endif; ?>
         <?= $content ?? '' ?>

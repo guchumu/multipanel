@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\ActivityController;
+use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\ServerController;
 use App\Controllers\MediaUserController;

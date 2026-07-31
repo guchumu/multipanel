@@ -6,7 +6,7 @@
             <h4 class="mt-2">Portal Cliente</h4>
             <p class="text-muted small">Accede a tu cuenta de streaming</p>
         </div>
-        <?php use Core\Session; if ($e = Session::getInstance()->getFlash('error')): ?>
+        <?php if ($e = \Core\Session::getInstance()->getFlash('error')): ?>
         <div class="alert alert-danger py-2"><?= e($e) ?></div>
         <?php endif; ?>
         <form method="POST" action="/portal/login">

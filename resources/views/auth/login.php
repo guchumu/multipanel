@@ -9,8 +9,7 @@
             </div>
 
             <?php
-            use Core\Session;
-            $error = Session::getInstance()->getFlash('error');
+            $error = \Core\Session::getInstance()->getFlash('error');
             if ($error): ?>
             <div class="alert alert-danger py-2"><?= e($error) ?></div>
             <?php endif; ?>
