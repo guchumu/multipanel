@@ -38,6 +38,8 @@ class MediaUserController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->sync->refreshStaleServers($tenantId, 3);
+        $this->mediaUsers->backfillMissingServerIds($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
@@ -53,7 +55,12 @@ class MediaUserController extends Controller
 
     public function create(Request $request): Response
     {
-        return $this->view('media_users.create', ['title' => 'Nuevo usuario']);
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        return $this->view('media_users.create', [
+            'title' => 'Nuevo usuario',
+            'servers' => $this->servers->allByTenant($tenantId),
+        ]);
     }
 
     public function store(Request $request): Response

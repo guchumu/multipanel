@@ -1,7 +1,13 @@
 <?php ob_start(); ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Servidores</h4>
-    <a href="/servers/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo servidor</a>
+    <div class="d-flex gap-2">
+        <form method="POST" action="/servers/sync-all" class="d-inline">
+            <?= csrf_field() ?>
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>Sincronizar todos</button>
+        </form>
+        <a href="/servers/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo servidor</a>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -31,8 +37,11 @@
                     <td><span class="badge bg-<?= $server->type === 'plex' ? 'warning' : 'info' ?>"><?= e(strtoupper($server->type)) ?></span></td>
                     <td class="small text-muted d-none d-md-table-cell"><?= e($server->fullUrl()) ?></td>
                     <td>
-                        <?php $badge = match($server->status) { 'online'=>'success', 'offline'=>'danger', default=>'secondary' }; ?>
+                        <?php $badge = match($server->status) { 'online'=>'success', 'offline'=>'danger', 'error'=>'warning', default=>'secondary' }; ?>
                         <span class="badge bg-<?= $badge ?>"><?= e($server->status) ?></span>
+                        <?php if ($server->status !== 'online' && $server->last_error): ?>
+                        <div class="small text-danger mt-1" title="<?= e($server->last_error) ?>"><?= e(mb_strimwidth((string) $server->last_error, 0, 60, '…')) ?></div>
+                        <?php endif; ?>
                     </td>
                     <td class="small d-none d-lg-table-cell"><?= e($server->version ?? '-') ?></td>
                     <td class="d-none d-sm-table-cell"><?= (int) $server->active_sessions ?></td>
@@ -41,6 +50,7 @@
                             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
                             <button class="btn btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Sincronizar"><i class="bi bi-arrow-repeat"></i></button>
                             <button class="btn btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>" title="Test conexión"><i class="bi bi-plug"></i></button>
+                            <a href="/servers/<?= e($server->uuid) ?>" class="btn btn-outline-warning" title="Ver debug"><i class="bi bi-bug"></i></a>
                             <form method="POST" action="/servers/<?= e($server->uuid) ?>" class="d-inline" onsubmit="return confirm('¿Eliminar <?= e(addslashes($server->name)) ?>?');">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="_method" value="DELETE">
@@ -73,9 +83,11 @@ document.querySelectorAll('.btn-sync').forEach(btn => {
 document.querySelectorAll('.btn-test').forEach(btn => {
     btn.addEventListener('click', async function() {
         const uuid = this.dataset.uuid;
+        this.disabled = true;
         const res = await fetch(`/servers/${uuid}/test`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
         const data = await res.json();
         alert(data.message);
+        location.reload();
     });
 });
 </script>

@@ -8,10 +8,8 @@ use App\Models\Server;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
-use App\Services\Media\MediaServerFactory;
 use App\Services\Media\MediaDiscoveryService;
-use App\Services\Media\PlexService;
-use App\Services\Media\ServerEndpoint;
+use App\Services\ServerConnectionDebugService;
 use App\Services\ServerSyncService;
 use Core\Controller;
 use Core\Request;
@@ -30,12 +28,15 @@ class ServerController extends Controller
         private AuditService $audit = new AuditService(),
         private ServerSyncService $sync = new ServerSyncService(),
         private MediaDiscoveryService $discovery = new MediaDiscoveryService(),
+        private ServerConnectionDebugService $connectionDebug = new ServerConnectionDebugService(),
     ) {
     }
 
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->sync->refreshStaleServers($tenantId, 10);
+
         return $this->view('servers.index', [
             'title' => 'Servidores',
             'servers' => $this->servers->allByTenant($tenantId),
@@ -74,6 +75,7 @@ class ServerController extends Controller
             'ssl' => $endpoint['ssl'] ? 1 : 0,
             'token' => $request->input('token'),
             'api_key' => $request->input('api_key'),
+            'machine_id' => trim((string) $request->input('machine_id', '')) ?: null,
             'location' => $request->input('location'),
             'check_interval_minutes' => (int) ($request->input('check_interval') ?? 5),
             'status' => 'offline',
@@ -136,6 +138,11 @@ class ServerController extends Controller
             return $this->redirect('/servers');
         }
 
+        if ($server->status !== 'online') {
+            $this->sync->sync($server);
+            $server = $this->servers->findByUuid($uuid) ?? $server;
+        }
+
         $db = \Core\Database::getInstance();
         $dbStats = $db->fetchOne(
             'SELECT COUNT(*) AS users FROM media_users WHERE server_id = ? AND deleted_at IS NULL',
@@ -151,6 +158,7 @@ class ServerController extends Controller
             'server' => $server,
             'panelUsers' => (int) ($dbStats['users'] ?? 0),
             'panelLibraries' => (int) ($dbLibraries['libraries'] ?? 0),
+            'debug' => $this->connectionDebug->loadDebug($server) ?? $this->sync->lastDebug(),
         ]);
     }
 
@@ -207,6 +215,11 @@ class ServerController extends Controller
             $server->api_key = $apiKey;
         }
 
+        $machineId = trim((string) $request->input('machine_id', ''));
+        if ($machineId !== '') {
+            $server->machine_id = $machineId;
+        }
+
         $server->save();
         $this->audit->log('server.updated', 'server', (int) $server->id, $before, $server->toArray());
 
@@ -242,6 +255,25 @@ class ServerController extends Controller
                 : 'Sync fallido: ' . ($server->last_error ?? 'no se pudo conectar al servidor.'),
             'users' => $stats,
             'last_error' => $server->last_error,
+            'debug' => $this->sync->lastDebug(),
+        ]);
+    }
+
+    public function debug(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['error' => 'Servidor no encontrado'], 404);
+        }
+
+        $this->sync->sync($server);
+        $debug = $this->sync->lastDebug() ?? $this->connectionDebug->diagnose($server);
+
+        return $this->json([
+            'success' => $server->status === 'online',
+            'status' => $server->status,
+            'last_error' => $server->last_error,
+            'debug' => $debug,
         ]);
     }
 
@@ -252,13 +284,33 @@ class ServerController extends Controller
             return $this->json(['error' => 'Servidor no encontrado'], 404);
         }
 
-        $media = MediaServerFactory::make($server);
-        $connected = $media->testConnection();
+        $success = $this->sync->sync($server);
+        $stats = $this->sync->lastUserSyncStats();
 
         return $this->json([
-            'connected' => $connected,
-            'message' => $connected ? 'Conexión exitosa.' : ($media instanceof PlexService ? ($media->getLastError() ?? 'No se pudo conectar.') : 'No se pudo conectar.'),
+            'connected' => $success,
+            'status' => $server->status,
+            'message' => $success
+                ? sprintf('Conexión OK. %d streams activos.', (int) $server->active_sessions)
+                : 'Conexión fallida: ' . ($server->last_error ?? 'no se pudo conectar.'),
+            'users' => $stats,
+            'last_error' => $server->last_error,
+            'debug' => $this->sync->lastDebug(),
         ]);
+    }
+
+    public function syncAll(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $synced = $this->sync->syncAll($tenantId);
+        $total = count($this->servers->allByTenant($tenantId));
+
+        Session::getInstance()->flash(
+            'success',
+            sprintf('Sincronización completada: %d de %d servidores online.', $synced, $total)
+        );
+
+        return $this->redirect('/servers');
     }
 
     public function destroy(Request $request, string $uuid): Response

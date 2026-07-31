@@ -10,6 +10,15 @@
             <?= csrf_field() ?>
             <div class="row g-3">
                 <div class="col-md-6">
+                    <label class="form-label">Servidor</label>
+                    <select name="server_id" class="form-select">
+                        <option value="">Sin asignar</option>
+                        <?php foreach ($servers as $server): ?>
+                        <option value="<?= (int) $server->id ?>"><?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-6">
                     <label class="form-label">Username *</label>
                     <input type="text" name="username" class="form-control" required>
                 </div>

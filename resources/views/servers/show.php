@@ -14,14 +14,19 @@
             <button type="button" class="btn btn-sm btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>">
                 <i class="bi bi-plug me-1"></i>Test
             </button>
+            <button type="button" class="btn btn-sm btn-outline-warning btn-debug" data-uuid="<?= e($server->uuid) ?>">
+                <i class="bi bi-bug me-1"></i>Debug
+            </button>
         </div>
     </div>
 </div>
 
-<?php if (!empty($server->last_error) && $server->status !== 'online'): ?>
+<?php if ($server->status !== 'online'): ?>
 <div class="alert alert-warning">
-    <strong>No se puede conectar:</strong> <?= e($server->last_error) ?>
-    <div class="small mt-1">Desde el VPS usa la URL pública (ej. <code>tunel.mooo.com:32400</code>), no IPs <code>192.168.x.x</code>. Comprueba puerto, token y que el túnel/DNS esté activo.</div>
+    <strong>Servidor offline.</strong> Se ha intentado reconectar automáticamente.
+    <?php if ($server->last_error): ?>
+    <div class="mt-1"><?= e($server->last_error) ?></div>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 
@@ -32,7 +37,7 @@
                 <h6>Información</h6>
                 <dl class="mb-0">
                     <dt class="text-muted small">Tipo</dt><dd><?= e(strtoupper($server->type)) ?></dd>
-                    <dt class="text-muted small">URL</dt><dd class="small"><?= e($server->fullUrl()) ?></dd>
+                    <dt class="text-muted small">URL</dt><dd class="small"><code><?= e($server->fullUrl()) ?></code></dd>
                     <dt class="text-muted small">Versión</dt><dd><?= e($server->version ?? 'Desconocida') ?></dd>
                     <dt class="text-muted small">Machine ID</dt><dd class="small text-break"><?= e($server->machine_id ?? '-') ?></dd>
                     <dt class="text-muted small">Última sync</dt><dd><?= e($server->last_sync_at ?? 'Nunca') ?></dd>
@@ -45,38 +50,47 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="row text-center g-3">
-                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->active_sessions ?></h3><small class="text-muted">Sesiones Plex</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->active_sessions ?></h3><small class="text-muted">Streams activos</small></div>
                     <div class="col-6 col-md-3"><h3 class="mb-0"><?= max((int) $server->total_libraries, (int) ($panelLibraries ?? 0)) ?></h3><small class="text-muted">Bibliotecas</small></div>
                     <div class="col-6 col-md-3"><h3 class="mb-0"><?= max((int) $server->total_users, (int) ($panelUsers ?? 0)) ?></h3><small class="text-muted">Usuarios panel</small></div>
                     <div class="col-6 col-md-3"><h3 class="mb-0"><?= e($server->health_score ?? 100) ?>%</h3><small class="text-muted">Salud</small></div>
                 </div>
-                <?php if ($server->status !== 'online'): ?>
-                <p class="text-muted small mt-3 mb-0">Los usuarios importados del SQL están en <a href="/media-users">Usuarios Media</a>. Pulsa <strong>Sincronizar</strong> para conectar con Plex y actualizar bibliotecas en vivo.</p>
-                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
+
+<div id="debug-panel">
+<?php include base_path('resources/views/servers/_connection_debug.php'); ?>
+</div>
+
 <?php
 $content = ob_get_clean();
 $scripts = <<<'JS'
 <script>
 const csrf = document.querySelector('meta[name=csrf-token]').content;
-document.querySelectorAll('.btn-sync').forEach(btn => {
+
+async function runAction(url) {
+    const res = await fetch(url, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf } });
+    return res.json();
+}
+
+document.querySelectorAll('.btn-sync, .btn-test').forEach(btn => {
     btn.addEventListener('click', async function() {
         this.disabled = true;
-        const res = await fetch(`/servers/${this.dataset.uuid}/sync`, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf } });
-        const data = await res.json();
+        const action = this.classList.contains('btn-sync') ? 'sync' : 'test';
+        const data = await runAction(`/servers/${this.dataset.uuid}/${action}`);
         alert(data.message);
         location.reload();
     });
 });
-document.querySelectorAll('.btn-test').forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const res = await fetch(`/servers/${this.dataset.uuid}/test`, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf } });
-        const data = await res.json();
-        alert(data.message);
-    });
+
+document.querySelector('.btn-debug')?.addEventListener('click', async function() {
+    this.disabled = true;
+    const res = await fetch(`/servers/${this.dataset.uuid}/debug`);
+    const data = await res.json();
+    alert(data.success ? 'Debug OK — servidor online.' : 'Debug: ' + (data.last_error || 'sigue offline'));
+    location.reload();
 });
 </script>
 JS;

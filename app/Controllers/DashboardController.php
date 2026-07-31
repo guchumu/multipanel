@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
+use App\Services\ServerSyncService;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
@@ -20,6 +21,7 @@ class DashboardController extends Controller
         private MediaUserRepository $mediaUsers = new MediaUserRepository(),
         private ServerRepository $servers = new ServerRepository(),
         private AuthService $auth = new AuthService(),
+        private ServerSyncService $sync = new ServerSyncService(),
     ) {
     }
 
@@ -27,6 +29,9 @@ class DashboardController extends Controller
     {
         $user = $this->auth->user();
         $tenantId = (int) ($user->tenant_id ?? 1);
+
+        $this->sync->refreshStaleServers($tenantId, 3);
+        $this->mediaUsers->backfillMissingServerIds($tenantId);
 
         $stats = [
             'users_active' => $this->mediaUsers->countByStatus($tenantId, 'active'),

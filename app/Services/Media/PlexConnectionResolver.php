@@ -48,6 +48,110 @@ final class PlexConnectionResolver
         return ['endpoint' => $configured, 'error' => $lastError, 'tried' => $tried];
     }
 
+    /**
+     * @return array{probes: array<int, array<string, mixed>>, plex_tv: array<string, mixed>, final_error: ?string}
+     */
+    public function diagnose(Server $server): array
+    {
+        $token = trim((string) ($server->token ?? ''));
+        $candidates = $this->buildCandidates($server);
+        $probes = [];
+
+        foreach ($candidates as $endpoint) {
+            $scheme = $endpoint['ssl'] ? 'https' : 'http';
+            $label = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}/";
+            $start = microtime(true);
+            $error = $this->probe($endpoint, $token);
+            $probes[] = [
+                'url' => $label,
+                'ok' => $error === null,
+                'error' => $error,
+                'latency_ms' => (int) round((microtime(true) - $start) * 1000),
+                'local' => str_contains($endpoint['url'], '192.168.')
+                    || str_contains($endpoint['url'], '10.')
+                    || str_starts_with($endpoint['url'], '172.'),
+            ];
+        }
+
+        return [
+            'probes' => $probes,
+            'plex_tv' => $this->fetchPlexTvSummary($token, trim((string) ($server->machine_id ?? ''))),
+            'final_error' => null,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function fetchPlexTvSummary(string $token, string $machineId): array
+    {
+        if ($token === '') {
+            return ['ok' => false, 'error' => 'Sin token Plex', 'resources_found' => 0, 'servers' => []];
+        }
+
+        $client = new Client([
+            'base_uri' => 'https://plex.tv',
+            'timeout' => 20,
+            'headers' => [
+                'Accept' => 'application/json',
+                'X-Plex-Token' => $token,
+                'X-Plex-Client-Identifier' => 'multipanel-erp',
+                'X-Plex-Product' => 'MultiPanel ERP',
+            ],
+        ]);
+
+        try {
+            $response = $client->get('/api/v2/resources', [
+                'query' => ['includeHttps' => 1, 'includeRelay' => 1],
+            ]);
+            $resources = json_decode($response->getBody()->getContents(), true);
+            if (!is_array($resources)) {
+                return ['ok' => false, 'error' => 'Respuesta inválida de plex.tv', 'resources_found' => 0, 'servers' => []];
+            }
+
+            $servers = [];
+            foreach ($resources as $resource) {
+                $product = strtolower((string) ($resource['product'] ?? ''));
+                $provides = $resource['provides'] ?? '';
+                $isServer = str_contains($product, 'plex media server')
+                    || (is_array($provides) && in_array('server', $provides, true))
+                    || str_contains((string) $provides, 'server');
+
+                if (!$isServer) {
+                    continue;
+                }
+
+                $connections = [];
+                foreach ($resource['connections'] ?? [] as $conn) {
+                    $parsed = $this->parseConnection($conn);
+                    if ($parsed === null) {
+                        continue;
+                    }
+                    $scheme = $parsed['ssl'] ? 'https' : 'http';
+                    $connections[] = [
+                        'url' => "{$scheme}://{$parsed['url']}:{$parsed['port']}/",
+                        'local' => (bool) ($conn['local'] ?? false),
+                        'relay' => (bool) ($conn['relay'] ?? false),
+                    ];
+                }
+
+                $servers[] = [
+                    'name' => (string) ($resource['name'] ?? 'Plex'),
+                    'client_id' => (string) ($resource['clientIdentifier'] ?? ''),
+                    'owned' => (bool) ($resource['owned'] ?? false),
+                    'connections' => $connections,
+                    'matches_machine_id' => $machineId !== '' && (string) ($resource['clientIdentifier'] ?? '') === $machineId,
+                ];
+            }
+
+            return [
+                'ok' => true,
+                'resources_found' => count($servers),
+                'servers' => $servers,
+            ];
+        } catch (GuzzleException $e) {
+            return ['ok' => false, 'error' => $e->getMessage(), 'resources_found' => 0, 'servers' => []];
+        }
+    }
+
     /** @return array<int, array{url: string, port: int, ssl: bool}> */
     private function buildCandidates(Server $server): array
     {
@@ -78,9 +182,15 @@ final class PlexConnectionResolver
         $token = trim((string) ($server->token ?? ''));
         $machineId = trim((string) ($server->machine_id ?? ''));
 
-        if ($token !== '' && $machineId !== '') {
-            foreach ($this->connectionsFromPlexTv($token, $machineId) as $endpoint) {
-                $add($endpoint);
+        if ($token !== '') {
+            if ($machineId !== '') {
+                foreach ($this->connectionsFromPlexTv($token, $machineId) as $endpoint) {
+                    $add($endpoint);
+                }
+            } else {
+                foreach ($this->allServerConnectionsFromPlexTv($token) as $endpoint) {
+                    $add($endpoint);
+                }
             }
         }
 
@@ -91,6 +201,68 @@ final class PlexConnectionResolver
         });
 
         return $list;
+    }
+
+    /** @return array<int, array{url: string, port: int, ssl: bool}> */
+    private function allServerConnectionsFromPlexTv(string $token): array
+    {
+        $client = new Client([
+            'base_uri' => 'https://plex.tv',
+            'timeout' => 20,
+            'headers' => [
+                'Accept' => 'application/json',
+                'X-Plex-Token' => $token,
+                'X-Plex-Client-Identifier' => 'multipanel-erp',
+                'X-Plex-Product' => 'MultiPanel ERP',
+            ],
+        ]);
+
+        try {
+            $response = $client->get('/api/v2/resources', [
+                'query' => ['includeHttps' => 1, 'includeRelay' => 1],
+            ]);
+
+            $resources = json_decode($response->getBody()->getContents(), true);
+            if (!is_array($resources)) {
+                return [];
+            }
+
+            $endpoints = [];
+            foreach ($resources as $resource) {
+                $product = strtolower((string) ($resource['product'] ?? ''));
+                $provides = $resource['provides'] ?? '';
+                $isServer = str_contains($product, 'plex media server')
+                    || (is_array($provides) && in_array('server', $provides, true))
+                    || str_contains((string) $provides, 'server');
+
+                if (!$isServer) {
+                    continue;
+                }
+
+                foreach ($resource['connections'] ?? [] as $conn) {
+                    $parsed = $this->parseConnection($conn);
+                    if ($parsed !== null) {
+                        $parsed['local'] = (bool) ($conn['local'] ?? false);
+                        $parsed['relay'] = (bool) ($conn['relay'] ?? false);
+                        $endpoints[] = $parsed;
+                    }
+                }
+            }
+
+            usort($endpoints, static function ($a, $b) {
+                $score = static fn ($e) => (($e['local'] ?? false) ? 10 : 0) + (($e['relay'] ?? false) ? 5 : 0);
+                return $score($a) <=> $score($b);
+            });
+
+            return array_map(static fn ($e) => [
+                'url' => $e['url'],
+                'port' => $e['port'],
+                'ssl' => $e['ssl'],
+            ], $endpoints);
+        } catch (GuzzleException $e) {
+            Logger::warning('plex.tv all resources lookup failed', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     /** @return array<int, array{url: string, port: int, ssl: bool}> */

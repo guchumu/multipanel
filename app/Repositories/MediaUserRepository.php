@@ -69,4 +69,28 @@ class MediaUserRepository
 
         return $row ? new MediaUser($row) : null;
     }
+
+    public function backfillMissingServerIds(int $tenantId): int
+    {
+        $db = Database::getInstance();
+        $servers = $db->fetchAll(
+            'SELECT id FROM servers WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY id',
+            [$tenantId]
+        );
+
+        if ($servers === []) {
+            return 0;
+        }
+
+        if (count($servers) === 1) {
+            return $db->update(
+                'media_users',
+                ['server_id' => (int) $servers[0]['id']],
+                'tenant_id = ? AND server_id IS NULL AND deleted_at IS NULL',
+                [$tenantId]
+            );
+        }
+
+        return 0;
+    }
 }

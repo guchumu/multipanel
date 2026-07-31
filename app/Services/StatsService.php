@@ -13,8 +13,6 @@ final class StatsService
 {
     public function getDashboardStats(int $tenantId): array
     {
-        $db = Database::getInstance();
-
         return [
             'users' => $this->userStats($tenantId),
             'streaming' => $this->streamingStats($tenantId),
@@ -55,11 +53,17 @@ final class StatsService
             [$tenantId]
         );
 
+        $liveSessions = (int) ($db->fetchOne(
+            "SELECT COALESCE(SUM(active_sessions),0) as c FROM servers WHERE tenant_id = ? AND deleted_at IS NULL",
+            [$tenantId]
+        )['c'] ?? 0);
+
         return [
-            'today_sessions' => (int) ($today['sessions'] ?? 0),
+            'today_sessions' => max((int) ($today['sessions'] ?? 0), $liveSessions > 0 ? 1 : 0),
             'today_hours' => round((int) ($today['seconds'] ?? 0) / 3600, 1),
             'month_sessions' => (int) ($month['sessions'] ?? 0),
             'month_hours' => round((int) ($month['seconds'] ?? 0) / 3600, 1),
+            'live_sessions' => $liveSessions,
         ];
     }
 
@@ -68,8 +72,9 @@ final class StatsService
         $db = Database::getInstance();
         return [
             'online' => (int) ($db->fetchOne("SELECT COUNT(*) as c FROM servers WHERE tenant_id = ? AND status = 'online' AND deleted_at IS NULL", [$tenantId])['c'] ?? 0),
-            'offline' => (int) ($db->fetchOne("SELECT COUNT(*) as c FROM servers WHERE tenant_id = ? AND status = 'offline' AND deleted_at IS NULL", [$tenantId])['c'] ?? 0),
+            'offline' => (int) ($db->fetchOne("SELECT COUNT(*) as c FROM servers WHERE tenant_id = ? AND status IN ('offline','error','maintenance') AND deleted_at IS NULL", [$tenantId])['c'] ?? 0),
             'active_sessions' => (int) ($db->fetchOne("SELECT COALESCE(SUM(active_sessions),0) as c FROM servers WHERE tenant_id = ? AND deleted_at IS NULL", [$tenantId])['c'] ?? 0),
+            'total' => (int) ($db->fetchOne("SELECT COUNT(*) as c FROM servers WHERE tenant_id = ? AND deleted_at IS NULL", [$tenantId])['c'] ?? 0),
         ];
     }
 
@@ -88,7 +93,8 @@ final class StatsService
     /** @return array<int, array{date: string, sessions: int, hours: float}> */
     public function getDailyStreaming(int $tenantId, int $days = 30): array
     {
-        $rows = Database::getInstance()->fetchAll(
+        $db = Database::getInstance();
+        $rows = $db->fetchAll(
             "SELECT DATE(started_at) as date, COUNT(*) as sessions, COALESCE(SUM(duration_seconds),0) as seconds
              FROM playback_sessions
              WHERE tenant_id = ? AND started_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
@@ -96,11 +102,29 @@ final class StatsService
             [$tenantId, $days]
         );
 
+        if ($rows !== []) {
+            return array_map(fn ($r) => [
+                'date' => $r['date'],
+                'sessions' => (int) $r['sessions'],
+                'hours' => round((int) $r['seconds'] / 3600, 1),
+            ], $rows);
+        }
+
+        $fallback = $db->fetchAll(
+            "SELECT DATE(ss.recorded_at) as date, MAX(ss.active_sessions) as sessions
+             FROM server_stats ss
+             INNER JOIN servers s ON s.id = ss.server_id AND s.tenant_id = ? AND s.deleted_at IS NULL
+             WHERE ss.recorded_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+             GROUP BY DATE(ss.recorded_at)
+             ORDER BY date",
+            [$tenantId, $days]
+        );
+
         return array_map(fn ($r) => [
             'date' => $r['date'],
             'sessions' => (int) $r['sessions'],
-            'hours' => round((int) $r['seconds'] / 3600, 1),
-        ], $rows);
+            'hours' => 0.0,
+        ], $fallback);
     }
 
     /** @return array<int, array{country: string, count: int}> */
@@ -130,7 +154,7 @@ final class StatsService
     {
         return Database::getInstance()->fetchAll(
             "SELECT title, COUNT(*) as count FROM playback_sessions
-             WHERE tenant_id = ? AND title IS NOT NULL
+             WHERE tenant_id = ? AND title IS NOT NULL AND title != ''
              GROUP BY title ORDER BY count DESC LIMIT ?",
             [$tenantId, $limit]
         );

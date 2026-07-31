@@ -67,6 +67,7 @@
     <div class="card-body">
         <form method="POST" action="/servers" id="serverForm">
             <?= csrf_field() ?>
+            <input type="hidden" name="machine_id" id="fieldMachineId" value="">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Nombre *</label>
@@ -148,6 +149,7 @@ function fillForm(server) {
     document.getElementById('fieldName').value = server.name || '';
     document.getElementById('fieldUrl').value = server.url || '';
     document.getElementById('fieldPort').value = server.port || 32400;
+    document.getElementById('fieldMachineId').value = server.client_id || server.machine_id || '';
     fieldSsl.checked = !!server.ssl;
     typeSelect.value = server.type || 'plex';
     toggleTypeFields();
@@ -211,18 +213,20 @@ document.getElementById('btnDiscover').addEventListener('click', async () => {
         }
 
         const servers = isPlex ? data.servers : [data.server];
-        servers.forEach((s, i) => {
+        const remoteFirst = [...servers].sort((a, b) => ((a.local ? 1 : 0) - (b.local ? 1 : 0)));
+        remoteFirst.forEach((s, i) => {
             const item = document.createElement('button');
             item.type = 'button';
-            item.className = 'list-group-item list-group-item-action';
-            const local = s.local ? ' · local' : ' · remoto';
+            item.className = 'list-group-item list-group-item-action' + (s.local ? ' list-group-item-warning' : '');
+            const local = s.local ? ' · local (no recomendado en VPS)' : ' · remoto';
             item.innerHTML = `<strong>${s.name}</strong><br><small class="text-muted">${s.url}:${s.port}${local}</small>`;
             item.addEventListener('click', () => fillForm({ ...s, type: isPlex ? 'plex' : 'jellyfin', token: data.token, api_key: s.api_key || data.api_key }));
             list.appendChild(item);
         });
         results.classList.remove('d-none');
 
-        if (servers.length === 1) fillForm({ ...servers[0], type: isPlex ? 'plex' : 'jellyfin', token: data.token, api_key: servers[0].api_key || data.api_key });
+        const preferred = remoteFirst.find(s => !s.local) || remoteFirst[0];
+        if (preferred) fillForm({ ...preferred, type: isPlex ? 'plex' : 'jellyfin', token: data.token, api_key: preferred.api_key || data.api_key });
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-search me-1"></i>Buscar servidores';

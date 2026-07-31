@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
+use App\Services\ServerSyncService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Request;
@@ -26,12 +27,17 @@ class ActivityController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        (new ServerSyncService())->refreshStaleServers($tenantId, 10);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
 
         return $this->view('activity.index', [
             'title' => 'En directo',
             'servers' => $this->servers->allByTenant($tenantId),
-            'sessions' => $this->activity->getLiveSessions($tenantId, $serverId),
+            'sessions' => $snapshot['sessions'],
+            'grouped' => $snapshot['grouped'],
+            'serverStats' => $snapshot['server_stats'],
+            'totalCount' => $snapshot['total_count'],
             'currentServerId' => $serverId,
         ]);
     }
@@ -40,12 +46,14 @@ class ActivityController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
-
-        $sessions = $this->activity->getLiveSessions($tenantId, $serverId);
+        $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
 
         return $this->json([
-            'sessions' => $sessions,
-            'count' => count($sessions),
+            'sessions' => $snapshot['sessions'],
+            'grouped' => $snapshot['grouped'],
+            'server_stats' => $snapshot['server_stats'],
+            'count' => $snapshot['filtered_count'],
+            'total_count' => $snapshot['total_count'],
         ]);
     }
 }

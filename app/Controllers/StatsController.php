@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\ExportService;
+use App\Services\ServerSyncService;
 use App\Services\StatsService;
 use Core\Controller;
 use Core\Request;
@@ -25,6 +26,7 @@ class StatsController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        (new ServerSyncService())->refreshStaleServers($tenantId, 3);
 
         return $this->view('stats.index', [
             'title' => 'Estadísticas',

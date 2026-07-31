@@ -21,9 +21,19 @@ final class ServerSyncService
     /** @var array{imported: int, updated: int, total: int} */
     private array $lastUserSyncStats = ['imported' => 0, 'updated' => 0, 'total' => 0];
 
+    /** @var array<string, mixed>|null */
+    private ?array $lastDebug = null;
+
     public function __construct(
         private ServerRepository $servers = new ServerRepository(),
+        private ServerConnectionDebugService $debugService = new ServerConnectionDebugService(),
     ) {
+    }
+
+    /** @return array<string, mixed>|null */
+    public function lastDebug(): ?array
+    {
+        return $this->lastDebug;
     }
 
     public function sync(Server $server): bool
@@ -32,14 +42,11 @@ final class ServerSyncService
             $media = MediaServerFactory::make($server);
 
             if (!$media->testConnection()) {
-                $server->status = 'offline';
-                $server->last_error = $media instanceof PlexService
+                $error = $media instanceof PlexService
                     ? ($media->getLastError() ?? 'Conexión fallida')
                     : 'Conexión fallida';
-                $server->last_check_at = now()->format('Y-m-d H:i:s');
-                $this->refreshDbCounts($server);
-                $server->save();
-                return false;
+
+                return $this->failSync($server, $error);
             }
 
             $info = $media->getServerInfo();
@@ -61,18 +68,38 @@ final class ServerSyncService
             $userStats = $this->syncUsers($server, $media);
             $this->lastUserSyncStats = $userStats;
             $this->recordStats($server);
+            $this->recordActiveSessions($server, $sessions);
+            $this->persistDebug($server, true);
 
             Logger::info('Server synced', ['server_id' => $server->id, 'users' => $userStats]);
             return true;
         } catch (\Throwable $e) {
-            $server->status = 'error';
-            $server->last_error = $e->getMessage();
-            $server->last_check_at = now()->format('Y-m-d H:i:s');
-            $server->save();
-
-            Logger::error('Server sync failed', ['server_id' => $server->id, 'error' => $e->getMessage()]);
-            return false;
+            return $this->failSync($server, $e->getMessage(), 'error');
         }
+    }
+
+    private function failSync(Server $server, string $error, string $status = 'offline'): bool
+    {
+        $server->status = $status;
+        $server->last_error = $error;
+        $server->last_check_at = now()->format('Y-m-d H:i:s');
+        $this->refreshDbCounts($server);
+        $this->persistDebug($server, false, $error);
+        $server->save();
+
+        Logger::error('Server sync failed', ['server_id' => $server->id, 'error' => $error]);
+        return false;
+    }
+
+    private function persistDebug(Server $server, bool $connected, ?string $overrideError = null): void
+    {
+        $debug = $this->debugService->diagnose($server);
+        $debug['connected'] = $connected;
+        if ($overrideError !== null) {
+            $debug['final_error'] = $overrideError;
+        }
+        $this->lastDebug = $debug;
+        $this->debugService->persistDebug($server, $debug);
     }
 
     /** @return array{imported: int, updated: int, total: int} */
@@ -205,6 +232,111 @@ final class ServerSyncService
             'online_users' => $server->active_sessions,
             'recorded_at' => now()->format('Y-m-d H:i:s'),
         ]);
+    }
+
+    /** @param array<int, array<string, mixed>> $sessions */
+    private function recordActiveSessions(Server $server, array $sessions): void
+    {
+        $db = Database::getInstance();
+        $now = now()->format('Y-m-d H:i:s');
+        $activeKeys = [];
+
+        foreach ($sessions as $session) {
+            $sessionKey = md5(
+                (string) $server->id . '|'
+                . ($session['user'] ?? '') . '|'
+                . ($session['title'] ?? '') . '|'
+                . ($session['player'] ?? '')
+            );
+            $activeKeys[] = $sessionKey;
+
+            $existing = $db->fetchOne(
+                'SELECT id FROM playback_sessions WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL LIMIT 1',
+                [$server->id, $sessionKey]
+            );
+
+            $mediaUserId = null;
+            $username = trim((string) ($session['user'] ?? ''));
+            if ($username !== '') {
+                $mediaUser = $db->fetchOne(
+                    'SELECT id FROM media_users WHERE server_id = ? AND deleted_at IS NULL AND (username = ? OR display_name = ?) LIMIT 1',
+                    [$server->id, $username, $username]
+                );
+                $mediaUserId = $mediaUser['id'] ?? null;
+            }
+
+            $payload = [
+                'title' => $session['title'] ?? null,
+                'media_type' => $session['media_type'] ?? null,
+                'player' => $session['player'] ?? null,
+                'device' => $session['platform'] ?? null,
+                'quality' => $session['play_method'] ?? null,
+            ];
+
+            if ($existing) {
+                $db->update('playback_sessions', $payload, 'id = ?', [$existing['id']]);
+                continue;
+            }
+
+            $db->insert('playback_sessions', array_merge($payload, [
+                'tenant_id' => $server->tenant_id,
+                'server_id' => $server->id,
+                'media_user_id' => $mediaUserId,
+                'external_session_id' => $sessionKey,
+                'started_at' => $now,
+            ]));
+        }
+
+        if ($activeKeys === []) {
+            $db->query(
+                'UPDATE playback_sessions SET ended_at = ?, duration_seconds = TIMESTAMPDIFF(SECOND, started_at, ?)
+                 WHERE server_id = ? AND ended_at IS NULL',
+                [$now, $now, $server->id]
+            );
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($activeKeys), '?'));
+        $db->query(
+            "UPDATE playback_sessions SET ended_at = ?, duration_seconds = TIMESTAMPDIFF(SECOND, started_at, ?)
+             WHERE server_id = ? AND ended_at IS NULL AND external_session_id NOT IN ({$placeholders})",
+            array_merge([$now, $now, $server->id], $activeKeys)
+        );
+    }
+
+    public function refreshStaleServers(int $tenantId, int $limit = 10): int
+    {
+        $attempted = 0;
+        foreach ($this->servers->allByTenant($tenantId) as $server) {
+            if ($attempted >= $limit) {
+                break;
+            }
+
+            if (!$this->needsRefresh($server)) {
+                continue;
+            }
+
+            $this->sync($server);
+            $attempted++;
+        }
+
+        return $attempted;
+    }
+
+    private function needsRefresh(Server $server): bool
+    {
+        if ($server->status !== 'online') {
+            return true;
+        }
+
+        if ($server->last_check_at === null) {
+            return true;
+        }
+
+        $interval = max(1, (int) ($server->check_interval_minutes ?? 5));
+        $checkedAt = strtotime((string) $server->last_check_at);
+
+        return $checkedAt === false || $checkedAt < (time() - ($interval * 60));
     }
 
     public function syncAll(int $tenantId): int

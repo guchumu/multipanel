@@ -86,6 +86,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
 
     // Servers
     $router->get('/servers', [ServerController::class, 'index'], 'servers.index');
+    $router->post('/servers/sync-all', [ServerController::class, 'syncAll'], 'servers.sync_all', [CsrfMiddleware::class]);
     $router->get('/servers/create', [ServerController::class, 'create'], 'servers.create');
     $router->post('/servers/discover/plex', [ServerController::class, 'discoverPlex'], 'servers.discover.plex', [CsrfMiddleware::class]);
     $router->post('/servers/discover/jellyfin', [ServerController::class, 'discoverJellyfin'], 'servers.discover.jellyfin', [CsrfMiddleware::class]);
@@ -95,6 +96,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');
     $router->post('/servers/{uuid}/sync', [ServerController::class, 'sync'], 'servers.sync', [CsrfMiddleware::class]);
     $router->post('/servers/{uuid}/test', [ServerController::class, 'test'], 'servers.test', [CsrfMiddleware::class]);
+    $router->get('/servers/{uuid}/debug', [ServerController::class, 'debug'], 'servers.debug');
     $router->delete('/servers/{uuid}', [ServerController::class, 'destroy'], 'servers.destroy', [CsrfMiddleware::class]);
 
     // Media Users
