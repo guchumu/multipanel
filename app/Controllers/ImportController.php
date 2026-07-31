@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\ImportService;
+use App\Services\PlexManagerImportService;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
@@ -19,6 +20,7 @@ class ImportController extends Controller
     public function __construct(
         private AuthService $auth = new AuthService(),
         private ImportService $import = new ImportService(),
+        private PlexManagerImportService $plexManager = new PlexManagerImportService(),
     ) {
     }
 
@@ -38,6 +40,23 @@ class ImportController extends Controller
         $type = $request->input('type', 'csv');
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $tmpPath = $file['tmp_name'];
+
+        if ($type === 'plex_manager') {
+            $result = $this->plexManager->importFromSqlFile($tmpPath, $tenantId);
+            $msg = sprintf(
+                'Migración plex_manager: %d servidores, %d usuarios, %d clientes, %d suscripciones. Omitidos/actualizados: %d.',
+                $result['servers'],
+                $result['users'],
+                $result['customers'],
+                $result['subscriptions'],
+                $result['skipped']
+            );
+            if (!empty($result['errors'])) {
+                Session::getInstance()->flash('import_errors', implode("\n", array_slice($result['errors'], 0, 15)));
+            }
+            Session::getInstance()->flash('success', $msg);
+            return $this->redirect('/import');
+        }
 
         $result = match ($type) {
             'json' => $this->import->importMediaUsersFromJson($tmpPath, $tenantId),
