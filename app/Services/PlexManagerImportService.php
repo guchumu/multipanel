@@ -17,10 +17,11 @@ final class PlexManagerImportService
 {
     public function __construct(
         private AuditService $audit = new AuditService(),
+        private ServerSyncService $sync = new ServerSyncService(),
     ) {
     }
 
-    /** @return array{servers: int, users: int, customers: int, subscriptions: int, skipped: int, parsed: array{servers: int, users: int}, errors: array<int, string>} */
+    /** @return array{servers: int, users: int, customers: int, subscriptions: int, libraries: int, skipped: int, parsed: array{servers: int, users: int}, sync: array<int, array{name: string, ok: bool, error: ?string}>, errors: array<int, string>} */
     public function importFromSqlFile(string $filePath, int $tenantId): array
     {
         @ini_set('memory_limit', '512M');
@@ -57,7 +58,16 @@ final class PlexManagerImportService
                 );
 
                 if ($existing) {
-                    $serverMap[(int) $legacy['id']] = (int) $existing['id'];
+                    $serverId = (int) $existing['id'];
+                    $serverMap[(int) $legacy['id']] = $serverId;
+                    $db->update('servers', [
+                        'name' => (string) ($legacy['server_name'] ?? 'Plex'),
+                        'url' => $parsed['host'],
+                        'port' => $parsed['port'],
+                        'ssl' => $parsed['ssl'] ? 1 : 0,
+                        'token' => $token,
+                        'machine_id' => $machineId,
+                    ], 'id = ?', [$serverId]);
                     continue;
                 }
 
@@ -82,6 +92,8 @@ final class PlexManagerImportService
                 $errors[] = 'Servidor: ' . $e->getMessage();
             }
         }
+
+        $librariesImported = $this->importLibraries($sql, $serverMap);
 
         $planId = $this->ensureLegacyPlan($tenantId);
         $usersImported = 0;
@@ -212,14 +224,69 @@ final class PlexManagerImportService
             }
         }
 
-        Logger::info('plex_manager SQL import', compact('serversImported', 'usersImported', 'customersImported'));
+        $syncResults = [];
+        foreach (array_unique(array_values($serverMap)) as $serverId) {
+            $this->sync->refreshDbCounts((int) $serverId);
+            $server = Server::find((int) $serverId);
+            if ($server === null) {
+                continue;
+            }
+
+            $ok = $this->sync->sync($server);
+            $syncResults[] = [
+                'name' => (string) $server->name,
+                'ok' => $ok,
+                'error' => $server->last_error,
+            ];
+        }
+
+        Logger::info('plex_manager SQL import', compact('serversImported', 'usersImported', 'customersImported', 'librariesImported'));
         $this->audit->log('import.plex_manager', 'import', null, null, [
             'servers' => $serversImported,
             'users' => $usersImported,
             'customers' => $customersImported,
+            'libraries' => $librariesImported,
+            'sync' => $syncResults,
         ]);
 
-        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe);
+        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe, $librariesImported, $syncResults);
+    }
+
+    /** @param array<int, int> $serverMap */
+    private function importLibraries(string $sql, array $serverMap): int
+    {
+        $imported = 0;
+        $db = Database::getInstance();
+
+        foreach (SqlInsertParser::extractTable($sql, 'libraries') as $legacy) {
+            $serverId = $serverMap[(int) ($legacy['server_id'] ?? 0)] ?? null;
+            $externalId = (string) ($legacy['library_key'] ?? '');
+            $name = (string) ($legacy['library_name'] ?? 'Biblioteca');
+
+            if ($serverId === null || $externalId === '') {
+                continue;
+            }
+
+            $existing = $db->fetchOne(
+                'SELECT id FROM libraries WHERE server_id = ? AND external_id = ? LIMIT 1',
+                [$serverId, $externalId]
+            );
+
+            if ($existing) {
+                $db->update('libraries', ['name' => $name], 'id = ?', [$existing['id']]);
+                continue;
+            }
+
+            $db->insert('libraries', [
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'name' => $name,
+                'type' => 'unknown',
+            ]);
+            $imported++;
+        }
+
+        return $imported;
     }
 
     /** @return array{host: string, port: int, ssl: bool}|null */
@@ -297,17 +364,19 @@ final class PlexManagerImportService
         ]);
     }
 
-    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors @param array<string, mixed> $probe */
-    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = []): array
+    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors @param array<string, mixed> $probe @param array<int, array{name: string, ok: bool, error: ?string}> $sync */
+    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = [], int $libraries = 0, array $sync = []): array
     {
         return [
             'servers' => $servers,
             'users' => $users,
             'customers' => $customers,
             'subscriptions' => $subscriptions,
+            'libraries' => $libraries,
             'skipped' => $skipped,
             'parsed' => $parsed,
             'probe' => $probe,
+            'sync' => $sync,
             'errors' => $errors,
         ];
     }

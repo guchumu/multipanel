@@ -23,18 +23,40 @@ final class PlexService
     public function __construct(
         private Server $server,
     ) {
+        $resolver = new PlexConnectionResolver();
+        $resolved = $resolver->resolve($server);
+        $endpoint = $resolved['endpoint'];
+
+        if ($resolved['error'] !== null) {
+            $this->lastError = $resolved['error'];
+        } elseif ($this->shouldPersistEndpoint($endpoint)) {
+            $server->url = $endpoint['url'];
+            $server->port = $endpoint['port'];
+            $server->ssl = $endpoint['ssl'] ? 1 : 0;
+            $server->save();
+        }
+
+        $scheme = $endpoint['ssl'] ? 'https' : 'http';
         $this->client = new Client([
-            'base_uri' => $this->server->fullUrl(),
+            'base_uri' => "{$scheme}://{$endpoint['url']}:{$endpoint['port']}",
             'timeout' => 30,
             'connect_timeout' => 15,
             'verify' => false,
             'headers' => [
-                'Accept' => 'application/json',
+                'Accept' => 'application/json, application/xml',
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
                 'X-Plex-Product' => 'MultiPanel ERP',
-                'X-Plex-Version' => '1.0.0',
+                'X-Plex-Version' => '1.1.0',
             ],
         ]);
+    }
+
+    /** @param array{url: string, port: int, ssl: bool} $endpoint */
+    private function shouldPersistEndpoint(array $endpoint): bool
+    {
+        return $endpoint['url'] !== (string) $this->server->url
+            || (int) $endpoint['port'] !== (int) $this->server->port
+            || (bool) $endpoint['ssl'] !== (bool) $this->server->ssl;
     }
 
     public function getLastError(): ?string
@@ -45,6 +67,10 @@ final class PlexService
     /** @return array<string, mixed>|null */
     public function getServerInfo(): ?array
     {
+        if ($this->lastError !== null) {
+            return null;
+        }
+
         try {
             $response = $this->client->get('/', [
                 'headers' => $this->authHeaders(),
@@ -52,6 +78,7 @@ final class PlexService
 
             $xml = simplexml_load_string($response->getBody()->getContents());
             if ($xml === false) {
+                $this->lastError = 'Respuesta XML inválida del servidor Plex.';
                 return null;
             }
 
@@ -71,48 +98,98 @@ final class PlexService
     /** @return array<int, array<string, mixed>> */
     public function getUsers(): array
     {
+        if ($this->lastError !== null) {
+            return [];
+        }
+
+        foreach (['/api/users', '/accounts'] as $path) {
+            $users = $this->fetchUsersFromPath($path);
+            if ($users !== []) {
+                return $users;
+            }
+        }
+
+        return $this->fetchUsersFromPlexTv();
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function fetchUsersFromPath(string $path): array
+    {
         try {
-            $response = $this->client->get('/accounts', [
+            $response = $this->client->get($path, [
                 'headers' => $this->authHeaders(),
             ]);
 
             $body = $response->getBody()->getContents();
-            $xml = simplexml_load_string($body);
-            if ($xml !== false && isset($xml->Account)) {
-                $users = [];
-                foreach ($xml->Account as $account) {
-                    $users[] = [
-                        'external_id' => (string) ($account['id'] ?? $account['key'] ?? ''),
-                        'username' => (string) ($account['name'] ?? $account['defaultTitle'] ?? ''),
-                        'email' => null,
-                        'thumb' => (string) ($account['thumb'] ?? '') ?: null,
-                        'restricted' => false,
-                    ];
-                }
+            $data = json_decode($body, true);
 
-                if ($users !== []) {
-                    return $users;
-                }
+            if (is_array($data)) {
+                return array_map(fn ($user) => [
+                    'external_id' => (string) ($user['id'] ?? $user['key'] ?? ''),
+                    'username' => $user['username'] ?? $user['title'] ?? $user['name'] ?? '',
+                    'email' => $user['email'] ?? null,
+                    'thumb' => $user['thumb'] ?? null,
+                    'restricted' => $user['restricted'] ?? false,
+                ], $data);
             }
 
-            $response = $this->client->get('/api/users', [
-                'headers' => $this->authHeaders(),
+            $xml = simplexml_load_string($body);
+            if ($xml === false) {
+                return [];
+            }
+
+            $users = [];
+            foreach ($xml->User ?? $xml->Account ?? [] as $account) {
+                $users[] = [
+                    'external_id' => (string) ($account['id'] ?? $account['key'] ?? ''),
+                    'username' => (string) ($account['title'] ?? $account['name'] ?? $account['defaultTitle'] ?? ''),
+                    'email' => isset($account['email']) ? (string) $account['email'] : null,
+                    'thumb' => (string) ($account['thumb'] ?? '') ?: null,
+                    'restricted' => false,
+                ];
+            }
+
+            return $users;
+        } catch (GuzzleException $e) {
+            Logger::debug('Plex users path failed', ['path' => $path, 'error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function fetchUsersFromPlexTv(): array
+    {
+        $token = trim((string) ($this->server->token ?? ''));
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+
+        if ($token === '' || $machineId === '') {
+            return [];
+        }
+
+        try {
+            $client = new Client([
+                'base_uri' => 'https://plex.tv',
+                'timeout' => 20,
+                'verify' => true,
+                'headers' => array_merge($this->authHeaders(), ['Accept' => 'application/json']),
             ]);
 
+            $response = $client->get("/api/v2/servers/{$machineId}/users");
             $data = json_decode($response->getBody()->getContents(), true);
+
             if (!is_array($data)) {
                 return [];
             }
 
-            return array_map(fn ($user) => [
+            return array_map(static fn ($user) => [
                 'external_id' => (string) ($user['id'] ?? ''),
-                'username' => $user['username'] ?? $user['title'] ?? '',
+                'username' => (string) ($user['username'] ?? $user['title'] ?? ''),
                 'email' => $user['email'] ?? null,
                 'thumb' => $user['thumb'] ?? null,
                 'restricted' => $user['restricted'] ?? false,
             ], $data);
         } catch (GuzzleException $e) {
-            Logger::error('Plex get users failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
+            Logger::debug('Plex.tv users failed', ['error' => $e->getMessage()]);
             return [];
         }
     }
@@ -120,6 +197,10 @@ final class PlexService
     /** @return array<int, array<string, mixed>> */
     public function getLibraries(): array
     {
+        if ($this->lastError !== null) {
+            return [];
+        }
+
         try {
             $response = $this->client->get('/library/sections', [
                 'headers' => $this->authHeaders(),
@@ -150,6 +231,10 @@ final class PlexService
     /** @return array<int, array<string, mixed>> */
     public function getActiveSessions(): array
     {
+        if ($this->lastError !== null) {
+            return [];
+        }
+
         try {
             $response = $this->client->get('/status/sessions', [
                 'headers' => $this->authHeaders(),
@@ -227,10 +312,14 @@ final class PlexService
 
     public function testConnection(): bool
     {
+        if ($this->lastError !== null) {
+            return false;
+        }
+
         $this->lastError = null;
         $ok = $this->getServerInfo() !== null;
         if (!$ok && $this->lastError === null) {
-            $this->lastError = 'El servidor Plex no respondió. Comprueba URL pública (no 192.168.x), puerto y token.';
+            $this->lastError = 'El servidor Plex no respondió. Comprueba URL pública, puerto y token.';
         }
         return $ok;
     }

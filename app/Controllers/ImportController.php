@@ -98,15 +98,23 @@ class ImportController extends Controller
             }
 
             $msg = sprintf(
-                'Migración plex_manager: leídas %d filas servers / %d users del SQL → importados %d servidores, %d usuarios, %d clientes, %d suscripciones. Omitidos/actualizados: %d.',
+                'Migración plex_manager: leídas %d filas servers / %d users → importados %d servidores, %d usuarios, %d clientes, %d bibliotecas. Omitidos/actualizados: %d.',
                 $parsed['servers'],
                 $parsed['users'],
                 $result['servers'],
                 $result['users'],
                 $result['customers'],
-                $result['subscriptions'],
+                $result['libraries'] ?? 0,
                 $result['skipped']
             );
+
+            foreach ($result['sync'] ?? [] as $sync) {
+                $msg .= sprintf(
+                    ' Sync %s: %s.',
+                    $sync['name'],
+                    ($sync['ok'] ?? false) ? 'online' : ('offline' . (!empty($sync['error']) ? ' — ' . $sync['error'] : ''))
+                );
+            }
 
             if ($result['servers'] === 0 && $result['users'] === 0 && $result['skipped'] === 0) {
                 Session::getInstance()->flash('error', $msg . ' Revisa errores abajo.');

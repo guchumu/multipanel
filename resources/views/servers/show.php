@@ -45,11 +45,14 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="row text-center g-3">
-                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->active_sessions ?></h3><small class="text-muted">Sesiones</small></div>
-                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->total_libraries ?></h3><small class="text-muted">Bibliotecas</small></div>
-                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->total_users ?></h3><small class="text-muted">Usuarios</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->active_sessions ?></h3><small class="text-muted">Sesiones Plex</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= max((int) $server->total_libraries, (int) ($panelLibraries ?? 0)) ?></h3><small class="text-muted">Bibliotecas</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= max((int) $server->total_users, (int) ($panelUsers ?? 0)) ?></h3><small class="text-muted">Usuarios panel</small></div>
                     <div class="col-6 col-md-3"><h3 class="mb-0"><?= e($server->health_score ?? 100) ?>%</h3><small class="text-muted">Salud</small></div>
                 </div>
+                <?php if ($server->status !== 'online'): ?>
+                <p class="text-muted small mt-3 mb-0">Los usuarios importados del SQL están en <a href="/media-users">Usuarios Media</a>. Pulsa <strong>Sincronizar</strong> para conectar con Plex y actualizar bibliotecas en vivo.</p>
+                <?php endif; ?>
             </div>
         </div>
     </div>

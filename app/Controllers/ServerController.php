@@ -136,9 +136,21 @@ class ServerController extends Controller
             return $this->redirect('/servers');
         }
 
+        $db = \Core\Database::getInstance();
+        $dbStats = $db->fetchOne(
+            'SELECT COUNT(*) AS users FROM media_users WHERE server_id = ? AND deleted_at IS NULL',
+            [$server->id]
+        );
+        $dbLibraries = $db->fetchOne(
+            'SELECT COUNT(*) AS libraries FROM libraries WHERE server_id = ?',
+            [$server->id]
+        );
+
         return $this->view('servers.show', [
             'title' => $server->name,
             'server' => $server,
+            'panelUsers' => (int) ($dbStats['users'] ?? 0),
+            'panelLibraries' => (int) ($dbLibraries['libraries'] ?? 0),
         ]);
     }
 

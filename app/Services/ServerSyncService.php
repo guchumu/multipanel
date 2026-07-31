@@ -37,6 +37,7 @@ final class ServerSyncService
                     ? ($media->getLastError() ?? 'Conexión fallida')
                     : 'Conexión fallida';
                 $server->last_check_at = now()->format('Y-m-d H:i:s');
+                $this->refreshDbCounts($server);
                 $server->save();
                 return false;
             }
@@ -134,6 +135,30 @@ final class ServerSyncService
     public function lastUserSyncStats(): array
     {
         return $this->lastUserSyncStats;
+    }
+
+    public function refreshDbCounts(int|Server $server): void
+    {
+        if (!$server instanceof Server) {
+            $server = Server::find($server);
+            if ($server === null) {
+                return;
+            }
+        }
+
+        $db = Database::getInstance();
+        $users = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM media_users WHERE server_id = ? AND deleted_at IS NULL',
+            [$server->id]
+        );
+        $libraries = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM libraries WHERE server_id = ?',
+            [$server->id]
+        );
+
+        $server->total_users = (int) ($users['total'] ?? 0);
+        $server->total_libraries = (int) ($libraries['total'] ?? 0);
+        $server->save();
     }
 
     /** @param array<int, array<string, mixed>> $libraries */
