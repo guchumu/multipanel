@@ -375,7 +375,7 @@ final class PlexConnectionResolver
                 'verify' => false,
             ]);
             $headers = [
-                'Accept' => 'application/xml',
+                'Accept' => 'application/xml, application/json',
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
                 'X-Plex-Product' => 'MultiPanel ERP',
             ];
@@ -385,14 +385,10 @@ final class PlexConnectionResolver
             }
 
             $response = $client->get($uri, ['headers' => $headers]);
-            $xml = simplexml_load_string($response->getBody()->getContents());
+            $parsed = PlexResponseParser::parseMediaContainer($response->getBody()->getContents());
 
-            if ($xml === false) {
-                return 'El servidor respondió pero no devolvió XML válido.';
-            }
-
-            if (!isset($xml['machineIdentifier']) && !isset($xml['friendlyName'])) {
-                return 'Respuesta Plex no reconocida (¿token inválido?).';
+            if (!$parsed['ok']) {
+                return $parsed['error'] ?? 'El servidor respondió pero no devolvió datos Plex válidos.';
             }
 
             return null;

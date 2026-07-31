@@ -42,12 +42,12 @@ final class PlexService
             'timeout' => 30,
             'connect_timeout' => 15,
             'verify' => false,
-            'headers' => [
-                'Accept' => 'application/json, application/xml',
+            'headers' => array_merge([
+                'Accept' => 'application/xml',
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
                 'X-Plex-Product' => 'MultiPanel ERP',
                 'X-Plex-Version' => '1.1.0',
-            ],
+            ], $this->authHeaders()),
         ]);
     }
 
@@ -76,17 +76,19 @@ final class PlexService
                 'headers' => $this->authHeaders(),
             ]);
 
-            $xml = simplexml_load_string($response->getBody()->getContents());
-            if ($xml === false) {
-                $this->lastError = 'Respuesta XML inválida del servidor Plex.';
+            $parsed = PlexResponseParser::parseMediaContainer($response->getBody()->getContents());
+            if (!$parsed['ok'] || $parsed['container'] === null) {
+                $this->lastError = $parsed['error'] ?? 'Respuesta inválida del servidor Plex.';
                 return null;
             }
 
+            $c = $parsed['container'];
+
             return [
-                'machine_id' => (string) ($xml['machineIdentifier'] ?? ''),
-                'version' => (string) ($xml['version'] ?? ''),
-                'platform' => (string) ($xml['platform'] ?? ''),
-                'name' => (string) ($xml['friendlyName'] ?? $this->server->name),
+                'machine_id' => (string) ($c['machineIdentifier'] ?? $c['machine_identifier'] ?? ''),
+                'version' => (string) ($c['version'] ?? ''),
+                'platform' => (string) ($c['platform'] ?? ''),
+                'name' => (string) ($c['friendlyName'] ?? $c['friendly_name'] ?? $this->server->name),
             ];
         } catch (GuzzleException $e) {
             $this->lastError = $e->getMessage();
