@@ -31,6 +31,21 @@ class ImportController extends Controller
 
     public function upload(Request $request): Response
     {
+        try {
+            return $this->handleUpload($request);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('Import upload failed', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            Session::getInstance()->flash('error', 'Error al importar: ' . $e->getMessage());
+            return $this->redirect('/import');
+        }
+    }
+
+    private function handleUpload(Request $request): Response
+    {
         $file = $request->file('file');
         if (!$file || !isset($file['error'])) {
             Session::getInstance()->flash('error', 'No se recibió ningún archivo.');

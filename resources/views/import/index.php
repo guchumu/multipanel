@@ -1,8 +1,13 @@
-<?php ob_start(); ?>
+<?php
+use Core\Session;
+
+ob_start();
+$importErrors = Session::getInstance()->getFlash('import_errors');
+?>
 <h4 class="mb-4">Importar / Exportar usuarios</h4>
 
-<?php use Core\Session; if ($errs = Session::getInstance()->getFlash('import_errors')): ?>
-<div class="alert alert-danger"><pre class="mb-0 small"><?= e($errs) ?></pre></div>
+<?php if ($importErrors): ?>
+<div class="alert alert-danger"><pre class="mb-0 small"><?= e($importErrors) ?></pre></div>
 <?php endif; ?>
 
 <div class="row g-4">
@@ -37,9 +42,6 @@
                     <button class="btn btn-outline-primary">Importar</button>
                     <a href="/import/template" class="btn btn-outline-secondary ms-2">Plantilla CSV</a>
                 </form>
-                <?php use Core\Session; if ($errs = Session::getInstance()->getFlash('import_errors')): ?>
-                <pre class="mt-3 small text-danger bg-light p-2 rounded d-none"><?= e($errs) ?></pre>
-                <?php endif; ?>
             </div>
         </div>
     </div>

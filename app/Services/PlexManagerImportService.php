@@ -23,6 +23,9 @@ final class PlexManagerImportService
     /** @return array{servers: int, users: int, customers: int, subscriptions: int, skipped: int, parsed: array{servers: int, users: int}, errors: array<int, string>} */
     public function importFromSqlFile(string $filePath, int $tenantId): array
     {
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(300);
+
         $sql = file_get_contents($filePath);
         if ($sql === false || $sql === '') {
             return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.']);
