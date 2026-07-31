@@ -9,7 +9,7 @@
         "ext-pdo": "*",
         "ext-openssl": "*",
         "ext-mbstring": "*",
-        "firebase/php-jwt": "^6.10",
+        "firebase/php-jwt": "^7.0",
         "phpmailer/phpmailer": "^6.9",
         "vlucas/phpdotenv": "^5.6",
         "ramsey/uuid": "^4.7",
