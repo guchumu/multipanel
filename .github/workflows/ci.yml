@@ -57,6 +57,19 @@ jobs:
           echo "DB_DATABASE=multipanel_test" >> .env
           echo "DB_USERNAME=root" >> .env
           echo "DB_PASSWORD=root" >> .env
+          echo "AUTO_MIGRATE=false" >> .env
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MySQL not ready"
+          exit 1
 
       - name: Import schema
         run: mysql -h127.0.0.1 -uroot -proot multipanel_test < database/schema.sql
@@ -67,10 +80,21 @@ jobs:
         run: composer validate --strict
 
       - name: PHP syntax check
-        run: find app core -name "*.php" -print0 | xargs -0 -n1 php -l
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find app core -type f -name '*.php' -print0)
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit --colors=always
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: multipanel_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+          AUTO_MIGRATE: 'false'
 
   lint:
     runs-on: ubuntu-latest
