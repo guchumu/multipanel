@@ -101,11 +101,15 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
                 body: JSON.stringify({ telegram_chat_id: input.value }),
             });
-            if (!res.ok) alert('Error al guardar Telegram');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                alert(data.error || data.message || 'Error al guardar Telegram');
+            }
         }
     });
 

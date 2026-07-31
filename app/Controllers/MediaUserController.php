@@ -188,20 +188,29 @@ class MediaUserController extends Controller
 
     public function updateTelegram(Request $request, string $uuid): Response
     {
-        $user = $this->mediaUsers->findByUuid($uuid);
-        if ($user === null) {
-            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        try {
+            $user = $this->mediaUsers->findByUuid($uuid);
+            if ($user === null) {
+                return $this->json(['error' => 'Usuario no encontrado'], 404);
+            }
+
+            $this->mediaUsers->ensureTelegramChatIdColumn();
+
+            $chatId = trim((string) $request->input('telegram_chat_id', ''));
+            $user->telegram_chat_id = $chatId !== '' ? $chatId : null;
+            $user->save();
+
+            return $this->json([
+                'success' => true,
+                'telegram_chat_id' => $user->telegram_chat_id,
+                'message' => 'Telegram actualizado.',
+            ]);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        $chatId = trim((string) $request->input('telegram_chat_id', ''));
-        $user->telegram_chat_id = $chatId !== '' ? $chatId : null;
-        $user->save();
-
-        return $this->json([
-            'success' => true,
-            'telegram_chat_id' => $user->telegram_chat_id,
-            'message' => 'Telegram actualizado.',
-        ]);
     }
 
     public function messages(Request $request, string $uuid): Response

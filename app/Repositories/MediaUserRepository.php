@@ -180,6 +180,36 @@ class MediaUserRepository
         return $cache[$key];
     }
 
+    public function ensureTelegramChatIdColumn(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+
+        if (!$this->hasTelegramChatIdColumn()) {
+            try {
+                (new \Core\Updater())->runMigrations();
+            } catch (\Throwable) {
+                // Continue with direct ALTER if migrations fail.
+            }
+        }
+
+        if (!$this->hasTelegramChatIdColumn()) {
+            try {
+                Database::getInstance()->pdo()->exec(
+                    'ALTER TABLE `media_users` ADD COLUMN `telegram_chat_id` VARCHAR(50) NULL AFTER `email`'
+                );
+            } catch (\Throwable $e) {
+                if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+                    throw $e;
+                }
+            }
+        }
+
+        $ensured = true;
+    }
+
     public function backfillMissingServerIds(int $tenantId): int
     {
         $db = Database::getInstance();
