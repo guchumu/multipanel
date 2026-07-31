@@ -35,7 +35,6 @@ class ServerController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $this->sync->refreshStaleServers($tenantId, 10);
 
         return $this->view('servers.index', [
             'title' => 'Servidores',
@@ -136,11 +135,6 @@ class ServerController extends Controller
         $server = $this->servers->findByUuid($uuid);
         if ($server === null) {
             return $this->redirect('/servers');
-        }
-
-        if ($server->status !== 'online') {
-            $this->sync->sync($server);
-            $server = $this->servers->findByUuid($uuid) ?? $server;
         }
 
         $db = \Core\Database::getInstance();
@@ -266,11 +260,10 @@ class ServerController extends Controller
             return $this->json(['error' => 'Servidor no encontrado'], 404);
         }
 
-        $this->sync->sync($server);
-        $debug = $this->sync->lastDebug() ?? $this->connectionDebug->diagnose($server);
+        $debug = $this->sync->runFullDiagnose($server);
 
         return $this->json([
-            'success' => $server->status === 'online',
+            'success' => !empty($debug['connected']),
             'status' => $server->status,
             'last_error' => $server->last_error,
             'debug' => $debug,

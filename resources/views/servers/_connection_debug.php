@@ -12,6 +12,11 @@ if (empty($debug)) {
         </span>
     </div>
     <div class="card-body">
+        <?php if (!empty($debug['lightweight'])): ?>
+        <div class="alert alert-secondary py-2 small mb-3">
+            Resumen del último intento. Pulsa el botón <strong>Debug</strong> para analizar todas las URLs.
+        </div>
+        <?php endif; ?>
         <div class="row g-3 mb-3">
             <div class="col-md-6">
                 <dl class="mb-0 small">

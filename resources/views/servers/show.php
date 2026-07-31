@@ -21,12 +21,10 @@
     </div>
 </div>
 
-<?php if ($server->status !== 'online'): ?>
+<?php if ($server->status !== 'online' && $server->last_error): ?>
 <div class="alert alert-warning">
-    <strong>Servidor offline.</strong> Se ha intentado reconectar automáticamente.
-    <?php if ($server->last_error): ?>
-    <div class="mt-1"><?= e($server->last_error) ?></div>
-    <?php endif; ?>
+    <strong>Servidor offline.</strong> <?= e($server->last_error) ?>
+    <div class="small mt-1">Usa <strong>Sincronizar</strong> o <strong>Debug</strong> para reintentar manualmente.</div>
 </div>
 <?php endif; ?>
 

@@ -69,7 +69,7 @@ final class ServerSyncService
             $this->lastUserSyncStats = $userStats;
             $this->recordStats($server);
             $this->recordActiveSessions($server, $sessions);
-            $this->persistDebug($server, true);
+            $this->persistDebugLight($server, true);
 
             Logger::info('Server synced', ['server_id' => $server->id, 'users' => $userStats]);
             return true;
@@ -84,22 +84,38 @@ final class ServerSyncService
         $server->last_error = $error;
         $server->last_check_at = now()->format('Y-m-d H:i:s');
         $this->refreshDbCounts($server);
-        $this->persistDebug($server, false, $error);
+        $this->persistDebugLight($server, false, $error);
         $server->save();
 
         Logger::error('Server sync failed', ['server_id' => $server->id, 'error' => $error]);
         return false;
     }
 
-    private function persistDebug(Server $server, bool $connected, ?string $overrideError = null): void
+    private function persistDebugLight(Server $server, bool $connected, ?string $overrideError = null): void
     {
-        $debug = $this->debugService->diagnose($server);
-        $debug['connected'] = $connected;
-        if ($overrideError !== null) {
-            $debug['final_error'] = $overrideError;
-        }
+        $debug = [
+            'checked_at' => now()->format('Y-m-d H:i:s'),
+            'server_id' => (int) $server->id,
+            'server_name' => (string) $server->name,
+            'type' => (string) $server->type,
+            'status' => (string) $server->status,
+            'configured_url' => $server->fullUrl(),
+            'machine_id' => (string) ($server->machine_id ?? ''),
+            'has_token' => trim((string) ($server->token ?? '')) !== '',
+            'connected' => $connected,
+            'final_error' => $overrideError ?? $server->last_error,
+            'lightweight' => true,
+        ];
         $this->lastDebug = $debug;
         $this->debugService->persistDebug($server, $debug);
+    }
+
+    public function runFullDiagnose(Server $server): array
+    {
+        $debug = $this->debugService->diagnose($server);
+        $this->lastDebug = $debug;
+        $this->debugService->persistDebug($server, $debug);
+        return $debug;
     }
 
     /** @return array{imported: int, updated: int, total: int} */
@@ -325,15 +341,15 @@ final class ServerSyncService
 
     private function needsRefresh(Server $server): bool
     {
-        if ($server->status !== 'online') {
-            return true;
-        }
-
         if ($server->last_check_at === null) {
             return true;
         }
 
         $interval = max(1, (int) ($server->check_interval_minutes ?? 5));
+        if ($server->status !== 'online') {
+            $interval = max($interval, 5);
+        }
+
         $checkedAt = strtotime((string) $server->last_check_at);
 
         return $checkedAt === false || $checkedAt < (time() - ($interval * 60));

@@ -6,7 +6,6 @@ namespace App\Controllers;
 
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
-use App\Services\ServerSyncService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Request;
@@ -27,7 +26,6 @@ class ActivityController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        (new ServerSyncService())->refreshStaleServers($tenantId, 10);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
 

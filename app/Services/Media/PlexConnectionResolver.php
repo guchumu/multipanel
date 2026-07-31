@@ -15,17 +15,28 @@ use Core\Logger;
 final class PlexConnectionResolver
 {
     /** @return array{endpoint: array{url: string, port: int, ssl: bool}, error: ?string, tried: array<int, string>} */
-    public function resolve(Server $server): array
+    public function resolve(Server $server, bool $quick = true): array
     {
         $token = trim((string) ($server->token ?? ''));
         $candidates = $this->buildCandidates($server);
         $tried = [];
         $lastError = 'No se pudo conectar al servidor Plex.';
+        $maxProbes = $quick ? 4 : 50;
+        $probes = 0;
 
         foreach ($candidates as $endpoint) {
+            if ($probes >= $maxProbes) {
+                break;
+            }
+
+            if ($quick && $this->isLocalEndpoint($endpoint)) {
+                continue;
+            }
+
             $label = ($endpoint['ssl'] ? 'https' : 'http') . "://{$endpoint['url']}:{$endpoint['port']}";
             $tried[] = $label;
-            $error = $this->probe($endpoint, $token);
+            $error = $this->probe($endpoint, $token, $quick);
+            $probes++;
 
             if ($error === null) {
                 return ['endpoint' => $endpoint, 'error' => null, 'tried' => $tried];
@@ -61,7 +72,7 @@ final class PlexConnectionResolver
             $scheme = $endpoint['ssl'] ? 'https' : 'http';
             $label = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}/";
             $start = microtime(true);
-            $error = $this->probe($endpoint, $token);
+            $error = $this->probe($endpoint, $token, false);
             $probes[] = [
                 'url' => $label,
                 'ok' => $error === null,
@@ -352,13 +363,17 @@ final class PlexConnectionResolver
     }
 
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
-    private function probe(array $endpoint, string $token): ?string
+    private function probe(array $endpoint, string $token, bool $quick = true): ?string
     {
         $scheme = $endpoint['ssl'] ? 'https' : 'http';
         $uri = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}/";
 
         try {
-            $client = new Client(['timeout' => 12, 'connect_timeout' => 8, 'verify' => false]);
+            $client = new Client([
+                'timeout' => $quick ? 4 : 12,
+                'connect_timeout' => $quick ? 2 : 8,
+                'verify' => false,
+            ]);
             $headers = [
                 'Accept' => 'application/xml',
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
@@ -384,5 +399,14 @@ final class PlexConnectionResolver
         } catch (GuzzleException $e) {
             return $e->getMessage();
         }
+    }
+
+    /** @param array{url: string, port: int, ssl: bool} $endpoint */
+    private function isLocalEndpoint(array $endpoint): bool
+    {
+        $host = strtolower($endpoint['url']);
+        return str_contains($host, '192.168.')
+            || str_contains($host, '10.')
+            || str_starts_with($host, '172.');
     }
 }
