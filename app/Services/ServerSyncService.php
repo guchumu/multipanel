@@ -33,6 +33,9 @@ final class ServerSyncService
 
             if (!$media->testConnection()) {
                 $server->status = 'offline';
+                $server->last_error = $media instanceof PlexService
+                    ? ($media->getLastError() ?? 'Conexión fallida')
+                    : 'Conexión fallida';
                 $server->last_check_at = now()->format('Y-m-d H:i:s');
                 $server->save();
                 return false;

@@ -32,29 +32,59 @@ class ImportController extends Controller
     public function upload(Request $request): Response
     {
         $file = $request->file('file');
-        if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            Session::getInstance()->flash('error', 'Archivo no válido.');
+        if (!$file || !isset($file['error'])) {
+            Session::getInstance()->flash('error', 'No se recibió ningún archivo.');
             return $this->redirect('/import');
         }
 
-        $type = $request->input('type', 'csv');
+        $uploadError = (int) $file['error'];
+        if ($uploadError !== UPLOAD_ERR_OK) {
+            Session::getInstance()->flash('error', $this->uploadErrorMessage($uploadError));
+            return $this->redirect('/import');
+        }
+
+        $type = (string) $request->input('type', 'csv');
+        $originalName = strtolower((string) ($file['name'] ?? ''));
+        if ($type !== 'plex_manager' && (str_ends_with($originalName, '.sql') || str_contains($originalName, 'plex_manager'))) {
+            $type = 'plex_manager';
+        }
+
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $tmpPath = $file['tmp_name'];
+        $tmpPath = (string) $file['tmp_name'];
 
         if ($type === 'plex_manager') {
             $result = $this->plexManager->importFromSqlFile($tmpPath, $tenantId);
+            $parsed = $result['parsed'] ?? ['servers' => 0, 'users' => 0];
+
+            if (($parsed['servers'] ?? 0) === 0 && ($parsed['users'] ?? 0) === 0) {
+                Session::getInstance()->flash('error', 'El SQL no contenía tablas servers/users de plex_manager (0 filas leídas). Comprueba que sea el export phpMyAdmin correcto.');
+                if (!empty($result['errors'])) {
+                    Session::getInstance()->flash('import_errors', implode("\n", array_slice($result['errors'], 0, 15)));
+                }
+                return $this->redirect('/import');
+            }
+
             $msg = sprintf(
-                'Migración plex_manager: %d servidores, %d usuarios, %d clientes, %d suscripciones. Omitidos/actualizados: %d.',
+                'Migración plex_manager: leídas %d filas servers / %d users del SQL → importados %d servidores, %d usuarios, %d clientes, %d suscripciones. Omitidos/actualizados: %d.',
+                $parsed['servers'],
+                $parsed['users'],
                 $result['servers'],
                 $result['users'],
                 $result['customers'],
                 $result['subscriptions'],
                 $result['skipped']
             );
+
+            if ($result['servers'] === 0 && $result['users'] === 0 && $result['skipped'] === 0) {
+                Session::getInstance()->flash('error', $msg . ' Revisa errores abajo.');
+            } else {
+                Session::getInstance()->flash('success', $msg);
+            }
+
             if (!empty($result['errors'])) {
                 Session::getInstance()->flash('import_errors', implode("\n", array_slice($result['errors'], 0, 15)));
             }
-            Session::getInstance()->flash('success', $msg);
+
             return $this->redirect('/import');
         }
 
@@ -80,5 +110,15 @@ class ImportController extends Controller
         echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,notes\n";
         echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,\n";
         exit;
+    }
+
+    private function uploadErrorMessage(int $code): string
+    {
+        return match ($code) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Archivo demasiado grande. Sube el SQL por FTP o aumenta upload_max_filesize/post_max_size en PHP (Plesk).',
+            UPLOAD_ERR_PARTIAL => 'La subida se interrumpió. Vuelve a intentarlo.',
+            UPLOAD_ERR_NO_FILE => 'No seleccionaste ningún archivo.',
+            default => 'Error al subir el archivo (código ' . $code . ').',
+        };
     }
 }

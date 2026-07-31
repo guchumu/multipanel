@@ -10,6 +10,8 @@ use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\MediaDiscoveryService;
+use App\Services\Media\PlexService;
+use App\Services\Media\ServerEndpoint;
 use App\Services\ServerSyncService;
 use Core\Controller;
 use Core\Request;
@@ -55,6 +57,11 @@ class ServerController extends Controller
         ]);
 
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $endpoint = ServerEndpoint::normalize(
+            $data['url'],
+            (int) $data['port'],
+            (bool) $request->input('ssl')
+        );
 
         $server = new Server([
             'tenant_id' => $tenantId,
@@ -62,9 +69,9 @@ class ServerController extends Controller
             'name' => $data['name'],
             'description' => $request->input('description'),
             'type' => $data['type'],
-            'url' => $data['url'],
-            'port' => (int) $data['port'],
-            'ssl' => $request->input('ssl') ? 1 : 0,
+            'url' => $endpoint['url'],
+            'port' => $endpoint['port'],
+            'ssl' => $endpoint['ssl'] ? 1 : 0,
             'token' => $request->input('token'),
             'api_key' => $request->input('api_key'),
             'location' => $request->input('location'),
@@ -79,7 +86,7 @@ class ServerController extends Controller
         $stats = $this->sync->lastUserSyncStats();
         $msg = $synced
             ? sprintf('Servidor creado. %d usuarios importados, %d actualizados.', $stats['imported'], $stats['updated'])
-            : 'Servidor creado. Sincronización fallida — usa el botón Sync en la lista.';
+            : 'Servidor creado pero OFFLINE: ' . ($server->last_error ?? 'no se pudo conectar. Usa URL pública (ej. tunel/mooo.com), no IP 192.168.x.');
 
         Session::getInstance()->flash('success', $msg);
         return $this->redirect('/servers/' . $server->uuid);
@@ -151,8 +158,9 @@ class ServerController extends Controller
             'status' => $server->status,
             'message' => $success
                 ? sprintf('Sync OK: %d usuarios nuevos, %d actualizados (%d total).', $stats['imported'], $stats['updated'], $stats['total'])
-                : 'Error en sincronización.',
+                : 'Sync fallido: ' . ($server->last_error ?? 'no se pudo conectar al servidor.'),
             'users' => $stats,
+            'last_error' => $server->last_error,
         ]);
     }
 
@@ -168,7 +176,7 @@ class ServerController extends Controller
 
         return $this->json([
             'connected' => $connected,
-            'message' => $connected ? 'Conexión exitosa.' : 'No se pudo conectar.',
+            'message' => $connected ? 'Conexión exitosa.' : ($media instanceof PlexService ? ($media->getLastError() ?? 'No se pudo conectar.') : 'No se pudo conectar.'),
         ]);
     }
 

@@ -20,12 +20,12 @@ final class PlexManagerImportService
     ) {
     }
 
-    /** @return array{servers: int, users: int, customers: int, subscriptions: int, skipped: int, errors: array<int, string>} */
+    /** @return array{servers: int, users: int, customers: int, subscriptions: int, skipped: int, parsed: array{servers: int, users: int}, errors: array<int, string>} */
     public function importFromSqlFile(string $filePath, int $tenantId): array
     {
         $sql = file_get_contents($filePath);
         if ($sql === false || $sql === '') {
-            return $this->result(0, 0, 0, 0, 0, ['No se pudo leer el archivo SQL.']);
+            return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.']);
         }
 
         $db = Database::getInstance();
@@ -33,19 +33,23 @@ final class PlexManagerImportService
         $serverMap = [];
 
         $legacyServers = SqlInsertParser::extractTable($sql, 'servers');
+        $legacyUsers = SqlInsertParser::extractTable($sql, 'users');
+        $parseStats = ['servers' => count($legacyServers), 'users' => count($legacyUsers)];
         $serversImported = 0;
 
         foreach ($legacyServers as $legacy) {
             try {
                 $parsed = $this->parseServerEndpoint((string) ($legacy['public_ip'] ?? ''));
                 if ($parsed === null) {
-                    $errors[] = 'Servidor ' . ($legacy['server_name'] ?? '?') . ': URL pública inválida';
+                    $errors[] = 'Servidor ' . ($legacy['server_name'] ?? '?') . ': URL pública inválida (' . ($legacy['public_ip'] ?? 'vacía') . ')';
                     continue;
                 }
 
+                $token = (string) ($legacy['token'] ?? '');
+                $machineId = (string) ($legacy['machine_id'] ?? '');
                 $existing = $db->fetchOne(
-                    'SELECT id FROM servers WHERE tenant_id = ? AND machine_id = ? AND deleted_at IS NULL LIMIT 1',
-                    [$tenantId, $legacy['machine_id'] ?? '']
+                    'SELECT id FROM servers WHERE tenant_id = ? AND deleted_at IS NULL AND (machine_id = ? OR (token != "" AND token = ?)) LIMIT 1',
+                    [$tenantId, $machineId, $token]
                 );
 
                 if ($existing) {
@@ -76,7 +80,6 @@ final class PlexManagerImportService
         }
 
         $planId = $this->ensureLegacyPlan($tenantId);
-        $legacyUsers = SqlInsertParser::extractTable($sql, 'users');
         $usersImported = 0;
         $customersImported = 0;
         $subscriptionsImported = 0;
@@ -212,7 +215,7 @@ final class PlexManagerImportService
             'customers' => $customersImported,
         ]);
 
-        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $errors);
+        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors);
     }
 
     /** @return array{host: string, port: int, ssl: bool}|null */
@@ -290,8 +293,8 @@ final class PlexManagerImportService
         ]);
     }
 
-    /** @param array<int, string> $errors */
-    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $errors): array
+    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors */
+    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors): array
     {
         return [
             'servers' => $servers,
@@ -299,6 +302,7 @@ final class PlexManagerImportService
             'customers' => $customers,
             'subscriptions' => $subscriptions,
             'skipped' => $skipped,
+            'parsed' => $parsed,
             'errors' => $errors,
         ];
     }

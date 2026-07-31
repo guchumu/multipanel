@@ -81,7 +81,8 @@
                 </div>
                 <div class="col-md-8">
                     <label class="form-label">URL / Host *</label>
-                    <input type="text" name="url" id="fieldUrl" class="form-control" placeholder="192.168.1.100" required>
+                    <input type="text" name="url" id="fieldUrl" class="form-control" placeholder="lunasea.mooo.com" required>
+                    <div class="form-text">Solo hostname o dominio público. No uses <code>http://</code> ni IPs <code>192.168.x</code> si el panel está en un VPS remoto.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Puerto *</label>
@@ -195,7 +196,14 @@ document.getElementById('btnDiscover').addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
             body: JSON.stringify(body)
         });
-        const data = await res.json();
+        let data;
+        try {
+            data = await res.json();
+        } catch (e) {
+            errBox.textContent = 'Respuesta inválida del servidor (¿sesión caducada?). Recarga la página.';
+            errBox.classList.remove('d-none');
+            return;
+        }
         if (!res.ok || data.error) {
             errBox.textContent = data.error || 'Error al buscar servidores';
             errBox.classList.remove('d-none');

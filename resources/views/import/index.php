@@ -1,6 +1,10 @@
 <?php ob_start(); ?>
 <h4 class="mb-4">Importar / Exportar usuarios</h4>
 
+<?php use Core\Session; if ($errs = Session::getInstance()->getFlash('import_errors')): ?>
+<div class="alert alert-danger"><pre class="mb-0 small"><?= e($errs) ?></pre></div>
+<?php endif; ?>
+
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card border-0 shadow-sm border-primary mb-3">
@@ -34,7 +38,7 @@
                     <a href="/import/template" class="btn btn-outline-secondary ms-2">Plantilla CSV</a>
                 </form>
                 <?php use Core\Session; if ($errs = Session::getInstance()->getFlash('import_errors')): ?>
-                <pre class="mt-3 small text-danger bg-light p-2 rounded"><?= e($errs) ?></pre>
+                <pre class="mt-3 small text-danger bg-light p-2 rounded d-none"><?= e($errs) ?></pre>
                 <?php endif; ?>
             </div>
         </div>

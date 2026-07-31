@@ -18,12 +18,16 @@ final class PlexService
 {
     private Client $client;
 
+    private ?string $lastError = null;
+
     public function __construct(
         private Server $server,
     ) {
         $this->client = new Client([
             'base_uri' => $this->server->fullUrl(),
             'timeout' => 30,
+            'connect_timeout' => 15,
+            'verify' => false,
             'headers' => [
                 'Accept' => 'application/json',
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
@@ -31,6 +35,11 @@ final class PlexService
                 'X-Plex-Version' => '1.0.0',
             ],
         ]);
+    }
+
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
     }
 
     /** @return array<string, mixed>|null */
@@ -53,7 +62,8 @@ final class PlexService
                 'name' => (string) ($xml['friendlyName'] ?? $this->server->name),
             ];
         } catch (GuzzleException $e) {
-            Logger::error('Plex server info failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
+            $this->lastError = $e->getMessage();
+            Logger::error('Plex server info failed', ['server_id' => $this->server->id, 'error' => $e->getMessage(), 'url' => $this->server->fullUrl()]);
             return null;
         }
     }
@@ -217,7 +227,12 @@ final class PlexService
 
     public function testConnection(): bool
     {
-        return $this->getServerInfo() !== null;
+        $this->lastError = null;
+        $ok = $this->getServerInfo() !== null;
+        if (!$ok && $this->lastError === null) {
+            $this->lastError = 'El servidor Plex no respondió. Comprueba URL pública (no 192.168.x), puerto y token.';
+        }
+        return $ok;
     }
 
     /** @return array<string, string> */

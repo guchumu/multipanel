@@ -9,6 +9,56 @@ namespace App\Services\Import;
  */
 final class SqlInsertParser
 {
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public static function extractTable(string $sql, string $table): array
+    {
+        if (!preg_match(
+            '/INSERT\s+INTO\s+`' . preg_quote($table, '/') . '`\s*\(([^)]+)\)\s*VALUES\s*(.+?);\s*(?:\r?\n\s*--|\r?\n\s*CREATE\s+TABLE|\r?\n\s*INSERT\s+INTO|\r?\n\s*ALTER\s+TABLE)/s',
+            $sql,
+            $match
+        )) {
+            return [];
+        }
+
+        $columns = array_map(static fn (string $c) => trim($c, " `\t\n\r"), explode(',', $match[1]));
+        $valuesBlock = trim($match[2]);
+        $result = [];
+
+        foreach (preg_split('/\r\n|\n|\r/', $valuesBlock) as $line) {
+            $line = trim($line);
+            if ($line === '' || !str_starts_with($line, '(')) {
+                continue;
+            }
+
+            $line = rtrim($line, ',;');
+            if (str_starts_with($line, '(') && str_ends_with($line, ')')) {
+                $line = substr($line, 1, -1);
+            }
+
+            $values = self::parseRow($line);
+            if (count($values) !== count($columns)) {
+                continue;
+            }
+
+            $result[] = array_combine($columns, $values);
+        }
+
+        if ($result !== []) {
+            return $result;
+        }
+
+        foreach (self::splitRows($valuesBlock) as $row) {
+            $values = self::parseRow($row);
+            if (count($values) === count($columns)) {
+                $result[] = array_combine($columns, $values);
+            }
+        }
+
+        return $result;
+    }
+
     /** @return array<int, string> */
     public static function splitRows(string $valuesBlock): array
     {
@@ -36,7 +86,9 @@ final class SqlInsertParser
 
             if ($ch === "'") {
                 $inString = !$inString;
-                $current .= $ch;
+                if ($depth > 0) {
+                    $current .= $ch;
+                }
                 continue;
             }
 
@@ -115,7 +167,7 @@ final class SqlInsertParser
             }
         }
 
-        if ($current !== '' || str_ends_with($row, ',')) {
+        if ($current !== '') {
             $values[] = self::castToken(trim($current));
         }
 
@@ -138,46 +190,5 @@ final class SqlInsertParser
         }
 
         return $token;
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    public static function extractTable(string $sql, string $table): array
-    {
-        if (!preg_match(
-            '/INSERT INTO `' . preg_quote($table, '/') . '`\s*\(([^)]+)\)\s*VALUES\s*(.+?);\s*(?:--|\nCREATE|\nINSERT)/s',
-            $sql,
-            $match
-        )) {
-            return [];
-        }
-
-        $columns = array_map(static fn (string $c) => trim($c, " `\t\n\r"), explode(',', $match[1]));
-        $valuesBlock = trim($match[2]);
-        $result = [];
-
-        foreach (preg_split('/\r\n|\n|\r/', $valuesBlock) as $line) {
-            $line = trim($line);
-            if ($line === '' || !str_starts_with($line, '(')) {
-                continue;
-            }
-
-            $line = rtrim($line, ',;');
-            if (str_ends_with($line, ')')) {
-                $line = substr($line, 1, -1);
-            } else {
-                $line = ltrim($line, '(');
-            }
-
-            $values = self::parseRow($line);
-            if (count($values) !== count($columns)) {
-                continue;
-            }
-
-            $result[] = array_combine($columns, $values);
-        }
-
-        return $result;
     }
 }
