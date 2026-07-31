@@ -14,46 +14,50 @@ final class SqlInsertParser
      */
     public static function extractTable(string $sql, string $table): array
     {
-        if (!preg_match(
-            '/INSERT\s+INTO\s+`' . preg_quote($table, '/') . '`\s*\(([^)]+)\)\s*VALUES\s*(.+?);\s*(?:\r?\n\s*--|\r?\n\s*CREATE\s+TABLE|\r?\n\s*INSERT\s+INTO|\r?\n\s*ALTER\s+TABLE)/s',
-            $sql,
-            $match
-        )) {
-            return [];
-        }
-
-        $columns = array_map(static fn (string $c) => trim($c, " `\t\n\r"), explode(',', $match[1]));
-        $valuesBlock = trim($match[2]);
         $result = [];
+        $offset = 0;
+        $marker = 'INSERT INTO `' . $table . '`';
 
-        foreach (preg_split('/\r\n|\n|\r/', $valuesBlock) as $line) {
-            $line = trim($line);
-            if ($line === '' || !str_starts_with($line, '(')) {
+        while (($pos = stripos($sql, $marker, $offset)) !== false) {
+            $cursor = $pos + strlen($marker);
+            $cursor = self::skipWhitespace($sql, $cursor);
+
+            if (($sql[$cursor] ?? '') !== '(') {
+                $offset = $pos + 1;
                 continue;
             }
 
-            $line = rtrim($line, ',;');
-            if (str_starts_with($line, '(') && str_ends_with($line, ')')) {
-                $line = substr($line, 1, -1);
+            $columnsEnd = self::findClosingParen($sql, $cursor);
+            if ($columnsEnd === null) {
+                break;
             }
 
-            $values = self::parseRow($line);
-            if (count($values) !== count($columns)) {
+            $columns = array_map(
+                static fn (string $c) => trim($c, " `\t\n\r"),
+                explode(',', substr($sql, $cursor + 1, $columnsEnd - $cursor - 1))
+            );
+
+            $valuesPos = stripos($sql, 'VALUES', $columnsEnd);
+            if ($valuesPos === false || $valuesPos > $columnsEnd + 32) {
+                $offset = $pos + 1;
                 continue;
             }
 
-            $result[] = array_combine($columns, $values);
-        }
-
-        if ($result !== []) {
-            return $result;
-        }
-
-        foreach (self::splitRows($valuesBlock) as $row) {
-            $values = self::parseRow($row);
-            if (count($values) === count($columns)) {
-                $result[] = array_combine($columns, $values);
+            $valuesStart = self::skipWhitespace($sql, $valuesPos + 6);
+            $statementEnd = self::findStatementEnd($sql, $valuesStart);
+            if ($statementEnd === null) {
+                break;
             }
+
+            $valuesBlock = trim(substr($sql, $valuesStart, $statementEnd - $valuesStart));
+            foreach (self::splitRows($valuesBlock) as $row) {
+                $values = self::parseRow($row);
+                if (count($values) === count($columns)) {
+                    $result[] = array_combine($columns, $values);
+                }
+            }
+
+            $offset = $statementEnd + 1;
         }
 
         return $result;
@@ -73,13 +77,17 @@ final class SqlInsertParser
             $ch = $valuesBlock[$i];
 
             if ($escape) {
-                $current .= $ch;
+                if ($depth > 0) {
+                    $current .= $ch;
+                }
                 $escape = false;
                 continue;
             }
 
             if ($ch === '\\' && $inString) {
-                $current .= $ch;
+                if ($depth > 0) {
+                    $current .= $ch;
+                }
                 $escape = true;
                 continue;
             }
@@ -172,6 +180,99 @@ final class SqlInsertParser
         }
 
         return $values;
+    }
+
+    private static function skipWhitespace(string $sql, int $offset): int
+    {
+        $len = strlen($sql);
+        while ($offset < $len && ctype_space($sql[$offset])) {
+            $offset++;
+        }
+
+        return $offset;
+    }
+
+    private static function findClosingParen(string $sql, int $openPos): ?int
+    {
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+        $len = strlen($sql);
+
+        for ($i = $openPos; $i < $len; $i++) {
+            $ch = $sql[$i];
+
+            if ($escape) {
+                $escape = false;
+                continue;
+            }
+
+            if ($ch === '\\' && $inString) {
+                $escape = true;
+                continue;
+            }
+
+            if ($ch === "'") {
+                $inString = !$inString;
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth--;
+                if ($depth === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static function findStatementEnd(string $sql, int $start): ?int
+    {
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+        $len = strlen($sql);
+
+        for ($i = $start; $i < $len; $i++) {
+            $ch = $sql[$i];
+
+            if ($escape) {
+                $escape = false;
+                continue;
+            }
+
+            if ($ch === '\\' && $inString) {
+                $escape = true;
+                continue;
+            }
+
+            if ($ch === "'") {
+                $inString = !$inString;
+                continue;
+            }
+
+            if ($inString) {
+                continue;
+            }
+
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth--;
+            } elseif ($ch === ';' && $depth === 0) {
+                return $i;
+            }
+        }
+
+        return null;
     }
 
     private static function unescapeString(string $value): string
