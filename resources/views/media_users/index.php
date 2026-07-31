@@ -58,12 +58,13 @@ ob_start();
                     <th>Estado</th>
                     <th>Streams</th>
                     <th>Expira</th>
+                    <th>Telegram</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($users)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="8" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
                 <tr>
@@ -81,6 +82,10 @@ ob_start();
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
+                    </td>
+                    <td class="small" style="min-width: 120px;">
+                        <input type="text" class="form-control form-control-sm telegram-input" data-uuid="<?= e($u->uuid) ?>"
+                               value="<?= e($u->telegram_chat_id ?? '') ?>" placeholder="Chat ID">
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
@@ -117,12 +122,24 @@ document.querySelectorAll('.expires-input').forEach(input => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
             },
-            body: JSON.stringify({ expires_at: this.value })
+            body: JSON.stringify({ expires_at: this.value }),
         });
-        const data = await res.json();
-        if (!data.success) alert(data.error || 'Error al guardar fecha');
+        if (!res.ok) alert('Error al guardar fecha');
+    });
+});
+document.querySelectorAll('.telegram-input').forEach(input => {
+    input.addEventListener('change', async function() {
+        const res = await fetch(`/media-users/${this.dataset.uuid}/telegram`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+            },
+            body: JSON.stringify({ telegram_chat_id: this.value }),
+        });
+        if (!res.ok) alert('Error al guardar Telegram');
     });
 });
 </script>

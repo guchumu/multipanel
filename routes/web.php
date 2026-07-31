@@ -111,6 +111,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/suspend', [MediaUserController::class, 'suspend'], 'media_users.suspend', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/activate', [MediaUserController::class, 'activate'], 'media_users.activate', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/expires', [MediaUserController::class, 'updateExpires'], 'media_users.expires', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/telegram', [MediaUserController::class, 'updateTelegram'], 'media_users.telegram', [CsrfMiddleware::class]);
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);
 
     // Stats

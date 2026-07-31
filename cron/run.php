@@ -7,7 +7,7 @@ declare(strict_types=1);
  * MultiPanel ERP - Cron Job Runner
  *
  * Usage: php cron/run.php [task]
- * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, all
+ * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, expiry, all
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
@@ -17,6 +17,7 @@ use App\Services\BillingService;
 use App\Services\BackupService;
 use App\Services\JobProcessor;
 use App\Services\GdprService;
+use App\Services\Notifications\ExpiryNotificationService;
 use App\Services\ServerSyncService;
 use App\Repositories\ServerRepository;
 use Core\Database;
@@ -38,6 +39,7 @@ match ($task) {
     'jobs' => runJobs(),
     'gdpr' => runGdpr(),
     'cleanup' => runCleanup(),
+    'expiry' => runExpiryNotifications(),
     'all' => runAll(),
     default => echo "Unknown task: {$task}\n",
 };
@@ -49,8 +51,20 @@ function runAll(): void
     runAutomation();
     runBackup();
     runJobs();
+    runExpiryNotifications();
     runGdpr();
     runCleanup();
+}
+
+function runExpiryNotifications(): void
+{
+    echo "Sending expiry notifications...\n";
+    try {
+        $stats = (new ExpiryNotificationService())->run(1);
+        echo "  Checked: {$stats['checked']}, sent: {$stats['sent']}, skipped: {$stats['skipped']}, errors: {$stats['errors']}\n";
+    } catch (\Throwable $e) {
+        echo "  Expiry notifications failed: {$e->getMessage()}\n";
+    }
 }
 
 function runServerSync(): void

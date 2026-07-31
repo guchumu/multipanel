@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\Media\MediaDiscoveryService;
+use App\Services\Media\ServerEndpoint;
 use App\Services\ServerConnectionDebugService;
 use App\Services\ServerSyncService;
 use Core\Controller;

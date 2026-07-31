@@ -16,6 +16,7 @@ use Core\Model;
  * @property string $username
  * @property string $status
  * @property string|null $expires_at
+ * @property string|null $telegram_chat_id
  */
 class MediaUser extends Model
 {

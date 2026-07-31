@@ -84,6 +84,7 @@ class MediaUserController extends Controller
             'max_streams' => (int) ($request->input('max_streams') ?? 1),
             'max_devices' => (int) ($request->input('max_devices') ?? 5),
             'expires_at' => $request->input('expires_at') ?: null,
+            'telegram_chat_id' => trim((string) $request->input('telegram_chat_id', '')) ?: null,
             'notes' => $request->input('notes'),
         ]);
 
@@ -139,6 +140,24 @@ class MediaUserController extends Controller
             'success' => true,
             'expires_at' => $user->expires_at,
             'message' => 'Fecha de expiración actualizada.',
+        ]);
+    }
+
+    public function updateTelegram(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $chatId = trim((string) $request->input('telegram_chat_id', ''));
+        $user->telegram_chat_id = $chatId !== '' ? $chatId : null;
+        $user->save();
+
+        return $this->json([
+            'success' => true,
+            'telegram_chat_id' => $user->telegram_chat_id,
+            'message' => 'Telegram actualizado.',
         ]);
     }
 

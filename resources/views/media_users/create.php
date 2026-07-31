@@ -46,6 +46,11 @@
                     <label class="form-label">Fecha expiración</label>
                     <input type="datetime-local" name="expires_at" class="form-control">
                 </div>
+                <div class="col-md-6">
+                    <label class="form-label">Telegram Chat ID</label>
+                    <input type="text" name="telegram_chat_id" class="form-control" placeholder="Ej. 123456789">
+                    <div class="form-text">ID de chat de Telegram del usuario para avisos de caducidad.</div>
+                </div>
                 <div class="col-12">
                     <label class="form-label">Notas internas</label>
                     <textarea name="notes" class="form-control" rows="2"></textarea>
