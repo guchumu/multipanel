@@ -114,16 +114,77 @@ final class JellyfinService
                 return [];
             }
 
-            return array_map(fn ($session) => [
-                'title' => $session['NowPlayingItem']['Name'] ?? '',
-                'user' => $session['UserName'] ?? '',
-                'player' => $session['Client'] ?? '',
-                'state' => $session['PlayState']['IsPaused'] ?? false ? 'paused' : 'playing',
-            ], $data);
+            $sessions = [];
+            foreach ($data as $session) {
+                $item = $session['NowPlayingItem'] ?? null;
+                if (!is_array($item) || ($item['Name'] ?? '') === '') {
+                    continue;
+                }
+
+                $playState = $session['PlayState'] ?? [];
+                $transcoding = $session['TranscodingInfo'] ?? null;
+                $playMethodRaw = (string) ($playState['PlayMethod'] ?? '');
+                $playMethod = match (strtolower($playMethodRaw)) {
+                    'directplay', 'direct play' => 'direct_play',
+                    'directstream', 'direct stream' => 'direct_stream',
+                    'transcode' => 'transcode',
+                    default => $transcoding ? 'transcode' : 'direct_play',
+                };
+
+                $position = (int) ($playState['PositionTicks'] ?? 0);
+                $runtime = (int) ($item['RunTimeTicks'] ?? 0);
+                $progress = $runtime > 0 ? min(100, (int) round(($position / $runtime) * 100)) : 0;
+
+                $series = (string) ($item['SeriesName'] ?? '');
+                $season = $item['ParentIndexNumber'] ?? null;
+                $episode = $item['IndexNumber'] ?? null;
+                $name = (string) ($item['Name'] ?? '');
+
+                if ($series !== '' && $episode !== null) {
+                    $displayTitle = $series . ' · S' . ($season ?? '?') . 'E' . $episode;
+                    $subtitle = $name;
+                } else {
+                    $displayTitle = $name;
+                    $subtitle = null;
+                }
+
+                $sessions[] = [
+                    'title' => $displayTitle,
+                    'subtitle' => $subtitle,
+                    'user' => (string) ($session['UserName'] ?? ''),
+                    'player' => (string) ($session['Client'] ?? $session['DeviceName'] ?? ''),
+                    'platform' => (string) ($session['DeviceName'] ?? ''),
+                    'state' => !empty($playState['IsPaused']) ? 'paused' : 'playing',
+                    'media_type' => (string) ($item['Type'] ?? 'video'),
+                    'year' => (string) ($item['ProductionYear'] ?? ''),
+                    'play_method' => $playMethod,
+                    'video_decision' => $transcoding['VideoCodec'] ?? null,
+                    'audio_decision' => $transcoding['AudioCodec'] ?? null,
+                    'progress' => $progress,
+                    'thumb_url' => $this->itemImageUrl($item),
+                ];
+            }
+
+            return $sessions;
         } catch (GuzzleException $e) {
             Logger::error('Jellyfin get sessions failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
             return [];
         }
+    }
+
+    /** @param array<string, mixed> $item */
+    private function itemImageUrl(array $item): string
+    {
+        $itemId = $item['Id'] ?? null;
+        if ($itemId === null || $itemId === '') {
+            return '';
+        }
+
+        $base = rtrim($this->server->fullUrl(), '/');
+        $tag = isset($item['ImageTags']['Primary']) ? '&tag=' . rawurlencode((string) $item['ImageTags']['Primary']) : '';
+        $apiKey = trim((string) ($this->server->api_key ?? ''));
+
+        return "{$base}/Items/{$itemId}/Images/Primary?maxHeight=400{$tag}" . ($apiKey !== '' ? '&api_key=' . rawurlencode($apiKey) : '');
     }
 
     public function createUser(string $username, string $password): ?array

@@ -6,9 +6,12 @@ namespace App\Controllers;
 
 use App\Models\MediaUser;
 use App\Repositories\MediaUserRepository;
+use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
+use App\Services\MediaUserBulkService;
 use App\Services\PasswordService;
+use App\Services\SubscriptionPeriod;
 use App\Services\Notifications\NotificationService;
 use Core\Controller;
 use Core\Request;
@@ -23,9 +26,11 @@ class MediaUserController extends Controller
 {
     public function __construct(
         private MediaUserRepository $mediaUsers = new MediaUserRepository(),
+        private ServerRepository $servers = new ServerRepository(),
         private AuthService $auth = new AuthService(),
         private AuditService $audit = new AuditService(),
         private PasswordService $passwords = new PasswordService(),
+        private MediaUserBulkService $bulk = new MediaUserBulkService(),
         private NotificationService $notifications = new NotificationService(),
     ) {
     }
@@ -34,12 +39,15 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $status = $request->input('status');
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
 
         return $this->view('media_users.index', [
             'title' => 'Usuarios Media',
-            'users' => $this->mediaUsers->paginate($tenantId, $page, 20, $status),
+            'users' => $this->mediaUsers->paginate($tenantId, $page, 20, $status, $serverId),
+            'servers' => $this->servers->allByTenant($tenantId),
             'currentStatus' => $status,
+            'currentServerId' => $serverId,
         ]);
     }
 
@@ -141,5 +149,50 @@ class MediaUserController extends Controller
 
         Session::getInstance()->flash('success', 'Usuario eliminado.');
         return $this->redirect('/media-users');
+    }
+
+    public function bulkCreate(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        return $this->view('media_users.bulk', [
+            'title' => 'Añadir usuarios por email',
+            'servers' => $this->servers->allByTenant($tenantId),
+            'periods' => SubscriptionPeriod::options(),
+        ]);
+    }
+
+    public function bulkStore(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = (int) $request->input('server_id');
+        $period = (string) $request->input('period', '1m');
+        $emails = trim((string) $request->input('emails', ''));
+
+        if ($serverId <= 0) {
+            Session::getInstance()->flash('error', 'Selecciona un servidor.');
+            return $this->redirect('/media-users/bulk');
+        }
+
+        if ($emails === '') {
+            Session::getInstance()->flash('error', 'Introduce al menos un email.');
+            return $this->redirect('/media-users/bulk');
+        }
+
+        $result = $this->bulk->addEmailsToServer($tenantId, $serverId, $period, $emails);
+
+        $message = sprintf(
+            'Proceso completado: %d creados, %d actualizados, %d omitidos.',
+            $result['created'],
+            $result['updated'],
+            $result['skipped']
+        );
+
+        if ($result['errors'] !== []) {
+            $message .= ' Errores: ' . implode('; ', array_slice($result['errors'], 0, 5));
+        }
+
+        Session::getInstance()->flash('success', $message);
+        return $this->redirect('/media-users?server_id=' . $serverId);
     }
 }

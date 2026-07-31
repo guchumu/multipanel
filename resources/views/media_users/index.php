@@ -1,16 +1,48 @@
-<?php ob_start(); ?>
-<div class="d-flex justify-content-between align-items-center mb-4">
+<?php
+$queryBase = static function (?string $status, ?int $serverId) {
+    $params = [];
+    if ($status) {
+        $params['status'] = $status;
+    }
+    if ($serverId) {
+        $params['server_id'] = $serverId;
+    }
+    return $params !== [] ? '?' . http_build_query($params) : '';
+};
+
+ob_start();
+?>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Usuarios Media</h4>
-    <a href="/media-users/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo usuario</a>
+    <div class="d-flex gap-2">
+        <a href="/media-users/bulk" class="btn btn-outline-primary"><i class="bi bi-envelope-plus me-1"></i>Añadir emails</a>
+        <a href="/media-users/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo usuario</a>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
-        <div class="btn-group btn-group-sm">
-            <a href="/media-users" class="btn btn-outline-secondary <?= !$currentStatus ? 'active' : '' ?>">Todos</a>
-            <a href="/media-users?status=active" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
-            <a href="/media-users?status=suspended" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
-            <a href="/media-users?status=pending" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            <div class="btn-group btn-group-sm">
+                <a href="/media-users<?= e($queryBase(null, $currentServerId)) ?>" class="btn btn-outline-secondary <?= !$currentStatus ? 'active' : '' ?>">Todos</a>
+                <a href="/media-users<?= e($queryBase('active', $currentServerId)) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
+                <a href="/media-users<?= e($queryBase('suspended', $currentServerId)) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
+                <a href="/media-users<?= e($queryBase('pending', $currentServerId)) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
+            </div>
+            <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-auto">
+                <?php if ($currentStatus): ?>
+                <input type="hidden" name="status" value="<?= e($currentStatus) ?>">
+                <?php endif; ?>
+                <label class="small text-muted mb-0">Servidor:</label>
+                <select name="server_id" class="form-select form-select-sm" style="min-width: 180px;" onchange="this.form.submit()">
+                    <option value="">Todos</option>
+                    <?php foreach ($servers as $server): ?>
+                    <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>>
+                        <?= e($server->name) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
         </div>
     </div>
 </div>
@@ -22,6 +54,7 @@
                 <tr>
                     <th>Usuario</th>
                     <th>Email</th>
+                    <th>Servidor</th>
                     <th>Estado</th>
                     <th>Streams</th>
                     <th>Expira</th>
@@ -30,12 +63,19 @@
             </thead>
             <tbody>
                 <?php if (empty($users)): ?>
-                <tr><td colspan="6" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="7" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
                 <tr>
                     <td><?= e($u->display_name ?? $u->username) ?></td>
                     <td class="small"><?= e($u->email ?? '-') ?></td>
+                    <td class="small">
+                        <?php if ($u->server_name): ?>
+                        <span class="badge bg-light text-dark border"><?= e($u->server_name) ?></span>
+                        <?php else: ?>
+                        <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td><span class="badge bg-secondary"><?= e($u->status) ?></span></td>
                     <td><?= (int) $u->max_streams ?></td>
                     <td class="small">

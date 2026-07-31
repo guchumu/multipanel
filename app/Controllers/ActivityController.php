@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers;
+
+use App\Repositories\ServerRepository;
+use App\Services\AuthService;
+use App\Services\StreamingActivityService;
+use Core\Controller;
+use Core\Request;
+use Core\Response;
+
+/**
+ * Live streaming activity (now playing).
+ */
+class ActivityController extends Controller
+{
+    public function __construct(
+        private AuthService $auth = new AuthService(),
+        private StreamingActivityService $activity = new StreamingActivityService(),
+        private ServerRepository $servers = new ServerRepository(),
+    ) {
+    }
+
+    public function index(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        return $this->view('activity.index', [
+            'title' => 'En directo',
+            'servers' => $this->servers->allByTenant($tenantId),
+            'sessions' => $this->activity->getLiveSessions($tenantId, $serverId),
+            'currentServerId' => $serverId,
+        ]);
+    }
+
+    public function api(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        $sessions = $this->activity->getLiveSessions($tenantId, $serverId);
+
+        return $this->json([
+            'sessions' => $sessions,
+            'count' => count($sessions),
+        ]);
+    }
+}

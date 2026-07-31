@@ -12,6 +12,7 @@ $linkClass = static function (string $prefix) use ($currentPath): string {
     <li class="nav-item"><a class="<?= $linkClass('/dashboard') ?>" href="/dashboard"><i class="bi bi-speedometer2 me-2"></i><?= __('dashboard') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/stats') ?>" href="/stats"><i class="bi bi-bar-chart me-2"></i><?= __('stats') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/servers') ?>" href="/servers"><i class="bi bi-hdd-network me-2"></i><?= __('servers') ?></a></li>
+    <li class="nav-item"><a class="<?= $linkClass('/activity') ?>" href="/activity"><i class="bi bi-broadcast-pin me-2"></i>En directo</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/media-users') ?>" href="/media-users"><i class="bi bi-people me-2"></i><?= __('media_users') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/import') ?>" href="/import"><i class="bi bi-upload me-2"></i><?= __('import_export') ?></a></li>
     <li class="nav-item mt-3"><small class="text-muted px-3"><?= __('management') ?></small></li>

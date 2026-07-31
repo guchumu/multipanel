@@ -246,13 +246,10 @@ final class PlexService
             }
 
             $sessions = [];
-            foreach ($xml->Video ?? $xml->Track ?? [] as $session) {
-                $sessions[] = [
-                    'title' => (string) ($session['title'] ?? ''),
-                    'user' => (string) ($session->User['title'] ?? ''),
-                    'player' => (string) ($session->Player['title'] ?? ''),
-                    'state' => (string) ($session->Player['state'] ?? ''),
-                ];
+            foreach (['Video', 'Track', 'Photo'] as $tag) {
+                foreach ($xml->{$tag} ?? [] as $session) {
+                    $sessions[] = $this->parsePlexSession($session);
+                }
             }
 
             return $sessions;
@@ -260,6 +257,79 @@ final class PlexService
             Logger::error('Plex get sessions failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
             return [];
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function parsePlexSession(\SimpleXMLElement $session): array
+    {
+        $type = (string) ($session['type'] ?? 'video');
+        $grandparent = (string) ($session['grandparentTitle'] ?? '');
+        $parent = (string) ($session['parentTitle'] ?? '');
+        $title = (string) ($session['title'] ?? '');
+
+        if ($type === 'episode' && $grandparent !== '') {
+            $displayTitle = $grandparent . ' · S' . ($session['parentIndex'] ?? '?') . 'E' . ($session['index'] ?? '?');
+            $subtitle = $title;
+        } elseif ($parent !== '' && $title !== '') {
+            $displayTitle = $parent . ' — ' . $title;
+            $subtitle = null;
+        } else {
+            $displayTitle = $title;
+            $subtitle = null;
+        }
+
+        $transcode = $session->TranscodeSession ?? null;
+        $videoDecision = $transcode ? (string) ($transcode['videoDecision'] ?? '') : 'copy';
+        $audioDecision = $transcode ? (string) ($transcode['audioDecision'] ?? '') : 'copy';
+        $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
+
+        $viewOffset = (int) ($session['viewOffset'] ?? 0);
+        $duration = (int) ($session['duration'] ?? 0);
+        $progress = $duration > 0 ? min(100, (int) round(($viewOffset / $duration) * 100)) : 0;
+
+        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? '');
+
+        return [
+            'title' => $displayTitle,
+            'subtitle' => $subtitle,
+            'user' => (string) ($session->User['title'] ?? ''),
+            'player' => (string) ($session->Player['title'] ?? ''),
+            'platform' => (string) ($session->Player['platform'] ?? $session->Player['device'] ?? ''),
+            'state' => (string) ($session->Player['state'] ?? 'playing'),
+            'media_type' => $type,
+            'year' => (string) ($session['year'] ?? ''),
+            'play_method' => $playMethod,
+            'video_decision' => $videoDecision,
+            'audio_decision' => $audioDecision,
+            'progress' => $progress,
+            'thumb_url' => $this->mediaUrl($thumb),
+        ];
+    }
+
+    private function resolvePlexPlayMethod(bool $hasTranscode, string $videoDecision, string $audioDecision): string
+    {
+        if (!$hasTranscode || ($videoDecision === 'copy' && $audioDecision === 'copy')) {
+            return 'direct_play';
+        }
+
+        if ($videoDecision === 'copy' || $audioDecision === 'copy') {
+            return 'direct_stream';
+        }
+
+        return 'transcode';
+    }
+
+    private function mediaUrl(string $path): string
+    {
+        if ($path === '') {
+            return '';
+        }
+
+        $base = rtrim($this->server->fullUrl(), '/');
+        $token = trim((string) ($this->server->token ?? ''));
+        $sep = str_contains($path, '?') ? '&' : '?';
+
+        return $base . $path . ($token !== '' ? "{$sep}X-Plex-Token={$token}" : '');
     }
 
     public function createUser(string $username, string $password, ?string $email = null): ?array

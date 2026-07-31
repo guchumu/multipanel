@@ -13,18 +13,26 @@ use Core\Database;
 class MediaUserRepository
 {
     /** @return array<int, MediaUser> */
-    public function paginate(int $tenantId, int $page = 1, int $perPage = 20, ?string $status = null): array
+    public function paginate(int $tenantId, int $page = 1, int $perPage = 20, ?string $status = null, ?int $serverId = null): array
     {
         $offset = ($page - 1) * $perPage;
         $params = [$tenantId];
-        $sql = 'SELECT * FROM `media_users` WHERE `tenant_id` = ? AND `deleted_at` IS NULL';
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
 
         if ($status !== null) {
-            $sql .= ' AND `status` = ?';
+            $sql .= ' AND mu.`status` = ?';
             $params[] = $status;
         }
 
-        $sql .= ' ORDER BY `created_at` DESC LIMIT ? OFFSET ?';
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $sql .= ' ORDER BY mu.`created_at` DESC LIMIT ? OFFSET ?';
         $params[] = $perPage;
         $params[] = $offset;
 

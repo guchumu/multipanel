@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Controllers\AuthController;
+use App\Controllers\ActivityController;
 use App\Controllers\DashboardController;
 use App\Controllers\ServerController;
 use App\Controllers\MediaUserController;
@@ -80,6 +80,10 @@ $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::cl
 $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/dashboard', [DashboardController::class, 'index'], 'dashboard');
 
+    // Live activity
+    $router->get('/activity', [ActivityController::class, 'index'], 'activity.index');
+    $router->get('/activity/api', [ActivityController::class, 'api'], 'activity.api');
+
     // Servers
     $router->get('/servers', [ServerController::class, 'index'], 'servers.index');
     $router->get('/servers/create', [ServerController::class, 'create'], 'servers.create');
@@ -95,6 +99,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
 
     // Media Users
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
+    $router->get('/media-users/bulk', [MediaUserController::class, 'bulkCreate'], 'media_users.bulk');
+    $router->post('/media-users/bulk', [MediaUserController::class, 'bulkStore'], 'media_users.bulk.store', [CsrfMiddleware::class]);
     $router->get('/media-users/create', [MediaUserController::class, 'create'], 'media_users.create');
     $router->post('/media-users', [MediaUserController::class, 'store'], 'media_users.store', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/suspend', [MediaUserController::class, 'suspend'], 'media_users.suspend', [CsrfMiddleware::class]);
