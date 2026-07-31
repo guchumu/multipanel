@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Media\ServerEndpoint;
 use Core\Model;
 
 /**
@@ -24,8 +25,24 @@ class Server extends Model
 
     public function fullUrl(): string
     {
-        $scheme = $this->ssl ? 'https' : 'http';
-        return "{$scheme}://{$this->url}:{$this->port}";
+        $endpoint = ServerEndpoint::normalize(
+            (string) $this->url,
+            (int) ($this->port ?: 32400),
+            (bool) $this->ssl
+        );
+        $scheme = $endpoint['ssl'] ? 'https' : 'http';
+        return "{$scheme}://{$endpoint['url']}:{$endpoint['port']}";
+    }
+
+    public function displayHost(): string
+    {
+        $endpoint = ServerEndpoint::normalize(
+            (string) $this->url,
+            (int) ($this->port ?: 32400),
+            (bool) $this->ssl
+        );
+
+        return $endpoint['url'];
     }
 
     public function isOnline(): bool

@@ -32,10 +32,10 @@
                 <tr>
                     <td>
                         <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium"><?= e($server->name) ?></a>
-                        <div class="small text-muted d-md-none"><?= e($server->fullUrl()) ?></div>
+                        <div class="small text-muted d-md-none"><?= e($server->displayHost()) ?>:<?= (int) $server->port ?></div>
                     </td>
                     <td><span class="badge bg-<?= $server->type === 'plex' ? 'warning' : 'info' ?>"><?= e(strtoupper($server->type)) ?></span></td>
-                    <td class="small text-muted d-none d-md-table-cell"><?= e($server->fullUrl()) ?></td>
+                    <td class="small text-muted d-none d-md-table-cell"><?= e($server->displayHost()) ?>:<?= (int) $server->port ?></td>
                     <td>
                         <?php $badge = match($server->status) { 'online'=>'success', 'offline'=>'danger', 'error'=>'warning', default=>'secondary' }; ?>
                         <span class="badge bg-<?= $badge ?>"><?= e($server->status) ?></span>

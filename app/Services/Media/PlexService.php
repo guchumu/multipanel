@@ -30,10 +30,17 @@ final class PlexService
         if ($resolved['error'] !== null) {
             $this->lastError = $resolved['error'];
         } elseif ($this->shouldPersistEndpoint($endpoint)) {
-            $server->url = $endpoint['url'];
-            $server->port = $endpoint['port'];
-            $server->ssl = $endpoint['ssl'] ? 1 : 0;
-            $server->save();
+            if (!ServerEndpoint::shouldPreferCurrentHost((string) $this->server->url, $endpoint)) {
+                $server->url = $endpoint['url'];
+                $server->port = $endpoint['port'];
+                $server->ssl = $endpoint['ssl'] ? 1 : 0;
+                $server->save();
+            } elseif ((int) $endpoint['port'] !== (int) $this->server->port
+                || (bool) $endpoint['ssl'] !== (bool) $this->server->ssl) {
+                $server->port = $endpoint['port'];
+                $server->ssl = $endpoint['ssl'] ? 1 : 0;
+                $server->save();
+            }
         }
 
         $scheme = $endpoint['ssl'] ? 'https' : 'http';

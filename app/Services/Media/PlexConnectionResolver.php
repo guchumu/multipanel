@@ -186,7 +186,7 @@ final class PlexConnectionResolver
 
         $add([
             'url' => (string) $server->url,
-            'port' => (int) $server->port,
+            'port' => (int) ($server->port ?: 32400),
             'ssl' => (bool) $server->ssl,
         ]);
 

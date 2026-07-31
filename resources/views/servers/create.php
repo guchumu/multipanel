@@ -83,7 +83,7 @@
                 <div class="col-md-8">
                     <label class="form-label">URL / Host *</label>
                     <input type="text" name="url" id="fieldUrl" class="form-control" placeholder="lunasea.mooo.com" required>
-                    <div class="form-text">Solo hostname o dominio público. No uses <code>http://</code> ni IPs <code>192.168.x</code> si el panel está en un VPS remoto.</div>
+                    <div class="form-text">Solo el <strong>dominio</strong>, sin <code>:32400</code>. El puerto va en el campo de al lado (Plex: 32400).</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Puerto *</label>

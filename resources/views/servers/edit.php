@@ -24,8 +24,8 @@
                 </div>
                 <div class="col-md-8">
                     <label class="form-label">URL / Host *</label>
-                    <input type="text" name="url" class="form-control" value="<?= e($server->url) ?>" required>
-                    <div class="form-text">Hostname público (ej. <code>lunasea.mooo.com</code>). Sin <code>http://</code>.</div>
+                    <input type="text" name="url" class="form-control" value="<?= e($server->displayHost()) ?>" required>
+                    <div class="form-text">Solo el dominio (ej. <code>lunasea.mooo.com</code>), sin puerto. Plex usa puerto <strong>32400</strong>.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Puerto *</label>
