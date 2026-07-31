@@ -1,0 +1,16 @@
+---
+description: Commit y push automático a GitHub tras cada cambio en el proyecto
+alwaysApply: true
+---
+
+# Git: commit y push automático
+
+Tras completar cambios de código en este repositorio:
+
+1. Haz **commit** con mensaje claro en español (qué y por qué).
+2. Haz **push** a `origin main` inmediatamente después.
+3. No esperes a que el usuario lo pida.
+4. No commitear `.env`, credenciales ni `plex_manager.sql`.
+5. Informa al usuario el hash del commit y confirma que el push a GitHub fue correcto.
+
+Repositorio: https://github.com/guchumu/multipanel
