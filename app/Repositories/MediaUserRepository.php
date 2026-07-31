@@ -70,6 +70,45 @@ class MediaUserRepository
         return $row ? new MediaUser($row) : null;
     }
 
+    /** @return array<int, MediaUser> */
+    public function search(int $tenantId, string $query, int $limit = 25, ?string $status = null, ?int $serverId = null): array
+    {
+        $query = trim($query);
+        if ($query === '' || mb_strlen($query) < 2) {
+            return [];
+        }
+
+        $like = '%' . $query . '%';
+        $params = [$tenantId, $like, $like, $like, $like];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+                  AND (
+                    mu.`username` LIKE ?
+                    OR mu.`email` LIKE ?
+                    OR mu.`display_name` LIKE ?
+                    OR mu.`telegram_chat_id` LIKE ?
+                  )';
+
+        if ($status !== null) {
+            $sql .= ' AND mu.`status` = ?';
+            $params[] = $status;
+        }
+
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $sql .= ' ORDER BY mu.`username` ASC LIMIT ?';
+        $params[] = $limit;
+
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+
+        return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
     public function backfillMissingServerIds(int $tenantId): int
     {
         $db = Database::getInstance();
@@ -92,5 +131,28 @@ class MediaUserRepository
         }
 
         return 0;
+    }
+
+    /** Copy Telegram chat IDs from customer metadata when missing on media users. */
+    public function backfillTelegramChatIds(int $tenantId): int
+    {
+        $stmt = Database::getInstance()->query(
+            'UPDATE media_users mu
+             INNER JOIN customers c ON c.media_user_id = mu.id AND c.tenant_id = mu.tenant_id
+             SET mu.telegram_chat_id = COALESCE(
+                 NULLIF(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')), \'\'),
+                 NULLIF(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')), \'\')
+             )
+             WHERE mu.tenant_id = ?
+               AND mu.deleted_at IS NULL
+               AND (mu.telegram_chat_id IS NULL OR mu.telegram_chat_id = \'\')
+               AND (
+                 JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\') IS NOT NULL
+                 OR JSON_EXTRACT(c.metadata, \'$.telegram_id\') IS NOT NULL
+               )',
+            [$tenantId]
+        );
+
+        return (int) $stmt->rowCount();
     }
 }

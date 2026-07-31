@@ -109,6 +109,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
 
     // Media Users
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
+    $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
     $router->get('/media-users/bulk', [MediaUserController::class, 'bulkCreate'], 'media_users.bulk');
     $router->post('/media-users/bulk', [MediaUserController::class, 'bulkStore'], 'media_users.bulk.store', [CsrfMiddleware::class]);
     $router->get('/media-users/create', [MediaUserController::class, 'create'], 'media_users.create');

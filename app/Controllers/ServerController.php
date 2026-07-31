@@ -351,19 +351,26 @@ class ServerController extends Controller
 
     public function setDefault(Request $request, string $uuid): Response
     {
-        $server = $this->servers->findByUuid($uuid);
-        if ($server === null) {
-            return $this->json(['error' => 'Servidor no encontrado'], 404);
+        try {
+            $server = $this->servers->findByUuid($uuid);
+            if ($server === null) {
+                return $this->json(['error' => 'Servidor no encontrado'], 404);
+            }
+
+            $this->setDefaultServer((int) $server->tenant_id, (int) $server->id, (string) $server->type);
+            AuditService::log('server.set_default', 'server', (int) $server->id);
+
+            return $this->json([
+                'success' => true,
+                'message' => sprintf('"%s" es ahora el servidor %s por defecto.', $server->name, strtoupper($server->type)),
+                'type' => $server->type,
+            ]);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'success' => false,
+                'error' => $e->getMessage(),
+            ], 500);
         }
-
-        $this->setDefaultServer((int) $server->tenant_id, (int) $server->id, (string) $server->type);
-        $this->audit->log('server.set_default', 'server', (int) $server->id);
-
-        return $this->json([
-            'success' => true,
-            'message' => sprintf('"%s" es ahora el servidor %s por defecto.', $server->name, strtoupper($server->type)),
-            'type' => $server->type,
-        ]);
     }
 
     private function setDefaultServer(int $tenantId, int $serverId, string $type): void

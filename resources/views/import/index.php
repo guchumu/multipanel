@@ -54,7 +54,8 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
                     <li><strong>users</strong> → Usuarios media + clientes CRM</li>
                     <li><strong>end_date</strong> → Fecha expiración</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
-                    <li><strong>telegram_id / telegram_chat_id</strong> → metadata del cliente</li>
+                    <li><strong>telegram_chat_id</strong> → Usuario media (para enviar mensajes Telegram)</li>
+                    <li><strong>telegram_id</strong> → Solo metadata CRM (fallback si no hay chat ID)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>
                 <h6>Exportar</h6>

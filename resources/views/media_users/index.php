@@ -29,7 +29,11 @@ ob_start();
                 <a href="/media-users<?= e($queryBase('suspended', $currentServerId)) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
                 <a href="/media-users<?= e($queryBase('pending', $currentServerId)) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
             </div>
-            <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-auto">
+            <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-auto flex-wrap">
+                <div class="position-relative" style="min-width: 220px;">
+                    <input type="search" id="userSearch" class="form-control form-control-sm" placeholder="Buscar usuario, email, Telegram…" autocomplete="off">
+                    <div id="userSearchMeta" class="small text-muted mt-1 d-none"></div>
+                </div>
                 <?php if ($currentStatus): ?>
                 <input type="hidden" name="status" value="<?= e($currentStatus) ?>">
                 <?php endif; ?>
@@ -62,7 +66,7 @@ ob_start();
                     <th>Acciones</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="usersTableBody">
                 <?php if (empty($users)): ?>
                 <tr><td colspan="8" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
@@ -85,7 +89,7 @@ ob_start();
                     </td>
                     <td class="small" style="min-width: 120px;">
                         <input type="text" class="form-control form-control-sm telegram-input" data-uuid="<?= e($u->uuid) ?>"
-                               value="<?= e($u->telegram_chat_id ?? '') ?>" placeholder="Chat ID">
+                               value="<?= e($u->telegram_chat_id ?? '') ?>" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
@@ -117,32 +121,7 @@ async function activateUser(uuid) {
     await fetch(`/media-users/${uuid}/activate`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
     location.reload();
 }
-document.querySelectorAll('.expires-input').forEach(input => {
-    input.addEventListener('change', async function() {
-        const res = await fetch(`/media-users/${this.dataset.uuid}/expires`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
-            },
-            body: JSON.stringify({ expires_at: this.value }),
-        });
-        if (!res.ok) alert('Error al guardar fecha');
-    });
-});
-document.querySelectorAll('.telegram-input').forEach(input => {
-    input.addEventListener('change', async function() {
-        const res = await fetch(`/media-users/${this.dataset.uuid}/telegram`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
-            },
-            body: JSON.stringify({ telegram_chat_id: this.value }),
-        });
-        if (!res.ok) alert('Error al guardar Telegram');
-    });
-});
 </script>
 JS;
+$scripts .= '<script src="' . e(asset('js/media-users-search.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');

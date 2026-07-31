@@ -120,6 +120,7 @@ final class PlexManagerImportService
                 $status = $this->mapStatus((string) ($legacy['status'] ?? 'invited'));
                 $expiresAt = $this->dateToDatetime($legacy['end_date'] ?? null);
                 $startsAt = $this->dateToDatetime($legacy['start_date'] ?? null, '00:00:00');
+                $telegramChatId = $this->resolveTelegramChatId($legacy);
 
                 $existing = $db->fetchOne(
                     'SELECT id FROM media_users WHERE tenant_id = ? AND email = ? AND (server_id = ? OR server_id IS NULL) AND deleted_at IS NULL LIMIT 1',
@@ -133,6 +134,7 @@ final class PlexManagerImportService
                         'external_id' => $externalId ?: null,
                         'expires_at' => $expiresAt,
                         'status' => $status,
+                        'telegram_chat_id' => $telegramChatId,
                         'notes' => $legacy['private_notes'] ?? null,
                     ], fn ($v) => $v !== null), 'id = ?', [$existing['id']]);
                     $mediaUserId = (int) $existing['id'];
@@ -148,6 +150,7 @@ final class PlexManagerImportService
                         'display_name' => $username,
                         'status' => $status,
                         'expires_at' => $expiresAt,
+                        'telegram_chat_id' => $telegramChatId,
                         'notes' => $legacy['private_notes'] ?? null,
                         'metadata' => json_encode([
                             'legacy_id' => $legacy['id'] ?? null,
@@ -338,6 +341,18 @@ final class PlexManagerImportService
         }
 
         return $dateStr;
+    }
+
+    /** @param array<string, mixed> $legacy */
+    private function resolveTelegramChatId(array $legacy): ?string
+    {
+        $chatId = trim((string) ($legacy['telegram_chat_id'] ?? ''));
+        if ($chatId !== '') {
+            return $chatId;
+        }
+
+        $telegramId = trim((string) ($legacy['telegram_id'] ?? ''));
+        return $telegramId !== '' ? $telegramId : null;
     }
 
     private function ensureLegacyPlan(int $tenantId): int

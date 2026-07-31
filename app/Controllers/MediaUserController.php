@@ -41,6 +41,7 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $this->mediaUsers->backfillMissingServerIds($tenantId);
+        $this->mediaUsers->backfillTelegramChatIds($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
@@ -51,6 +52,31 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'currentStatus' => $status,
             'currentServerId' => $serverId,
+        ]);
+    }
+
+    public function search(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $q = trim((string) $request->input('q', ''));
+        $status = $request->input('status') ?: null;
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        $users = $this->mediaUsers->search($tenantId, $q, 30, $status, $serverId);
+
+        return $this->json([
+            'query' => $q,
+            'count' => count($users),
+            'users' => array_map(static fn (MediaUser $u): array => [
+                'uuid' => (string) $u->uuid,
+                'username' => (string) ($u->display_name ?? $u->username),
+                'email' => (string) ($u->email ?? ''),
+                'server_name' => (string) ($u->server_name ?? ''),
+                'status' => (string) $u->status,
+                'max_streams' => (int) $u->max_streams,
+                'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
+                'telegram_chat_id' => (string) ($u->telegram_chat_id ?? ''),
+            ], $users),
         ]);
     }
 

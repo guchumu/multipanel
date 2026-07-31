@@ -34,7 +34,10 @@
     async function postAction(url) {
         const res = await fetch(url, {
             method: 'POST',
-            headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'Accept': 'application/json',
+            },
         });
         return res.json();
     }
