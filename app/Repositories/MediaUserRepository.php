@@ -60,6 +60,26 @@ class MediaUserRepository
         return (int) ($row['total'] ?? 0);
     }
 
+    public function countFiltered(int $tenantId, ?string $status = null, ?int $serverId = null): int
+    {
+        $params = [$tenantId];
+        $sql = 'SELECT COUNT(*) as total FROM `media_users` WHERE `tenant_id` = ? AND `deleted_at` IS NULL';
+
+        if ($status !== null) {
+            $sql .= ' AND `status` = ?';
+            $params[] = $status;
+        }
+
+        if ($serverId !== null) {
+            $sql .= ' AND `server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $row = Database::getInstance()->fetchOne($sql, $params);
+
+        return (int) ($row['total'] ?? 0);
+    }
+
     public function findByUuid(string $uuid): ?MediaUser
     {
         $row = Database::getInstance()->fetchOne(

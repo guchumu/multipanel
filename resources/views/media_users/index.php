@@ -10,6 +10,26 @@ $queryBase = static function (?string $status, ?int $serverId) {
     return $params !== [] ? '?' . http_build_query($params) : '';
 };
 
+$statusBadgeClass = static function (string $status): string {
+    return match ($status) {
+        'active' => 'bg-success',
+        'suspended' => 'bg-warning text-dark',
+        'pending' => 'bg-secondary',
+        default => 'bg-light text-dark border',
+    };
+};
+
+$statusLabel = static function (string $status): string {
+    return match ($status) {
+        'active' => 'Activo',
+        'suspended' => 'Suspendido',
+        'pending' => 'Pendiente',
+        'invited' => 'Invitado',
+        'inactive' => 'Inactivo',
+        default => ucfirst($status),
+    };
+};
+
 ob_start();
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -52,10 +72,20 @@ ob_start();
 </div>
 
 <div class="card border-0 shadow-sm">
+    <div class="px-3 py-2 border-bottom bg-light small d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span id="usersCountSummary">
+            Mostrando <strong><?= (int) $showingCount ?></strong> de <strong><?= (int) $totalCount ?></strong> usuarios
+            <?php if ($totalCount > $perPage): ?>
+            <span class="text-muted">(página <?= (int) $page ?>)</span>
+            <?php endif; ?>
+        </span>
+        <span class="text-muted">ID = identificador interno del usuario</span>
+    </div>
     <div class="table-responsive">
         <table class="table table-hover mb-0">
             <thead class="table-light">
                 <tr>
+                    <th style="width: 4rem;">ID</th>
                     <th>Usuario</th>
                     <th>Email</th>
                     <th>Servidor</th>
@@ -68,10 +98,11 @@ ob_start();
             </thead>
             <tbody id="usersTableBody">
                 <?php if (empty($users)): ?>
-                <tr><td colspan="8" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
                 <tr>
+                    <td class="small text-muted"><?= (int) $u->id ?></td>
                     <td><?= e($u->display_name ?? $u->username) ?></td>
                     <td class="small"><?= e($u->email ?? '-') ?></td>
                     <td class="small">
@@ -81,7 +112,11 @@ ob_start();
                         <span class="text-muted">—</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge bg-secondary"><?= e($u->status) ?></span></td>
+                    <td>
+                        <span class="badge <?= e($statusBadgeClass((string) $u->status)) ?>">
+                            <?= e($statusLabel((string) $u->status)) ?>
+                        </span>
+                    </td>
                     <td><?= (int) $u->max_streams ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input" data-uuid="<?= e($u->uuid) ?>"

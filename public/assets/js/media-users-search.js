@@ -8,6 +8,8 @@
     const initialHtml = tbody.innerHTML;
     let timer = null;
     let requestSeq = 0;
+    const countSummary = document.getElementById('usersCountSummary');
+    const initialCountHtml = countSummary?.innerHTML || '';
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -17,9 +19,29 @@
             .replaceAll('"', '&quot;');
     }
 
+    function statusBadgeClass(status) {
+        switch (status) {
+            case 'active': return 'bg-success';
+            case 'suspended': return 'bg-warning text-dark';
+            case 'pending': return 'bg-secondary';
+            default: return 'bg-light text-dark border';
+        }
+    }
+
+    function statusLabel(status) {
+        switch (status) {
+            case 'active': return 'Activo';
+            case 'suspended': return 'Suspendido';
+            case 'pending': return 'Pendiente';
+            case 'invited': return 'Invitado';
+            case 'inactive': return 'Inactivo';
+            default: return status;
+        }
+    }
+
     function renderRows(users) {
         if (!users.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Sin resultados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Sin resultados</td></tr>';
             return;
         }
 
@@ -33,10 +55,11 @@
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
 
             return `<tr>
+                <td class="small text-muted">${Number(u.id || 0)}</td>
                 <td>${escapeHtml(u.username)}</td>
                 <td class="small">${escapeHtml(u.email || '-')}</td>
                 <td class="small">${serverBadge}</td>
-                <td><span class="badge bg-secondary">${escapeHtml(u.status)}</span></td>
+                <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>
                 <td>${Number(u.max_streams || 0)}</td>
                 <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input" data-uuid="${escapeHtml(u.uuid)}"
@@ -91,6 +114,7 @@
         if (q.length < 2) {
             tbody.innerHTML = initialHtml;
             meta?.classList.add('d-none');
+            if (countSummary) countSummary.innerHTML = initialCountHtml;
             return;
         }
 
@@ -124,6 +148,10 @@
             }
 
             renderRows(data.users || []);
+            if (countSummary) {
+                const total = data.total ?? data.count ?? 0;
+                countSummary.innerHTML = `Mostrando <strong>${data.count || 0}</strong> de <strong>${total}</strong> usuarios <span class="text-muted">(búsqueda: "${escapeHtml(q)}")</span>`;
+            }
             if (meta) {
                 meta.textContent = `${data.count || 0} resultado(s) para "${q}"`;
                 meta.classList.remove('d-none');

@@ -43,13 +43,20 @@ class MediaUserController extends Controller
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
+        $perPage = 20;
+        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId);
+        $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId);
 
         return $this->view('media_users.index', [
             'title' => 'Usuarios Media',
-            'users' => $this->mediaUsers->paginate($tenantId, $page, 20, $status, $serverId),
+            'users' => $users,
             'servers' => $this->servers->allByTenant($tenantId),
             'currentStatus' => $status,
             'currentServerId' => $serverId,
+            'totalCount' => $totalCount,
+            'showingCount' => count($users),
+            'page' => $page,
+            'perPage' => $perPage,
         ]);
     }
 
@@ -66,7 +73,9 @@ class MediaUserController extends Controller
             return $this->json([
                 'query' => $q,
                 'count' => count($users),
+                'total' => $this->mediaUsers->countFiltered($tenantId, $status, $serverId),
                 'users' => array_map(static fn (MediaUser $u): array => [
+                    'id' => (int) $u->id,
                     'uuid' => (string) $u->uuid,
                     'username' => (string) ($u->display_name ?? $u->username),
                     'email' => (string) ($u->email ?? ''),
