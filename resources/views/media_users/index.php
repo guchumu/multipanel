@@ -38,7 +38,10 @@
                     <td class="small"><?= e($u->email ?? '-') ?></td>
                     <td><span class="badge bg-secondary"><?= e($u->status) ?></span></td>
                     <td><?= (int) $u->max_streams ?></td>
-                    <td class="small"><?= e($u->expires_at ?? 'Sin límite') ?></td>
+                    <td class="small">
+                        <input type="date" class="form-control form-control-sm expires-input" data-uuid="<?= e($u->uuid) ?>"
+                               value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
+                    </td>
                     <td>
                         <div class="btn-group btn-group-sm">
                             <?php if ($u->status === 'active'): ?>
@@ -68,6 +71,20 @@ async function activateUser(uuid) {
     await fetch(`/media-users/${uuid}/activate`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
     location.reload();
 }
+document.querySelectorAll('.expires-input').forEach(input => {
+    input.addEventListener('change', async function() {
+        const res = await fetch(`/media-users/${this.dataset.uuid}/expires`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+            },
+            body: JSON.stringify({ expires_at: this.value })
+        });
+        const data = await res.json();
+        if (!data.success) alert(data.error || 'Error al guardar fecha');
+    });
+});
 </script>
 JS;
 include base_path('resources/views/layouts/app.php');

@@ -62,6 +62,29 @@ final class PlexService
     public function getUsers(): array
     {
         try {
+            $response = $this->client->get('/accounts', [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            $body = $response->getBody()->getContents();
+            $xml = simplexml_load_string($body);
+            if ($xml !== false && isset($xml->Account)) {
+                $users = [];
+                foreach ($xml->Account as $account) {
+                    $users[] = [
+                        'external_id' => (string) ($account['id'] ?? $account['key'] ?? ''),
+                        'username' => (string) ($account['name'] ?? $account['defaultTitle'] ?? ''),
+                        'email' => null,
+                        'thumb' => (string) ($account['thumb'] ?? '') ?: null,
+                        'restricted' => false,
+                    ];
+                }
+
+                if ($users !== []) {
+                    return $users;
+                }
+            }
+
             $response = $this->client->get('/api/users', [
                 'headers' => $this->authHeaders(),
             ]);

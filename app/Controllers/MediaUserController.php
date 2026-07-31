@@ -109,6 +109,25 @@ class MediaUserController extends Controller
         return $this->json(['success' => true, 'message' => 'Usuario activado.']);
     }
 
+    public function updateExpires(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $expiresAt = trim((string) $request->input('expires_at', ''));
+        $user->expires_at = $expiresAt !== '' ? $expiresAt : null;
+        $user->save();
+        $this->audit->log('media_user.expires_updated', 'media_user', (int) $user->id);
+
+        return $this->json([
+            'success' => true,
+            'expires_at' => $user->expires_at,
+            'message' => 'Fecha de expiración actualizada.',
+        ]);
+    }
+
     public function destroy(Request $request, string $uuid): Response
     {
         $user = $this->mediaUsers->findByUuid($uuid);

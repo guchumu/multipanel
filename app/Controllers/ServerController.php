@@ -73,8 +73,14 @@ class ServerController extends Controller
         $server->save();
         $this->audit->log('server.created', 'server', (int) $server->id, null, $server->toArray());
 
-        Session::getInstance()->flash('success', 'Servidor creado correctamente.');
-        return $this->redirect('/servers');
+        $synced = $this->sync->sync($server);
+        $stats = $this->sync->lastUserSyncStats();
+        $msg = $synced
+            ? sprintf('Servidor creado. %d usuarios importados, %d actualizados.', $stats['imported'], $stats['updated'])
+            : 'Servidor creado. Sincronización fallida — usa el botón Sync en la lista.';
+
+        Session::getInstance()->flash('success', $msg);
+        return $this->redirect('/servers/' . $server->uuid);
     }
 
     public function show(Request $request, string $uuid): Response
@@ -98,12 +104,16 @@ class ServerController extends Controller
         }
 
         $success = $this->sync->sync($server);
+        $stats = $this->sync->lastUserSyncStats();
         $this->audit->log('server.synced', 'server', (int) $server->id);
 
         return $this->json([
             'success' => $success,
             'status' => $server->status,
-            'message' => $success ? 'Sincronización completada.' : 'Error en sincronización.',
+            'message' => $success
+                ? sprintf('Sync OK: %d usuarios nuevos, %d actualizados (%d total).', $stats['imported'], $stats['updated'], $stats['total'])
+                : 'Error en sincronización.',
+            'users' => $stats,
         ]);
     }
 
