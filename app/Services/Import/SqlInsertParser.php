@@ -9,48 +9,77 @@ namespace App\Services\Import;
  */
 final class SqlInsertParser
 {
+    public const VERSION = '3.0';
+
+    /** @return array{file_bytes: int, has_servers_marker: bool, has_users_marker: bool, parser: string} */
+    public static function probe(string $sql): array
+    {
+        $normalized = self::normalizeSql($sql);
+
+        return [
+            'file_bytes' => strlen($normalized),
+            'has_servers_marker' => self::findInsertPos($normalized, 'servers') !== null,
+            'has_users_marker' => self::findInsertPos($normalized, 'users') !== null,
+            'parser' => self::VERSION,
+        ];
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
     public static function extractTable(string $sql, string $table): array
     {
+        $sql = self::normalizeSql($sql);
         $result = [];
         $offset = 0;
-        $marker = 'INSERT INTO `' . $table . '`';
 
-        while (($pos = stripos($sql, $marker, $offset)) !== false) {
-            $cursor = $pos + strlen($marker);
-            $cursor = self::skipWhitespace($sql, $cursor);
+        while (($insert = self::findInsertPos($sql, $table, $offset)) !== null) {
+            [$pos, $markerLen] = $insert;
+            $cursor = self::skipWhitespace($sql, $pos + $markerLen);
 
-            if (($sql[$cursor] ?? '') !== '(') {
-                $offset = $pos + 1;
-                continue;
+            $columns = null;
+            if (($sql[$cursor] ?? '') === '(') {
+                $columnsEnd = self::findClosingParen($sql, $cursor);
+                if ($columnsEnd === null) {
+                    break;
+                }
+
+                $columns = array_map(
+                    static fn (string $c) => trim($c, " `\t\n\r"),
+                    explode(',', substr($sql, $cursor + 1, $columnsEnd - $cursor - 1))
+                );
+                $cursor = self::skipWhitespace($sql, $columnsEnd + 1);
             }
 
-            $columnsEnd = self::findClosingParen($sql, $cursor);
-            if ($columnsEnd === null) {
-                break;
+            if (stripos($sql, 'VALUES', $cursor) !== $cursor) {
+                $valuesPos = stripos($sql, 'VALUES', $cursor);
+                if ($valuesPos === false) {
+                    $offset = $pos + 1;
+                    continue;
+                }
+                $cursor = self::skipWhitespace($sql, $valuesPos + 6);
+            } else {
+                $cursor = self::skipWhitespace($sql, $cursor + 6);
             }
 
-            $columns = array_map(
-                static fn (string $c) => trim($c, " `\t\n\r"),
-                explode(',', substr($sql, $cursor + 1, $columnsEnd - $cursor - 1))
-            );
-
-            $valuesPos = stripos($sql, 'VALUES', $columnsEnd);
-            if ($valuesPos === false || $valuesPos > $columnsEnd + 32) {
-                $offset = $pos + 1;
-                continue;
-            }
-
-            $valuesStart = self::skipWhitespace($sql, $valuesPos + 6);
-            $statementEnd = self::findStatementEnd($sql, $valuesStart);
+            $statementEnd = self::findStatementEnd($sql, $cursor);
             if ($statementEnd === null) {
                 break;
             }
 
-            $valuesBlock = trim(substr($sql, $valuesStart, $statementEnd - $valuesStart));
-            foreach (self::splitRows($valuesBlock) as $row) {
+            $valuesBlock = substr($sql, $cursor, $statementEnd - $cursor);
+            $rows = self::extractRows($valuesBlock);
+
+            if ($columns === null && $rows !== []) {
+                $columns = array_map('strval', range(0, count(self::parseRow($rows[0])) - 1));
+            }
+
+            if ($columns === null) {
+                $offset = $statementEnd + 1;
+                continue;
+            }
+
+            foreach ($rows as $row) {
                 $values = self::parseRow($row);
                 if (count($values) === count($columns)) {
                     $result[] = array_combine($columns, $values);
@@ -61,6 +90,59 @@ final class SqlInsertParser
         }
 
         return $result;
+    }
+
+    /** @return array<int, string> */
+    public static function extractRows(string $valuesBlock): array
+    {
+        $rows = [];
+
+        foreach (preg_split('/\r\n|\n|\r/', $valuesBlock) as $line) {
+            $line = trim($line);
+            if ($line === '' || !str_starts_with($line, '(')) {
+                continue;
+            }
+
+            $line = rtrim($line, ',;');
+            if (str_starts_with($line, '(') && str_ends_with($line, ')')) {
+                $rows[] = substr($line, 1, -1);
+            }
+        }
+
+        if ($rows !== []) {
+            return $rows;
+        }
+
+        return self::splitRows($valuesBlock);
+    }
+
+    /** @return array{0: int, 1: int}|null */
+    private static function findInsertPos(string $sql, string $table, int $offset = 0): ?array
+    {
+        $needles = [
+            'INSERT INTO `' . $table . '`',
+            'INSERT INTO ' . $table . ' ',
+            'INSERT INTO ' . $table . '(',
+        ];
+
+        $best = null;
+        foreach ($needles as $needle) {
+            $pos = stripos($sql, $needle, $offset);
+            if ($pos !== false && ($best === null || $pos < $best[0])) {
+                $best = [$pos, strlen($needle)];
+            }
+        }
+
+        return $best;
+    }
+
+    private static function normalizeSql(string $sql): string
+    {
+        if (str_starts_with($sql, "\xEF\xBB\xBF")) {
+            $sql = substr($sql, 3);
+        }
+
+        return str_replace("\r\n", "\n", $sql);
     }
 
     /** @return array<int, string> */

@@ -70,9 +70,27 @@ class ImportController extends Controller
         if ($type === 'plex_manager') {
             $result = $this->plexManager->importFromSqlFile($tmpPath, $tenantId);
             $parsed = $result['parsed'] ?? ['servers' => 0, 'users' => 0];
+            $probe = $result['probe'] ?? [];
 
             if (($parsed['servers'] ?? 0) === 0 && ($parsed['users'] ?? 0) === 0) {
-                Session::getInstance()->flash('error', 'El SQL no contenía tablas servers/users de plex_manager (0 filas leídas). Comprueba que sea el export phpMyAdmin correcto.');
+                $kb = (int) round(((int) ($probe['file_bytes'] ?? 0)) / 1024);
+                $detail = sprintf(
+                    'Archivo recibido: %d KB. Parser %s. INSERT `servers`: %s. INSERT `users`: %s.',
+                    $kb,
+                    $probe['parser'] ?? '?',
+                    !empty($probe['has_servers_marker']) ? 'sí' : 'NO',
+                    !empty($probe['has_users_marker']) ? 'sí' : 'NO'
+                );
+
+                if ($kb === 0) {
+                    $detail .= ' El archivo llegó vacío — revisa upload_max_filesize/post_max_size en Plesk (necesitas ~256 KB mínimo).';
+                } elseif (empty($probe['has_servers_marker']) && empty($probe['has_users_marker'])) {
+                    $detail .= ' El contenido no parece un plex_manager.sql de phpMyAdmin.';
+                } elseif (!empty($probe['has_servers_marker']) || !empty($probe['has_users_marker'])) {
+                    $detail .= ' Los INSERT existen pero no se pudieron parsear — actualiza el código (git pull) e inténtalo de nuevo.';
+                }
+
+                Session::getInstance()->flash('error', $detail);
                 if (!empty($result['errors'])) {
                     Session::getInstance()->flash('import_errors', implode("\n", array_slice($result['errors'], 0, 15)));
                 }

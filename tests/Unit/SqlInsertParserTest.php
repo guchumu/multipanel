@@ -9,6 +9,31 @@ use PHPUnit\Framework\TestCase;
 
 final class SqlInsertParserTest extends TestCase
 {
+    public function test_probe_detects_markers_in_fixture(): void
+    {
+        $sql = file_get_contents(base_path('tests/fixtures/plex_manager_sample.sql'));
+        $this->assertNotFalse($sql);
+
+        $probe = SqlInsertParser::probe($sql);
+        $this->assertTrue($probe['has_servers_marker']);
+        $this->assertTrue($probe['has_users_marker']);
+        $this->assertSame('3.0', $probe['parser']);
+    }
+
+    public function test_extract_fixture_file(): void
+    {
+        $sql = file_get_contents(base_path('tests/fixtures/plex_manager_sample.sql'));
+        $this->assertNotFalse($sql);
+
+        $servers = SqlInsertParser::extractTable($sql, 'servers');
+        $users = SqlInsertParser::extractTable($sql, 'users');
+
+        $this->assertCount(2, $servers);
+        $this->assertCount(2, $users);
+        $this->assertSame('Nucbox', $servers[0]['server_name']);
+        $this->assertSame('guchumu@gmail.com', $users[0]['email']);
+    }
+
     public function test_extract_table_from_phpmyadmin_dump(): void
     {
         $sql = <<<'SQL'

@@ -28,9 +28,10 @@ final class PlexManagerImportService
 
         $sql = file_get_contents($filePath);
         if ($sql === false || $sql === '') {
-            return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.']);
+            return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.'], SqlInsertParser::probe(''));
         }
 
+        $probe = SqlInsertParser::probe($sql);
         $db = Database::getInstance();
         $errors = [];
         $serverMap = [];
@@ -218,7 +219,7 @@ final class PlexManagerImportService
             'customers' => $customersImported,
         ]);
 
-        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors);
+        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe);
     }
 
     /** @return array{host: string, port: int, ssl: bool}|null */
@@ -296,8 +297,8 @@ final class PlexManagerImportService
         ]);
     }
 
-    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors */
-    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors): array
+    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors @param array<string, mixed> $probe */
+    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = []): array
     {
         return [
             'servers' => $servers,
@@ -306,6 +307,7 @@ final class PlexManagerImportService
             'subscriptions' => $subscriptions,
             'skipped' => $skipped,
             'parsed' => $parsed,
+            'probe' => $probe,
             'errors' => $errors,
         ];
     }
