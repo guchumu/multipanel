@@ -11,11 +11,23 @@
 </head>
 <body>
     <?php if (isset($user)): ?>
-    <div class="d-flex">
+    <div class="offcanvas offcanvas-start bg-dark text-white d-lg-none" tabindex="-1" id="sidebarOffcanvas" aria-labelledby="sidebarOffcanvasLabel">
+        <div class="offcanvas-header border-bottom border-secondary">
+            <h5 class="offcanvas-title" id="sidebarOffcanvasLabel">
+                <i class="bi bi-collection-play me-2"></i>MultiPanel
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            <?php include base_path('resources/views/partials/sidebar-nav.php'); ?>
+        </div>
+    </div>
+
+    <div class="app-shell d-flex min-vh-100">
         <?php include base_path('resources/views/partials/sidebar.php'); ?>
-        <div class="flex-grow-1">
+        <div class="app-main flex-grow-1 d-flex flex-column min-vw-0">
             <?php include base_path('resources/views/partials/navbar.php'); ?>
-            <main class="p-4">
+            <main class="app-content flex-grow-1 p-3 p-lg-4">
                 <?php include base_path('resources/views/partials/alerts.php'); ?>
                 <?= $content ?? '' ?>
             </main>

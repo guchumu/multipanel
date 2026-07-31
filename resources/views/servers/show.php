@@ -3,8 +3,11 @@
     <a href="/servers" class="text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver</a>
     <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
         <h4 class="mb-0"><?= e($server->name) ?></h4>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
             <span class="badge bg-<?= $server->status === 'online' ? 'success' : 'danger' ?> fs-6"><?= e($server->status) ?></span>
+            <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil me-1"></i>Editar
+            </a>
             <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>">
                 <i class="bi bi-arrow-repeat me-1"></i>Sincronizar
             </button>
@@ -41,11 +44,11 @@
     <div class="col-md-8">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-3"><h3><?= (int) $server->active_sessions ?></h3><small class="text-muted">Sesiones</small></div>
-                    <div class="col-3"><h3><?= (int) $server->total_libraries ?></h3><small class="text-muted">Bibliotecas</small></div>
-                    <div class="col-3"><h3><?= (int) $server->total_users ?></h3><small class="text-muted">Usuarios</small></div>
-                    <div class="col-3"><h3><?= e($server->health_score ?? 100) ?>%</h3><small class="text-muted">Salud</small></div>
+                <div class="row text-center g-3">
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->active_sessions ?></h3><small class="text-muted">Sesiones</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->total_libraries ?></h3><small class="text-muted">Bibliotecas</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= (int) $server->total_users ?></h3><small class="text-muted">Usuarios</small></div>
+                    <div class="col-6 col-md-3"><h3 class="mb-0"><?= e($server->health_score ?? 100) ?>%</h3><small class="text-muted">Salud</small></div>
                 </div>
             </div>
         </div>

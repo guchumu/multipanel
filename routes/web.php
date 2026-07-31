@@ -86,6 +86,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/servers/discover/plex', [ServerController::class, 'discoverPlex'], 'servers.discover.plex', [CsrfMiddleware::class]);
     $router->post('/servers/discover/jellyfin', [ServerController::class, 'discoverJellyfin'], 'servers.discover.jellyfin', [CsrfMiddleware::class]);
     $router->post('/servers', [ServerController::class, 'store'], 'servers.store', [CsrfMiddleware::class]);
+    $router->get('/servers/{uuid}/edit', [ServerController::class, 'edit'], 'servers.edit');
+    $router->put('/servers/{uuid}', [ServerController::class, 'update'], 'servers.update', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');
     $router->post('/servers/{uuid}/sync', [ServerController::class, 'sync'], 'servers.sync', [CsrfMiddleware::class]);
     $router->post('/servers/{uuid}/test', [ServerController::class, 'test'], 'servers.test', [CsrfMiddleware::class]);

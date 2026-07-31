@@ -7,6 +7,7 @@ namespace App\Middleware;
 use App\Services\AuthService;
 use Core\Request;
 use Core\Response;
+use Core\View;
 use Core\Exceptions\HttpException;
 
 /**
@@ -24,6 +25,8 @@ class AuthMiddleware
             }
             return Response::redirect('/login');
         }
+
+        View::share('user', $auth->user());
 
         return $next($request);
     }

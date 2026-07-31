@@ -142,6 +142,75 @@ class ServerController extends Controller
         ]);
     }
 
+    public function edit(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->redirect('/servers');
+        }
+
+        return $this->view('servers.edit', [
+            'title' => 'Editar: ' . $server->name,
+            'server' => $server,
+        ]);
+    }
+
+    public function update(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->redirect('/servers');
+        }
+
+        $data = $this->validate($request, [
+            'name' => 'required|max:255',
+            'type' => 'required|in:plex,jellyfin',
+            'url' => 'required|max:500',
+            'port' => 'required|integer',
+        ]);
+
+        $before = $server->toArray();
+        $endpoint = ServerEndpoint::normalize(
+            $data['url'],
+            (int) $data['port'],
+            (bool) $request->input('ssl')
+        );
+
+        $server->name = $data['name'];
+        $server->description = $request->input('description');
+        $server->type = $data['type'];
+        $server->url = $endpoint['url'];
+        $server->port = $endpoint['port'];
+        $server->ssl = $endpoint['ssl'] ? 1 : 0;
+        $server->location = $request->input('location');
+        $server->check_interval_minutes = (int) ($request->input('check_interval') ?? 5);
+
+        $token = trim((string) $request->input('token', ''));
+        if ($token !== '') {
+            $server->token = $token;
+        }
+
+        $apiKey = trim((string) $request->input('api_key', ''));
+        if ($apiKey !== '') {
+            $server->api_key = $apiKey;
+        }
+
+        $server->save();
+        $this->audit->log('server.updated', 'server', (int) $server->id, $before, $server->toArray());
+
+        $msg = 'Servidor actualizado.';
+        if ($request->input('sync_after')) {
+            $synced = $this->sync->sync($server);
+            $stats = $this->sync->lastUserSyncStats();
+            $msg = $synced
+                ? sprintf('Servidor actualizado y sincronizado (%d usuarios nuevos, %d actualizados).', $stats['imported'], $stats['updated'])
+                : 'Servidor actualizado pero OFFLINE: ' . ($server->last_error ?? 'no se pudo conectar.');
+        }
+
+        Session::getInstance()->flash('success', $msg);
+        return $this->redirect('/servers/' . $server->uuid);
+    }
+
     public function sync(Request $request, string $uuid): Response
     {
         $server = $this->servers->findByUuid($uuid);
