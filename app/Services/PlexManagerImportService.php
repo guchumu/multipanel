@@ -21,7 +21,7 @@ final class PlexManagerImportService
     ) {
     }
 
-    /** @return array{servers: int, users: int, customers: int, subscriptions: int, libraries: int, skipped: int, parsed: array{servers: int, users: int}, sync: array<int, array{name: string, ok: bool, error: ?string}>, errors: array<int, string>} */
+    /** @return array{servers: int, users: int, customers: int, subscriptions: int, libraries: int, skipped: int, parsed: array{servers: int, users: int}, sync: array<int, array{name: string, ok: bool, error: ?string}>, errors: array<int, string>, telegram_backfilled?: int} */
     public function importFromSqlFile(string $filePath, int $tenantId): array
     {
         @ini_set('memory_limit', '512M');
@@ -34,6 +34,7 @@ final class PlexManagerImportService
 
         $probe = SqlInsertParser::probe($sql);
         $db = Database::getInstance();
+        $this->ensureImportSchema();
         $errors = [];
         $serverMap = [];
 
@@ -243,7 +244,9 @@ final class PlexManagerImportService
             ];
         }
 
-        Logger::info('plex_manager SQL import', compact('serversImported', 'usersImported', 'customersImported', 'librariesImported'));
+        $telegramBackfilled = $this->backfillTelegramChatIds($tenantId);
+
+        Logger::info('plex_manager SQL import', compact('serversImported', 'usersImported', 'customersImported', 'librariesImported', 'telegramBackfilled'));
         $this->audit->log('import.plex_manager', 'import', null, null, [
             'servers' => $serversImported,
             'users' => $usersImported,
@@ -252,7 +255,7 @@ final class PlexManagerImportService
             'sync' => $syncResults,
         ]);
 
-        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe, $librariesImported, $syncResults);
+        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe, $librariesImported, $syncResults, $telegramBackfilled);
     }
 
     /** @param array<int, int> $serverMap */
@@ -347,12 +350,86 @@ final class PlexManagerImportService
     private function resolveTelegramChatId(array $legacy): ?string
     {
         $chatId = trim((string) ($legacy['telegram_chat_id'] ?? ''));
-        if ($chatId !== '') {
+        if ($this->isValidTelegramChatId($chatId)) {
             return $chatId;
         }
 
         $telegramId = trim((string) ($legacy['telegram_id'] ?? ''));
-        return $telegramId !== '' ? $telegramId : null;
+        if ($this->isValidTelegramChatId($telegramId)) {
+            return $telegramId;
+        }
+
+        foreach (['idcliente', 'client_id'] as $field) {
+            $value = trim((string) ($legacy[$field] ?? ''));
+            if ($this->isValidTelegramChatId($value)) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function isValidTelegramChatId(string $value): bool
+    {
+        return $value !== '' && $value !== '0' && preg_match('/^-?\d{5,20}$/', $value) === 1;
+    }
+
+    /** Ensure columns/tables needed for plex_manager import exist on older databases. */
+    private function ensureImportSchema(): void
+    {
+        try {
+            (new \Core\Updater())->runMigrations();
+        } catch (\Throwable $e) {
+            Logger::warning('Import auto-migration skipped', ['error' => $e->getMessage()]);
+        }
+
+        $db = Database::getInstance();
+        try {
+            $db->pdo()->exec(
+                'ALTER TABLE `media_users` ADD COLUMN `telegram_chat_id` VARCHAR(50) NULL AFTER `email`'
+            );
+        } catch (\Throwable $e) {
+            if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+                throw $e;
+            }
+        }
+    }
+
+    /** Backfill media_users.telegram_chat_id from customers.metadata (imports previos). */
+    public function backfillTelegramChatIds(int $tenantId): int
+    {
+        $db = Database::getInstance();
+        $updated = 0;
+
+        try {
+            $rows = $db->fetchAll(
+                'SELECT mu.id, c.metadata
+                 FROM media_users mu
+                 INNER JOIN customers c ON c.media_user_id = mu.id AND c.tenant_id = ?
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL
+                   AND (mu.telegram_chat_id IS NULL OR mu.telegram_chat_id = "")',
+                [$tenantId, $tenantId]
+            );
+        } catch (\Throwable) {
+            return 0;
+        }
+
+        foreach ($rows as $row) {
+            $metadata = json_decode((string) ($row['metadata'] ?? ''), true);
+            if (!is_array($metadata)) {
+                continue;
+            }
+
+            $chatId = $this->resolveTelegramChatId($metadata);
+            if ($chatId === null) {
+                continue;
+            }
+
+            $db->update('media_users', ['telegram_chat_id' => $chatId], 'id = ?', [(int) $row['id']]);
+            $updated++;
+        }
+
+        return $updated;
     }
 
     private function ensureLegacyPlan(int $tenantId): int
@@ -380,7 +457,7 @@ final class PlexManagerImportService
     }
 
     /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors @param array<string, mixed> $probe @param array<int, array{name: string, ok: bool, error: ?string}> $sync */
-    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = [], int $libraries = 0, array $sync = []): array
+    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = [], int $libraries = 0, array $sync = [], int $telegramBackfilled = 0): array
     {
         return [
             'servers' => $servers,
@@ -393,6 +470,7 @@ final class PlexManagerImportService
             'probe' => $probe,
             'sync' => $sync,
             'errors' => $errors,
+            'telegram_backfilled' => $telegramBackfilled,
         ];
     }
 }

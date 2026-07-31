@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS `media_users` (
     `server_id` BIGINT UNSIGNED NULL,
     `external_id` VARCHAR(255) NULL,
     `email` VARCHAR(255) NULL,
+    `telegram_chat_id` VARCHAR(50) NULL,
     `username` VARCHAR(100) NOT NULL,
     `password` VARCHAR(255) NULL,
     `display_name` VARCHAR(255) NULL,
