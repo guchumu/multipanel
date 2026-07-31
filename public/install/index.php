@@ -8,7 +8,12 @@ declare(strict_types=1);
  * Access via /install/ when .env is not configured or APP_INSTALLED=false
  */
 
-require_once dirname(__DIR__) . '/vendor/autoload.php';
+session_start();
+
+$root = dirname(__DIR__, 2);
+
+require_once $root . '/vendor/autoload.php';
+require_once $root . '/core/helpers.php';
 
 use Dotenv\Dotenv;
 
@@ -16,12 +21,12 @@ $step = (int) ($_GET['step'] ?? 1);
 $errors = [];
 $success = false;
 
-if (file_exists(dirname(__DIR__) . '/.env')) {
-    $dotenv = Dotenv::createImmutable(dirname(__DIR__));
+if (file_exists($root . '/.env')) {
+    $dotenv = Dotenv::createImmutable($root);
     $dotenv->safeLoad();
 }
 
-if (env('APP_INSTALLED', false) || file_exists(dirname(__DIR__) . '/storage/.installed')) {
+if (env('APP_INSTALLED', false) || file_exists($root . '/storage/.installed')) {
     header('Location: /');
     exit;
 }
@@ -38,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function handleRequirements(array &$errors): void
 {
+    global $root;
+
     $required = [
         'PHP 8.3+' => version_compare(PHP_VERSION, '8.3.0', '>='),
         'PDO MySQL' => extension_loaded('pdo_mysql'),
@@ -45,6 +52,7 @@ function handleRequirements(array &$errors): void
         'Mbstring' => extension_loaded('mbstring'),
         'JSON' => extension_loaded('json'),
         'cURL' => extension_loaded('curl'),
+        'vendor/autoload.php' => file_exists($root . '/vendor/autoload.php'),
     ];
 
     foreach ($required as $name => $ok) {
@@ -61,6 +69,8 @@ function handleRequirements(array &$errors): void
 
 function handleDatabase(array &$errors): void
 {
+    global $root;
+
     $host = $_POST['db_host'] ?? '127.0.0.1';
     $port = $_POST['db_port'] ?? '3306';
     $name = $_POST['db_name'] ?? 'multipanel';
@@ -75,9 +85,15 @@ function handleDatabase(array &$errors): void
         $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $pdo->exec("USE `{$name}`");
 
-        $schema = file_get_contents(dirname(__DIR__) . '/database/schema.sql');
+        $schemaFile = $root . '/database/schema.sql';
+        $schema = is_file($schemaFile) ? file_get_contents($schemaFile) : false;
         if ($schema) {
             $pdo->exec($schema);
+        }
+
+        $seedFile = $root . '/database/seeds/default.sql';
+        if (is_file($seedFile)) {
+            $pdo->exec((string) file_get_contents($seedFile));
         }
 
         writeEnv([
@@ -86,6 +102,7 @@ function handleDatabase(array &$errors): void
             'DB_DATABASE' => $name,
             'DB_USERNAME' => $user,
             'DB_PASSWORD' => $pass,
+            'APP_URL' => installAppUrl(),
         ]);
 
         $_SESSION['install_db'] = true;
@@ -98,6 +115,8 @@ function handleDatabase(array &$errors): void
 
 function handleAdmin(array &$errors, bool &$success): void
 {
+    global $root;
+
     $email = $_POST['email'] ?? '';
     $username = $_POST['username'] ?? 'admin';
     $password = $_POST['password'] ?? '';
@@ -114,8 +133,6 @@ function handleAdmin(array &$errors, bool &$success): void
     }
 
     try {
-        require_once dirname(__DIR__) . '/core/helpers.php';
-
         $db = Core\Database::getInstance();
         $hash = password_hash($password, PASSWORD_ARGON2ID);
 
@@ -140,17 +157,21 @@ function handleAdmin(array &$errors, bool &$success): void
 
 function handleFinish(array &$errors, bool &$success): void
 {
+    global $root;
+
     appendEnv('APP_INSTALLED', 'true');
     appendEnv('APP_KEY', bin2hex(random_bytes(32)));
     appendEnv('JWT_SECRET', bin2hex(random_bytes(32)));
-    file_put_contents(dirname(__DIR__) . '/storage/.installed', date('c'));
+    file_put_contents($root . '/storage/.installed', date('c'));
     $success = true;
 }
 
 function writeEnv(array $vars): void
 {
-    $example = dirname(__DIR__) . '/.env.example';
-    $env = dirname(__DIR__) . '/.env';
+    global $root;
+
+    $example = $root . '/.env.example';
+    $env = $root . '/.env';
 
     $content = file_exists($example) ? file_get_contents($example) : '';
 
@@ -166,14 +187,25 @@ function writeEnv(array $vars): void
 
 function appendEnv(string $key, string $value): void
 {
-    $env = dirname(__DIR__) . '/.env';
+    global $root;
+
+    $env = $root . '/.env';
     $content = file_get_contents($env);
     if (!str_contains($content, "{$key}=")) {
         file_put_contents($env, $content . "\n{$key}={$value}");
     }
 }
 
-session_start();
+function installAppUrl(): string
+{
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $scheme = $https ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+    return $scheme . '://' . $host;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -211,14 +243,15 @@ session_start();
                     <ul class="list-group mb-3">
                         <?php
                         $checks = [
-                            'PHP ' . PHP_VERSION => version_compare(PHP_VERSION, '8.3.0', '>='),
+                            'PHP ' . PHP_VERSION . ' (8.3+)' => version_compare(PHP_VERSION, '8.3.0', '>='),
                             'PDO MySQL' => extension_loaded('pdo_mysql'),
                             'OpenSSL' => extension_loaded('openssl'),
-                            'storage/ writable' => is_writable(dirname(__DIR__) . '/storage'),
+                            'vendor/autoload.php' => file_exists($root . '/vendor/autoload.php'),
+                            'storage/ writable' => is_writable($root . '/storage'),
                         ];
                         foreach ($checks as $label => $ok): ?>
                         <li class="list-group-item d-flex justify-content-between">
-                            <?= $label ?>
+                            <?= htmlspecialchars($label) ?>
                             <span class="badge bg-<?= $ok ? 'success' : 'danger' ?>"><?= $ok ? 'OK' : 'FAIL' ?></span>
                         </li>
                         <?php endforeach; ?>
@@ -231,7 +264,7 @@ session_start();
                         <div class="mb-3"><label class="form-label">Host</label><input name="db_host" class="form-control" value="127.0.0.1"></div>
                         <div class="mb-3"><label class="form-label">Puerto</label><input name="db_port" class="form-control" value="3306"></div>
                         <div class="mb-3"><label class="form-label">Base de datos</label><input name="db_name" class="form-control" value="multipanel"></div>
-                        <div class="mb-3"><label class="form-label">Usuario</label><input name="db_user" class="form-control" value="root"></div>
+                        <div class="mb-3"><label class="form-label">Usuario</label><input name="db_user" class="form-control" value="multipanel"></div>
                         <div class="mb-3"><label class="form-label">Contraseña</label><input name="db_pass" type="password" class="form-control"></div>
                         <button class="btn btn-primary">Instalar base de datos</button>
                     </form>
