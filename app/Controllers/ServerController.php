@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\Media\MediaServerFactory;
+use App\Services\Media\MediaDiscoveryService;
 use App\Services\ServerSyncService;
 use Core\Controller;
 use Core\Request;
@@ -26,6 +27,7 @@ class ServerController extends Controller
         private AuthService $auth = new AuthService(),
         private AuditService $audit = new AuditService(),
         private ServerSyncService $sync = new ServerSyncService(),
+        private MediaDiscoveryService $discovery = new MediaDiscoveryService(),
     ) {
     }
 
@@ -81,6 +83,43 @@ class ServerController extends Controller
 
         Session::getInstance()->flash('success', $msg);
         return $this->redirect('/servers/' . $server->uuid);
+    }
+
+    public function discoverPlex(Request $request): Response
+    {
+        $login = trim((string) $request->input('login', ''));
+        $password = (string) $request->input('password', '');
+
+        if ($login === '' || $password === '') {
+            return $this->json(['error' => 'Usuario y contraseña Plex requeridos.'], 422);
+        }
+
+        try {
+            $result = $this->discovery->discoverPlex($login, $password);
+            return $this->json(['success' => true, ...$result]);
+        } catch (\RuntimeException $e) {
+            return $this->json(['error' => $e->getMessage()], 422);
+        }
+    }
+
+    public function discoverJellyfin(Request $request): Response
+    {
+        $host = trim((string) $request->input('url', ''));
+        $port = (int) $request->input('port', 8096);
+        $ssl = (bool) $request->input('ssl');
+        $username = trim((string) $request->input('username', ''));
+        $password = (string) $request->input('password', '');
+
+        if ($host === '' || $username === '' || $password === '') {
+            return $this->json(['error' => 'URL, usuario y contraseña Jellyfin requeridos.'], 422);
+        }
+
+        try {
+            $result = $this->discovery->discoverJellyfin($host, $port, $ssl, $username, $password);
+            return $this->json(['success' => true, ...$result]);
+        } catch (\RuntimeException $e) {
+            return $this->json(['error' => $e->getMessage()], 422);
+        }
     }
 
     public function show(Request $request, string $uuid): Response
