@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\Server;
 use App\Repositories\ServerRepository;
 use App\Services\Media\MediaServerFactory;
+use App\Services\Media\PlexService;
 
 /**
  * Aggregates live playback sessions from all media servers.
@@ -15,6 +16,7 @@ final class StreamingActivityService
 {
     public function __construct(
         private ServerRepository $servers = new ServerRepository(),
+        private ServerSyncService $sync = new ServerSyncService(),
     ) {
     }
 
@@ -86,6 +88,12 @@ final class StreamingActivityService
         try {
             $media = MediaServerFactory::make($server);
             $raw = $media->getActiveSessions();
+
+            if ($media instanceof PlexService && $media->getLastError() === null) {
+                $this->sync->touchOnline($server, count($raw));
+            } elseif ($raw !== []) {
+                $this->sync->touchOnline($server, count($raw));
+            }
 
             return array_map(function (array $session) use ($server) {
                 $session['server_id'] = (int) $server->id;

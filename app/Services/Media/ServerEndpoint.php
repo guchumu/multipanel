@@ -76,6 +76,32 @@ final class ServerEndpoint
         return (bool) preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $host);
     }
 
+    /** @return array{url: string, port: int, ssl: bool}|null */
+    public static function fromProbeUrl(string $probeUrl): ?array
+    {
+        $probeUrl = trim($probeUrl);
+        if ($probeUrl === '') {
+            return null;
+        }
+
+        if (!str_contains($probeUrl, '://')) {
+            $probeUrl = 'http://' . $probeUrl;
+        }
+
+        $parts = parse_url($probeUrl);
+        if (!is_array($parts) || empty($parts['host'])) {
+            return null;
+        }
+
+        $scheme = $parts['scheme'] ?? 'http';
+
+        return [
+            'url' => $parts['host'],
+            'port' => (int) ($parts['port'] ?? ($scheme === 'https' ? 443 : 32400)),
+            'ssl' => $scheme === 'https',
+        ];
+    }
+
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
     public static function shouldPreferCurrentHost(string $currentHost, array $endpoint): bool
     {

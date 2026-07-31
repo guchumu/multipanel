@@ -262,6 +262,11 @@ class ServerController extends Controller
 
         $debug = $this->sync->runFullDiagnose($server);
 
+        if (!empty($debug['connected'])) {
+            $this->sync->sync($server);
+            $server = $this->servers->findByUuid($uuid) ?? $server;
+        }
+
         return $this->json([
             'success' => !empty($debug['connected']),
             'status' => $server->status,

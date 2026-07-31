@@ -24,22 +24,27 @@ final class PlexService
         private Server $server,
     ) {
         $resolver = new PlexConnectionResolver();
-        $resolved = $resolver->resolve($server);
-        $endpoint = $resolved['endpoint'];
+        $endpoint = ServerEndpoint::normalize(
+            (string) $server->url,
+            (int) ($server->port ?: 32400),
+            (bool) $server->ssl
+        );
 
-        if ($resolved['error'] !== null) {
-            $this->lastError = $resolved['error'];
-        } elseif ($this->shouldPersistEndpoint($endpoint)) {
-            if (!ServerEndpoint::shouldPreferCurrentHost((string) $this->server->url, $endpoint)) {
-                $server->url = $endpoint['url'];
-                $server->port = $endpoint['port'];
-                $server->ssl = $endpoint['ssl'] ? 1 : 0;
-                $server->save();
-            } elseif ((int) $endpoint['port'] !== (int) $this->server->port
-                || (bool) $endpoint['ssl'] !== (bool) $this->server->ssl) {
-                $server->port = $endpoint['port'];
-                $server->ssl = $endpoint['ssl'] ? 1 : 0;
-                $server->save();
+        $resolved = $resolver->resolve($server);
+        if ($resolved['error'] === null) {
+            $endpoint = $resolved['endpoint'];
+            if ($this->shouldPersistEndpoint($endpoint)) {
+                if (!ServerEndpoint::shouldPreferCurrentHost((string) $this->server->url, $endpoint)) {
+                    $server->url = $endpoint['url'];
+                    $server->port = $endpoint['port'];
+                    $server->ssl = $endpoint['ssl'] ? 1 : 0;
+                    $server->save();
+                } elseif ((int) $endpoint['port'] !== (int) $this->server->port
+                    || (bool) $endpoint['ssl'] !== (bool) $this->server->ssl) {
+                    $server->port = $endpoint['port'];
+                    $server->ssl = $endpoint['ssl'] ? 1 : 0;
+                    $server->save();
+                }
             }
         }
 
@@ -246,26 +251,119 @@ final class PlexService
 
         try {
             $response = $this->client->get('/status/sessions', [
-                'headers' => $this->authHeaders(),
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/json, application/xml',
+                ]),
             ]);
 
-            $xml = simplexml_load_string($response->getBody()->getContents());
-            if ($xml === false) {
-                return [];
+            $body = $response->getBody()->getContents();
+            $sessions = $this->parseSessionsBody($body);
+            if ($sessions !== null) {
+                return $sessions;
             }
 
-            $sessions = [];
-            foreach (['Video', 'Track', 'Photo'] as $tag) {
-                foreach ($xml->{$tag} ?? [] as $session) {
-                    $sessions[] = $this->parsePlexSession($session);
-                }
-            }
-
-            return $sessions;
+            $this->lastError = 'Respuesta de sesiones Plex no reconocida.';
+            return [];
         } catch (GuzzleException $e) {
+            $this->lastError = $e->getMessage();
             Logger::error('Plex get sessions failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
             return [];
         }
+    }
+
+    /** @return array<int, array<string, mixed>>|null */
+    private function parseSessionsBody(string $body): ?array
+    {
+        $body = trim($body);
+        if ($body === '') {
+            return [];
+        }
+
+        if ($body[0] === '{' || $body[0] === '[') {
+            $json = json_decode($body, true);
+            if (!is_array($json)) {
+                return null;
+            }
+
+            $container = $json['MediaContainer'] ?? $json;
+            if (!is_array($container)) {
+                return [];
+            }
+
+            $items = $container['Metadata'] ?? $container['Video'] ?? $container['Track'] ?? $container['Photo'] ?? [];
+            if (!is_array($items)) {
+                return [];
+            }
+
+            if ($items !== [] && !array_is_list($items)) {
+                $items = [$items];
+            }
+
+            return array_map(fn (array $session) => $this->parsePlexSessionArray($session), $items);
+        }
+
+        $xml = simplexml_load_string($body);
+        if ($xml === false) {
+            return null;
+        }
+
+        $sessions = [];
+        foreach (['Video', 'Track', 'Photo'] as $tag) {
+            foreach ($xml->{$tag} ?? [] as $session) {
+                $sessions[] = $this->parsePlexSession($session);
+            }
+        }
+
+        return $sessions;
+    }
+
+    /** @param array<string, mixed> $session */
+    private function parsePlexSessionArray(array $session): array
+    {
+        $type = (string) ($session['type'] ?? 'video');
+        $grandparent = (string) ($session['grandparentTitle'] ?? '');
+        $parent = (string) ($session['parentTitle'] ?? '');
+        $title = (string) ($session['title'] ?? '');
+
+        if ($type === 'episode' && $grandparent !== '') {
+            $displayTitle = $grandparent . ' · S' . ($session['parentIndex'] ?? '?') . 'E' . ($session['index'] ?? '?');
+            $subtitle = $title;
+        } elseif ($parent !== '' && $title !== '') {
+            $displayTitle = $parent . ' — ' . $title;
+            $subtitle = null;
+        } else {
+            $displayTitle = $title;
+            $subtitle = null;
+        }
+
+        $transcode = is_array($session['TranscodeSession'] ?? null) ? $session['TranscodeSession'] : null;
+        $videoDecision = $transcode ? (string) ($transcode['videoDecision'] ?? '') : 'copy';
+        $audioDecision = $transcode ? (string) ($transcode['audioDecision'] ?? '') : 'copy';
+        $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
+
+        $viewOffset = (int) ($session['viewOffset'] ?? 0);
+        $duration = (int) ($session['duration'] ?? 0);
+        $progress = $duration > 0 ? min(100, (int) round(($viewOffset / $duration) * 100)) : 0;
+
+        $user = is_array($session['User'] ?? null) ? $session['User'] : [];
+        $player = is_array($session['Player'] ?? null) ? $session['Player'] : [];
+        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? '');
+
+        return [
+            'title' => $displayTitle,
+            'subtitle' => $subtitle,
+            'user' => (string) ($user['title'] ?? ''),
+            'player' => (string) ($player['title'] ?? ''),
+            'platform' => (string) ($player['platform'] ?? $player['device'] ?? ''),
+            'state' => (string) ($player['state'] ?? 'playing'),
+            'media_type' => $type,
+            'year' => (string) ($session['year'] ?? ''),
+            'play_method' => $playMethod,
+            'video_decision' => $videoDecision,
+            'audio_decision' => $audioDecision,
+            'progress' => $progress,
+            'thumb_url' => $this->mediaUrl($thumb),
+        ];
     }
 
     /** @return array<string, mixed> */

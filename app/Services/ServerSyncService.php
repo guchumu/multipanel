@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Media\ServerEndpoint;
 use Core\Database;
 use Core\Logger;
 use Ramsey\Uuid\Uuid;
@@ -114,8 +115,56 @@ final class ServerSyncService
     {
         $debug = $this->debugService->diagnose($server);
         $this->lastDebug = $debug;
+
+        if (!empty($debug['connected'])) {
+            $this->applyWorkingEndpoint($server, $debug);
+        }
+
         $this->debugService->persistDebug($server, $debug);
         return $debug;
+    }
+
+    /** @param array<string, mixed> $debug */
+    public function applyWorkingEndpoint(Server $server, array $debug): void
+    {
+        $probeUrl = (string) ($debug['working_endpoint'] ?? '');
+
+        if ($probeUrl === '') {
+            foreach ($debug['probes'] ?? [] as $probe) {
+                if (!empty($probe['ok']) && !empty($probe['url'])) {
+                    $probeUrl = (string) $probe['url'];
+                    break;
+                }
+            }
+        }
+
+        $endpoint = ServerEndpoint::fromProbeUrl($probeUrl);
+        if ($endpoint === null) {
+            return;
+        }
+
+        if (ServerEndpoint::shouldPreferCurrentHost((string) $server->url, $endpoint)) {
+            $server->port = $endpoint['port'];
+            $server->ssl = $endpoint['ssl'] ? 1 : 0;
+        } else {
+            $server->url = $endpoint['url'];
+            $server->port = $endpoint['port'];
+            $server->ssl = $endpoint['ssl'] ? 1 : 0;
+        }
+
+        $server->save();
+    }
+
+    public function touchOnline(Server $server, int $activeSessions = 0): void
+    {
+        $server->status = 'online';
+        $server->active_sessions = $activeSessions;
+        $server->last_check_at = now()->format('Y-m-d H:i:s');
+        $server->last_error = null;
+        if ($server->last_sync_at === null) {
+            $server->last_sync_at = $server->last_check_at;
+        }
+        $server->save();
     }
 
     /** @return array{imported: int, updated: int, total: int} */
