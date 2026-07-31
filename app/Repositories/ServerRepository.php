@@ -33,6 +33,25 @@ class ServerRepository
         return $row ? new Server($row) : null;
     }
 
+    public function findDefaultByTenant(int $tenantId): ?Server
+    {
+        $row = Database::getInstance()->fetchOne(
+            'SELECT * FROM `servers` WHERE `tenant_id` = ? AND `is_default` = 1 AND `deleted_at` IS NULL LIMIT 1',
+            [$tenantId]
+        );
+
+        if ($row) {
+            return new Server($row);
+        }
+
+        $row = Database::getInstance()->fetchOne(
+            'SELECT * FROM `servers` WHERE `tenant_id` = ? AND `deleted_at` IS NULL ORDER BY `sort_order`, `id` LIMIT 1',
+            [$tenantId]
+        );
+
+        return $row ? new Server($row) : null;
+    }
+
     public function countByStatus(int $tenantId, string $status): int
     {
         $row = Database::getInstance()->fetchOne(

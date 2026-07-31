@@ -534,6 +534,54 @@ final class PlexService
         }
     }
 
+    /** @param array<int, int|string> $librarySectionIds Plex library section keys */
+    public function inviteUserByEmail(string $email, array $librarySectionIds): bool
+    {
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+        $token = trim((string) ($this->server->token ?? ''));
+
+        if ($machineId === '' || $token === '' || $email === '') {
+            Logger::error('Plex invite missing machine_id, token or email', [
+                'server_id' => $this->server->id,
+            ]);
+            return false;
+        }
+
+        $sectionIds = array_values(array_filter(array_map('intval', $librarySectionIds)));
+        if ($sectionIds === []) {
+            Logger::error('Plex invite missing library sections', ['server_id' => $this->server->id]);
+            return false;
+        }
+
+        try {
+            $client = new Client([
+                'base_uri' => 'https://plex.tv',
+                'timeout' => 30,
+                'verify' => true,
+            ]);
+
+            $response = $client->post("/api/v2/servers/{$machineId}/shared_servers", [
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ]),
+                'json' => [
+                    'invitedEmail' => $email,
+                    'librarySectionIds' => $sectionIds,
+                ],
+            ]);
+
+            return $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+        } catch (GuzzleException $e) {
+            Logger::error('Plex invite user failed', [
+                'server_id' => $this->server->id,
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
     public function testConnection(): bool
     {
         if ($this->lastError !== null) {

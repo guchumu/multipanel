@@ -61,7 +61,7 @@ function runExpiryNotifications(): void
     echo "Sending expiry notifications...\n";
     try {
         $stats = (new ExpiryNotificationService())->run(1);
-        echo "  Checked: {$stats['checked']}, sent: {$stats['sent']}, skipped: {$stats['skipped']}, errors: {$stats['errors']}\n";
+        echo "  Checked: {$stats['checked']}, sent: {$stats['sent']}, skipped: {$stats['skipped']}, errors: {$stats['errors']}, deactivated: {$stats['deactivated']}\n";
     } catch (\Throwable $e) {
         echo "  Expiry notifications failed: {$e->getMessage()}\n";
     }

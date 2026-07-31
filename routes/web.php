@@ -25,6 +25,7 @@ use App\Controllers\DocsController;
 use App\Controllers\OAuthController;
 use App\Controllers\CustomerController;
 use App\Controllers\WebhookController;
+use App\Controllers\RegistroController;
 use App\Controllers\PrivacyController;
 use App\Controllers\LocaleController;
 use App\Controllers\MetricsController;
@@ -58,6 +59,8 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
+$router->get('/registro', [RegistroController::class, 'store'], 'registro.store');
+$router->post('/registro', [RegistroController::class, 'store'], 'registro.store.post');
 
 // Portal (client self-service)
 $router->get('/portal/login', [PortalController::class, 'showLogin'], 'portal.login');
@@ -89,6 +92,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
 
     // Servers
     $router->get('/servers', [ServerController::class, 'index'], 'servers.index');
+    $router->get('/servers/load', [ServerController::class, 'loadApi'], 'servers.load');
     $router->post('/servers/sync-all', [ServerController::class, 'syncAll'], 'servers.sync_all', [CsrfMiddleware::class]);
     $router->get('/servers/create', [ServerController::class, 'create'], 'servers.create');
     $router->post('/servers/discover/plex', [ServerController::class, 'discoverPlex'], 'servers.discover.plex', [CsrfMiddleware::class]);

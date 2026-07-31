@@ -11,6 +11,7 @@ use App\Services\AuditService;
 use App\Services\Media\MediaDiscoveryService;
 use App\Services\Media\ServerEndpoint;
 use App\Services\ServerConnectionDebugService;
+use App\Services\ServerLoadService;
 use App\Services\ServerSyncService;
 use Core\Controller;
 use Core\Request;
@@ -30,6 +31,7 @@ class ServerController extends Controller
         private ServerSyncService $sync = new ServerSyncService(),
         private MediaDiscoveryService $discovery = new MediaDiscoveryService(),
         private ServerConnectionDebugService $connectionDebug = new ServerConnectionDebugService(),
+        private ServerLoadService $load = new ServerLoadService(),
     ) {
     }
 
@@ -40,6 +42,17 @@ class ServerController extends Controller
         return $this->view('servers.index', [
             'title' => 'Servidores',
             'servers' => $this->servers->allByTenant($tenantId),
+            'load' => $this->load->getTenantLoad($tenantId),
+        ]);
+    }
+
+    public function loadApi(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        return $this->json([
+            'load' => $this->load->getTenantLoad($tenantId),
+            'updated_at' => date('c'),
         ]);
     }
 

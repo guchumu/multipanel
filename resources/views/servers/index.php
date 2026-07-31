@@ -21,12 +21,13 @@
                     <th>Estado</th>
                     <th class="d-none d-lg-table-cell">Versión</th>
                     <th class="d-none d-sm-table-cell">Sesiones</th>
+                    <th class="d-none d-lg-table-cell">Carga</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($servers)): ?>
-                <tr><td colspan="7" class="text-center text-muted py-4">No hay servidores. <a href="/servers/create">Añadir uno</a></td></tr>
+                <tr><td colspan="8" class="text-center text-muted py-4">No hay servidores. <a href="/servers/create">Añadir uno</a></td></tr>
                 <?php else: ?>
                 <?php foreach ($servers as $server): ?>
                 <tr>
@@ -45,6 +46,20 @@
                     </td>
                     <td class="small d-none d-lg-table-cell"><?= e($server->version ?? '-') ?></td>
                     <td class="d-none d-sm-table-cell"><?= (int) $server->active_sessions ?></td>
+                    <td class="d-none d-lg-table-cell small">
+                        <?php $l = $load[(int) $server->id] ?? null; ?>
+                        <?php if ($l): ?>
+                        <span class="badge bg-primary" title="Reproducciones activas"><?= (int) $l['sessions'] ?> ses.</span>
+                        <?php if ($l['transcode'] > 0): ?>
+                        <span class="badge bg-warning text-dark" title="Transcodificando"><?= (int) $l['transcode'] ?> trans.</span>
+                        <?php endif; ?>
+                        <?php if ($l['direct_play'] > 0): ?>
+                        <span class="badge bg-success" title="Direct play"><?= (int) $l['direct_play'] ?> direct</span>
+                        <?php endif; ?>
+                        <?php else: ?>
+                        <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>

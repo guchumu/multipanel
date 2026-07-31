@@ -20,20 +20,22 @@ final class ExpiryNotificationService
     ) {
     }
 
-    /** @return array{sent: int, skipped: int, errors: int, checked: int} */
+    /** @return array{sent: int, skipped: int, errors: int, checked: int, deactivated: int} */
     public function run(int $tenantId = 1): array
     {
         if (!config('expiry_notifications.enabled', true)) {
-            return ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0];
+            return ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
         }
 
-        $milestones = config('expiry_notifications.milestones', [10, 5, 3, 2, 1, 0, -1]);
+        $milestones = config('expiry_notifications.milestones', [10, 7, 5, 4, 3, 2, 1, 0, -1]);
         $messages = config('expiry_notifications.messages', []);
         $title = (string) config('expiry_notifications.title', 'Aviso de caducidad');
+        $notifyAdmin = (bool) config('expiry_notifications.notify_admin', true);
+        $deactivateOnExpiry = (bool) config('expiry_notifications.deactivate_on_expiry', true);
         $tz = new DateTimeZone((string) config('app.timezone', 'Europe/Madrid'));
         $today = new DateTimeImmutable('today', $tz);
 
-        $stats = ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0];
+        $stats = ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
 
         $rows = Database::getInstance()->fetchAll(
             'SELECT mu.*, s.name AS server_name
@@ -93,8 +95,25 @@ final class ExpiryNotificationService
                     'media_user_id' => $user->id,
                     'milestone' => $milestoneKey,
                 ]);
+
+                if ($notifyAdmin) {
+                    $adminMsg = "✓ Notificación enviada a {$user->email} (días restantes: {$daysLeft})";
+                    $this->telegram->send('Aviso caducidad', $adminMsg);
+                }
+
+                if ($deactivateOnExpiry && $daysLeft < 0 && in_array($user->status, ['active', 'invited'], true)) {
+                    $user->status = 'expired';
+                    $user->save();
+                    $stats['deactivated']++;
+                    Logger::info('Media user deactivated after expiry notice', [
+                        'media_user_id' => $user->id,
+                    ]);
+                }
             } else {
                 $stats['errors']++;
+                if ($notifyAdmin) {
+                    $this->telegram->send('Error aviso caducidad', "✗ Error enviando notificación a {$user->email}");
+                }
             }
         }
 
@@ -124,6 +143,9 @@ final class ExpiryNotificationService
     {
         $expiresAt = (string) ($user->expires_at ?? '');
         $expiresDate = $expiresAt !== '' ? substr($expiresAt, 0, 10) : '';
+        $endDateFormatted = $expiresDate !== ''
+            ? (new DateTimeImmutable($expiresDate))->format('d/m/Y')
+            : '';
 
         $replace = [
             '{username}' => (string) $user->username,
@@ -131,6 +153,8 @@ final class ExpiryNotificationService
             '{display_name}' => (string) ($user->display_name ?: $user->username),
             '{expires_at}' => $expiresAt,
             '{expires_date}' => $expiresDate,
+            '{end_date}' => $endDateFormatted,
+            '{days}' => (string) abs($daysLeft),
             '{days_left}' => (string) $daysLeft,
             '{server_name}' => $serverName !== '' ? $serverName : '—',
         ];

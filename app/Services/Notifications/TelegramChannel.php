@@ -26,12 +26,12 @@ final class TelegramChannel implements NotificationChannelInterface
 
     public function send(string $title, string $message, array $data = []): bool
     {
-        if (!$this->botToken || !$this->chatId) {
+        $chatId = $data['chat_id'] ?? $this->chatId;
+
+        if (!$this->botToken || !$chatId) {
             Logger::warning('Telegram not configured');
             return false;
         }
-
-        $chatId = $data['chat_id'] ?? $this->chatId;
         $text = "*{$title}*\n\n{$message}";
 
         if (isset($data['buttons']) && is_array($data['buttons'])) {
