@@ -1,6 +1,13 @@
 <?php ob_start(); ?>
 <h4 class="mb-4">Actualizaciones del sistema</h4>
 
+<div class="alert alert-info small">
+    <i class="bi bi-info-circle me-1"></i>
+    Las migraciones de base de datos se aplican <strong>automáticamente</strong> al cargar el panel
+    (<code>AUTO_MIGRATE=true</code> en <code>.env</code>).
+    También puedes ejecutarlas manualmente aquí o desde cron: <code>php cron/run.php</code> no las ejecuta — usa esta pantalla o la carga web.
+</div>
+
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card border-0 shadow-sm">
@@ -34,6 +41,12 @@
                 <?php endforeach; ?>
                 <?php endif; ?>
             </ul>
+        </div>
+        <div class="card border-0 shadow-sm mt-3">
+            <div class="card-body small text-muted">
+                <h6 class="text-dark">Archivos en <code>database/migrations/</code></h6>
+                <p class="mb-0">Cada archivo <code>.sql</code> se ejecuta una sola vez y queda registrado en la tabla <code>migrations</code>.</p>
+            </div>
         </div>
     </div>
 </div>

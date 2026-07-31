@@ -89,6 +89,7 @@ ob_start();
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
+                            <a href="/media-users/<?= e($u->uuid) ?>/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
                             <?php if ($u->status === 'active'): ?>
                             <button class="btn btn-outline-warning" onclick="suspendUser('<?= e($u->uuid) ?>')"><i class="bi bi-pause"></i></button>
                             <?php else: ?>

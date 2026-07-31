@@ -33,6 +33,9 @@
                 <tr>
                     <td>
                         <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium"><?= e($server->name) ?></a>
+                        <?php if (!empty($server->is_default)): ?>
+                        <span class="badge bg-info ms-1" title="Servidor por defecto">Default</span>
+                        <?php endif; ?>
                         <div class="small text-muted d-md-none"><?= e($server->displayHost()) ?>:<?= (int) $server->port ?></div>
                     </td>
                     <td><span class="badge bg-<?= $server->type === 'plex' ? 'warning' : 'info' ?>"><?= e(strtoupper($server->type)) ?></span></td>

@@ -86,7 +86,12 @@ final class ExpiryNotificationService
             }
 
             $body = $this->renderTemplate($template, $user, (string) ($row['server_name'] ?? ''), $daysLeft);
-            $sent = $this->telegram->send($title, $body, ['chat_id' => $chatId]);
+            $sent = $this->telegram->send($title, $body, [
+                'chat_id' => $chatId,
+                'media_user_id' => (int) $user->id,
+                'message_type' => 'expiry_' . $milestoneKey,
+                'log_message' => true,
+            ]);
 
             if ($sent) {
                 $this->recordSent((int) $user->id, $milestoneKey);

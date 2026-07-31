@@ -62,7 +62,9 @@ class RegistroController extends Controller
             'emails' => $emails,
         ]);
 
-        $statusCode = $result['status'] === 'success' ? 200 : 500;
+        $statusCode = in_array($result['status'], ['success', 'ok'], true) ? 200 : (
+            str_contains((string) ($result['message'] ?? ''), 'Límite') ? 429 : 500
+        );
 
         return $this->json($result, $statusCode);
     }

@@ -53,6 +53,18 @@
 </div>
 <?php endif; ?>
 
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-body small text-muted">
+        <h6 class="text-dark">Cómo funcionan</h6>
+        <ul class="mb-0">
+            <li><strong>Completo:</strong> volcado SQL de toda la base de datos con <code>mysqldump</code> → <code>storage/backups/</code></li>
+            <li><strong>Incremental:</strong> solo tablas de actividad reciente desde el último backup</li>
+            <li><strong>Cron:</strong> <code>php cron/run.php backup</code> (tarea <code>all</code> también lo incluye)</li>
+            <li><strong>Retención:</strong> <?= (int) config('backup.retention_days', 30) ?> días — los antiguos se borran automáticamente</li>
+        </ul>
+    </div>
+</div>
+
 <?php
 $content = ob_get_clean();
 include base_path('resources/views/layouts/app.php');

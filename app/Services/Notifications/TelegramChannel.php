@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Notifications;
 
+use App\Services\MediaUserMessageService;
 use Core\Logger;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -18,6 +19,7 @@ final class TelegramChannel implements NotificationChannelInterface
     public function __construct(
         private ?string $botToken = null,
         private ?string $chatId = null,
+        private MediaUserMessageService $messageLog = new MediaUserMessageService(),
     ) {
         $this->botToken ??= config('telegram.bot_token', env('TELEGRAM_BOT_TOKEN'));
         $this->chatId ??= config('telegram.chat_id', env('TELEGRAM_CHAT_ID'));
@@ -32,12 +34,32 @@ final class TelegramChannel implements NotificationChannelInterface
             Logger::warning('Telegram not configured');
             return false;
         }
+
         $text = "*{$title}*\n\n{$message}";
 
         if (isset($data['buttons']) && is_array($data['buttons'])) {
-            return $this->sendWithKeyboard($chatId, $text, $data['buttons']);
+            $sent = $this->sendWithKeyboard((string) $chatId, $text, $data['buttons']);
+        } else {
+            $sent = $this->sendPlain((string) $chatId, $text);
         }
 
+        if (!empty($data['log_message']) || !empty($data['media_user_id'])) {
+            $this->messageLog->log(
+                isset($data['media_user_id']) ? (int) $data['media_user_id'] : null,
+                (string) ($data['message_type'] ?? 'telegram'),
+                $message,
+                $title,
+                (string) $chatId,
+                'telegram',
+                $sent
+            );
+        }
+
+        return $sent;
+    }
+
+    private function sendPlain(string $chatId, string $text): bool
+    {
         try {
             $this->client->post("https://api.telegram.org/bot{$this->botToken}/sendMessage", [
                 'json' => [

@@ -10,6 +10,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\MediaUserBulkService;
+use App\Services\MediaUserMessageService;
 use App\Services\PasswordService;
 use App\Services\SubscriptionPeriod;
 use App\Services\Notifications\NotificationService;
@@ -32,6 +33,7 @@ class MediaUserController extends Controller
         private PasswordService $passwords = new PasswordService(),
         private MediaUserBulkService $bulk = new MediaUserBulkService(),
         private NotificationService $notifications = new NotificationService(),
+        private MediaUserMessageService $messages = new MediaUserMessageService(),
     ) {
     }
 
@@ -158,6 +160,20 @@ class MediaUserController extends Controller
             'success' => true,
             'telegram_chat_id' => $user->telegram_chat_id,
             'message' => 'Telegram actualizado.',
+        ]);
+    }
+
+    public function messages(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->redirect('/media-users');
+        }
+
+        return $this->view('media_users.messages', [
+            'title' => 'Mensajes: ' . ($user->display_name ?? $user->username),
+            'user' => $user,
+            'messages' => $this->messages->listForUser((int) $user->id),
         ]);
     }
 

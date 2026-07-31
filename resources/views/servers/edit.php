@@ -60,6 +60,12 @@
                 </div>
                 <div class="col-md-6">
                     <div class="form-check">
+                        <input type="checkbox" name="is_default" class="form-check-input" id="fieldDefault" value="1" <?= !empty($server->is_default) ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="fieldDefault">Servidor por defecto (altas nuevas vía /registro)</label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-check">
                         <input type="checkbox" name="sync_after" class="form-check-input" id="syncAfter" value="1" checked>
                         <label class="form-check-label" for="syncAfter">Sincronizar tras guardar</label>
                     </div>

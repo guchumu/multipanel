@@ -213,6 +213,13 @@ class ServerController extends Controller
         $server->location = $request->input('location');
         $server->check_interval_minutes = (int) ($request->input('check_interval') ?? 5);
 
+        if ($request->input('is_default')) {
+            $this->setDefaultServer((int) $server->tenant_id, (int) $server->id);
+            $server->is_default = 1;
+        } else {
+            $server->is_default = 0;
+        }
+
         $token = trim((string) $request->input('token', ''));
         if ($token !== '') {
             $server->token = $token;
@@ -347,5 +354,18 @@ class ServerController extends Controller
 
         Session::getInstance()->flash('success', 'Servidor eliminado.');
         return $this->redirect('/servers');
+    }
+
+    private function setDefaultServer(int $tenantId, int $serverId): void
+    {
+        $db = \Core\Database::getInstance();
+        $db->query(
+            'UPDATE servers SET is_default = 0 WHERE tenant_id = ? AND deleted_at IS NULL',
+            [$tenantId]
+        );
+        $db->query(
+            'UPDATE servers SET is_default = 1 WHERE id = ? AND tenant_id = ?',
+            [$serverId, $tenantId]
+        );
     }
 }

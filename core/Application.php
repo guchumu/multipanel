@@ -53,7 +53,35 @@ final class Application
         $this->registerRoutes();
         $this->router->useMiddleware(\App\Middleware\SecurityMiddleware::class);
         $this->loadPlugins();
+        $this->runPendingMigrations();
         $this->bootstrapped = true;
+    }
+
+    private function runPendingMigrations(): void
+    {
+        if (!filter_var(env('AUTO_MIGRATE', true), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        try {
+            $updater = new Updater();
+            $pending = $updater->getPendingMigrations();
+            if ($pending === []) {
+                return;
+            }
+
+            $results = $updater->runMigrations();
+            $ok = count(array_filter($results, static fn (string $r): bool => $r === 'ok'));
+
+            if ($ok > 0 && PHP_SAPI !== 'cli') {
+                Session::getInstance()->flash(
+                    'success',
+                    "Actualización automática: {$ok} migración(es) aplicada(s)."
+                );
+            }
+        } catch (\Throwable $e) {
+            Logger::warning('Auto-migration skipped', ['error' => $e->getMessage()]);
+        }
     }
 
     public function run(): void
