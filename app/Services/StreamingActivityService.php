@@ -28,6 +28,32 @@ final class StreamingActivityService
     }
 
     /**
+     * Sesiones activas de un usuario media concreto (para mostrar en su ficha
+     * qué está viendo ahora mismo, con carátula). Se compara por nombre de
+     * usuario/nombre visible ya que Plex/Jellyfin no siempre exponen el email.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getSessionsForUser(int $tenantId, int $serverId, string $username, ?string $displayName = null): array
+    {
+        $sessions = $this->getSnapshot($tenantId, $serverId)['sessions'];
+        $needles = array_filter(array_map(
+            static fn (?string $v): string => mb_strtolower(trim((string) $v)),
+            [$username, $displayName]
+        ));
+
+        if ($needles === []) {
+            return [];
+        }
+
+        return array_values(array_filter($sessions, static function (array $session) use ($needles): bool {
+            $sessionUser = mb_strtolower(trim((string) ($session['user'] ?? '')));
+
+            return $sessionUser !== '' && in_array($sessionUser, $needles, true);
+        }));
+    }
+
+    /**
      * @return array{
      *     sessions: array<int, array<string, mixed>>,
      *     grouped: array<int, array{server_id: int, server_name: string, server_type: string, sessions: array<int, array<string, mixed>>}>,

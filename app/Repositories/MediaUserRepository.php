@@ -145,6 +145,55 @@ class MediaUserRepository
     }
 
     /**
+     * Busca un usuario ya existente (no borrado) con el mismo email o el mismo
+     * nombre de usuario dentro del tenant, para evitar altas duplicadas.
+     * El email tiene prioridad porque es el identificador más fiable.
+     */
+    public function findDuplicate(int $tenantId, string $username, ?string $email = null, ?int $excludeId = null): ?MediaUser
+    {
+        $db = Database::getInstance();
+        $email = $email !== null ? trim($email) : null;
+        $username = trim($username);
+
+        if ($email !== null && $email !== '') {
+            $params = [$tenantId, $email];
+            $sql = 'SELECT mu.*, s.name AS server_name
+                    FROM `media_users` mu
+                    LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                    WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL AND LOWER(mu.`email`) = LOWER(?)';
+            if ($excludeId !== null) {
+                $sql .= ' AND mu.`id` != ?';
+                $params[] = $excludeId;
+            }
+            $sql .= ' ORDER BY mu.`expires_at` DESC LIMIT 1';
+
+            $row = $db->fetchOne($sql, $params);
+            if ($row) {
+                return new MediaUser($row);
+            }
+        }
+
+        if ($username === '') {
+            return null;
+        }
+
+        $params = [$tenantId, $username];
+        $sql = 'SELECT mu.*, s.name AS server_name
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL AND LOWER(mu.`username`) = LOWER(?)';
+        if ($excludeId !== null) {
+            $sql .= ' AND mu.`id` != ?';
+            $params[] = $excludeId;
+        }
+        $sql .= ' ORDER BY mu.`expires_at` DESC LIMIT 1';
+
+        $row = $db->fetchOne($sql, $params);
+
+        return $row ? new MediaUser($row) : null;
+    }
+
+    /**
      * Usuarios cuya suscripción vence dentro de X días (incluye ya caducados si $includeExpired).
      *
      * @return array<int, MediaUser>

@@ -12,6 +12,7 @@ use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\BillingService;
 use App\Services\BillingSettingsService;
+use App\Services\StreamingActivityService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
@@ -45,6 +46,7 @@ class MediaUserController extends Controller
         private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
         private BillingService $billing = new BillingService(),
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
+        private StreamingActivityService $streaming = new StreamingActivityService(),
     ) {
     }
 
@@ -89,12 +91,23 @@ class MediaUserController extends Controller
             }
         }
 
+        $nowPlaying = [];
+        if ($user->server_id) {
+            $nowPlaying = $this->streaming->getSessionsForUser(
+                (int) $user->tenant_id,
+                (int) $user->server_id,
+                (string) $user->username,
+                $user->display_name ?? null
+            );
+        }
+
         return $this->view('media_users.show', [
             'title' => $user->display_name ?? $user->username,
             'user' => $user,
             'timeline' => $this->activity->timeline((int) $user->id),
             'messages' => $this->messages->listForUser((int) $user->id, 20),
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
+            'nowPlaying' => $nowPlaying,
         ]);
     }
 
@@ -211,6 +224,27 @@ class MediaUserController extends Controller
         ]);
 
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $email = isset($data['email']) && $data['email'] !== '' ? mb_strtolower(trim((string) $data['email'])) : null;
+
+        $duplicate = $this->mediaUsers->findDuplicate($tenantId, $data['username'], $email);
+        if ($duplicate !== null) {
+            $label = $duplicate->display_name ?? $duplicate->username;
+            if ($duplicate->isExpired() || in_array($duplicate->status, ['expired', 'suspended'], true)) {
+                $vence = $duplicate->expires_at ? substr((string) $duplicate->expires_at, 0, 10) : 'sin fecha';
+                Session::getInstance()->flash('error', sprintf(
+                    'Ya existe "%s" con ese email o usuario y está caducado/suspendido (venció: %s). No se ha creado un duplicado: edítalo desde su ficha para renovarlo.',
+                    $label,
+                    $vence
+                ));
+            } else {
+                Session::getInstance()->flash('error', sprintf(
+                    'Ya existe un usuario activo "%s" con ese email o usuario. No se han creado duplicados.',
+                    $label
+                ));
+            }
+            return $this->redirect('/media-users/' . $duplicate->uuid);
+        }
+
         $password = $request->input('password') ?: $this->passwords->generate();
 
         $user = new MediaUser([
@@ -218,7 +252,7 @@ class MediaUserController extends Controller
             'uuid' => Uuid::uuid4()->toString(),
             'server_id' => $request->input('server_id') ?: null,
             'username' => $data['username'],
-            'email' => $data['email'] ?? null,
+            'email' => $email,
             'password' => $this->passwords->hash($password),
             'display_name' => $request->input('display_name'),
             'status' => $request->input('status') ?? 'pending',

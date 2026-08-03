@@ -75,23 +75,18 @@ class ServerRepository
             return;
         }
 
+        // SHOW COLUMNS solo requiere SELECT sobre la tabla (a diferencia de
+        // information_schema, que algunos hostings MySQL restringen), y no
+        // depende del runner de migraciones completo, que puede quedarse
+        // bloqueado si alguna migración anterior falla en este entorno.
         try {
-            $row = Database::getInstance()->fetchOne(
-                'SELECT COUNT(*) AS total FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
-                ['servers', 'is_default']
-            );
-            if (((int) ($row['total'] ?? 0)) > 0) {
+            $row = Database::getInstance()->fetchOne('SHOW COLUMNS FROM `servers` LIKE \'is_default\'');
+            if ($row) {
                 $ensured = true;
                 return;
             }
         } catch (\Throwable) {
-            // fall through
-        }
-
-        try {
-            (new \Core\Updater())->runMigrations();
-        } catch (\Throwable) {
+            // fall through: intentamos añadir la columna de todos modos
         }
 
         try {
@@ -99,7 +94,8 @@ class ServerRepository
                 'ALTER TABLE `servers` ADD COLUMN `is_default` TINYINT(1) NOT NULL DEFAULT 0'
             );
         } catch (\Throwable $e) {
-            if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+            $message = strtolower($e->getMessage());
+            if (!str_contains($message, 'duplicate column') && !str_contains($message, 'already exists')) {
                 throw $e;
             }
         }

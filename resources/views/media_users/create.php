@@ -14,7 +14,9 @@
                     <select name="server_id" class="form-select">
                         <option value="">Sin asignar</option>
                         <?php foreach ($servers as $server): ?>
-                        <option value="<?= (int) $server->id ?>"><?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)</option>
+                        <option value="<?= (int) $server->id ?>" <?= !empty($server->is_default) ? 'selected' : '' ?>>
+                            <?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)<?= !empty($server->is_default) ? ' ★ predeterminado' : '' ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
                 </div>

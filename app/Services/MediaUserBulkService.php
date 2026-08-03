@@ -36,7 +36,7 @@ final class MediaUserBulkService
             try {
                 $username = strstr($email, '@', true) ?: $email;
                 $existing = $db->fetchOne(
-                    'SELECT id FROM media_users WHERE tenant_id = ? AND email = ? AND deleted_at IS NULL LIMIT 1',
+                    'SELECT id FROM media_users WHERE tenant_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1',
                     [$tenantId, $email]
                 );
 

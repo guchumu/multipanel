@@ -220,4 +220,22 @@
         }
         window.open(waLink(body), '_blank');
     });
+
+    document.addEventListener('click', async function (e) {
+        const btn = e.target.closest('.btn-kill-session');
+        if (!btn) return;
+        if (!confirm('¿Detener esta reproducción?')) return;
+        btn.disabled = true;
+        try {
+            const data = await post('/activity/kill', {
+                server_id: Number(btn.dataset.serverId),
+                session_id: btn.dataset.sessionId,
+            });
+            toast(data.message || 'Reproducción detenida');
+            btn.closest('.session-card')?.closest('.col-sm-6')?.remove();
+        } catch (err) {
+            toast(err.message);
+            btn.disabled = false;
+        }
+    });
 })();

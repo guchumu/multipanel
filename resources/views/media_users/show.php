@@ -7,6 +7,22 @@ $statusBadgeClass = static function (string $status): string {
         default => 'bg-light text-dark border',
     };
 };
+$playMethodLabel = static function (string $method): string {
+    return match ($method) {
+        'direct_play' => 'Direct Play',
+        'direct_stream' => 'Direct Stream',
+        'transcode' => 'Transcode',
+        default => ucfirst(str_replace('_', ' ', $method)),
+    };
+};
+$playMethodBadge = static function (string $method): string {
+    return match ($method) {
+        'direct_play' => 'success',
+        'direct_stream' => 'info',
+        'transcode' => 'warning',
+        default => 'secondary',
+    };
+};
 ob_start();
 ?>
 <div class="mb-4">
@@ -148,6 +164,22 @@ ob_start();
     </div>
 
     <div class="col-lg-7">
+        <?php if (!empty($nowPlaying)): ?>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-play-circle-fill text-success me-1"></i>Reproduciendo ahora</strong>
+                <span class="badge bg-success"><?= count($nowPlaying) ?> activa(s)</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <?php foreach ($nowPlaying as $session): ?>
+                    <?php include base_path('resources/views/activity/_session_card.php'); ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <strong>Historial de actividad</strong>
