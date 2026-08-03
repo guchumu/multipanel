@@ -358,7 +358,12 @@ class ServerController extends Controller
             }
 
             $this->setDefaultServer((int) $server->tenant_id, (int) $server->id, (string) $server->type);
-            AuditService::log('server.set_default', 'server', (int) $server->id);
+
+            try {
+                AuditService::log('server.set_default', 'server', (int) $server->id);
+            } catch (\Throwable $auditError) {
+                \Core\Logger::warning('server.set_default audit log failed', ['error' => $auditError->getMessage()]);
+            }
 
             return $this->json([
                 'success' => true,
@@ -366,9 +371,11 @@ class ServerController extends Controller
                 'type' => $server->type,
             ]);
         } catch (\Throwable $e) {
+            \Core\Logger::error('server.set_default failed', ['uuid' => $uuid, 'error' => $e->getMessage()]);
             return $this->json([
                 'success' => false,
                 'error' => $e->getMessage(),
+                'message' => 'No se pudo marcar como predeterminado: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -378,11 +385,11 @@ class ServerController extends Controller
         $this->servers->ensureIsDefaultColumn();
         $db = \Core\Database::getInstance();
         $db->query(
-            'UPDATE servers SET is_default = 0 WHERE tenant_id = ? AND type = ? AND deleted_at IS NULL',
+            'UPDATE `servers` SET `is_default` = 0 WHERE `tenant_id` = ? AND `type` = ? AND `deleted_at` IS NULL',
             [$tenantId, $type]
         );
         $db->query(
-            'UPDATE servers SET is_default = 1 WHERE id = ? AND tenant_id = ?',
+            'UPDATE `servers` SET `is_default` = 1 WHERE `id` = ? AND `tenant_id` = ?',
             [$serverId, $tenantId]
         );
     }

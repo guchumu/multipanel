@@ -40,7 +40,7 @@ class PortalPaymentController extends Controller
         $result = $this->payments->checkout($gateway, (float) $plan['price'], $plan['currency'], [
             'plan_name' => $plan['name'],
             'media_user_id' => $user->id,
-        ]);
+        ], (int) ($user->tenant_id ?? 1));
 
         if (!empty($result['checkout_url'])) {
             return $this->redirect($result['checkout_url']);

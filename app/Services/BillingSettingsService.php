@@ -64,6 +64,65 @@ final class BillingSettingsService
         $this->set($tenantId, 'renewal_presets', json_encode($clean, JSON_UNESCAPED_UNICODE), 'json');
     }
 
+    /**
+     * Claves de Stripe configurables desde Facturación. Si el tenant no ha
+     * guardado las suyas, se cae a las variables de entorno / config/payments.php
+     * (útil para no romper instalaciones que ya las tenían solo en .env).
+     */
+    public function getStripeSecretKey(int $tenantId): string
+    {
+        $value = $this->get($tenantId, 'stripe_secret_key');
+
+        return $value !== null && trim($value) !== ''
+            ? trim($value)
+            : (string) config('payments.stripe.secret_key', env('STRIPE_SECRET_KEY', ''));
+    }
+
+    public function getStripePublishableKey(int $tenantId): string
+    {
+        $value = $this->get($tenantId, 'stripe_publishable_key');
+
+        return $value !== null && trim($value) !== ''
+            ? trim($value)
+            : (string) config('payments.stripe.publishable_key', env('STRIPE_PUBLISHABLE_KEY', ''));
+    }
+
+    public function getStripeWebhookSecret(int $tenantId): string
+    {
+        $value = $this->get($tenantId, 'stripe_webhook_secret');
+
+        return $value !== null && trim($value) !== ''
+            ? trim($value)
+            : (string) config('payments.stripe.webhook_secret', env('STRIPE_WEBHOOK_SECRET', ''));
+    }
+
+    public function hasTenantStripeSecretKey(int $tenantId): bool
+    {
+        $value = $this->get($tenantId, 'stripe_secret_key');
+
+        return $value !== null && trim($value) !== '';
+    }
+
+    /**
+     * Guarda las claves de Stripe. Un campo vacío deja intacta la clave ya
+     * guardada (para no obligar a repegar el secret key cada vez que se
+     * cambia el concepto de pago u otro ajuste del mismo formulario).
+     */
+    public function saveStripeKeys(int $tenantId, ?string $secretKey, ?string $publishableKey, ?string $webhookSecret): void
+    {
+        if ($secretKey !== null && trim($secretKey) !== '') {
+            $this->set($tenantId, 'stripe_secret_key', trim($secretKey), 'string');
+        }
+
+        if ($publishableKey !== null && trim($publishableKey) !== '') {
+            $this->set($tenantId, 'stripe_publishable_key', trim($publishableKey), 'string');
+        }
+
+        if ($webhookSecret !== null && trim($webhookSecret) !== '') {
+            $this->set($tenantId, 'stripe_webhook_secret', trim($webhookSecret), 'string');
+        }
+    }
+
     /** @return array<int, array{label: string, days: int, price: float}> */
     private function defaultPresets(): array
     {

@@ -121,6 +121,8 @@ ob_start();
             </div>
             <div class="card-body">
                 <canvas id="usersChart" height="200"></canvas>
+                <p id="usersChartEmpty" class="text-muted text-center small mb-0 d-none">Todavía no hay usuarios para mostrar.</p>
+                <p id="usersChartError" class="text-danger text-center small mb-0 d-none">No se pudo cargar el gráfico (revisa la consola del navegador).</p>
             </div>
         </div>
     </div>
@@ -128,31 +130,68 @@ ob_start();
 
 <?php
 $content = ob_get_clean();
-$scripts = <<<'JS'
+
+// IMPORTANTE: nunca metas tags <?= ?> dentro de un heredoc/nowdoc (<<<JS / <<<'JS').
+// El lexer de PHP trata todo el bloque como una única cadena literal, así que esos
+// tags no se ejecutan nunca: llegan al navegador como texto suelto dentro del
+// <script>, rompen la sintaxis JS y el gráfico (y todo lo que va detrás) se queda
+// sin pintar. Por eso el donut de "Distribución de usuarios" nunca se veía.
+$usersChartData = json_encode([
+    (int) $stats['users_active'],
+    (int) $stats['users_suspended'],
+    (int) $stats['users_pending'],
+    (int) $stats['users_invited'],
+    (int) $stats['users_expired'],
+]);
+
+$scripts = <<<JS
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const ctx = document.getElementById('usersChart');
-    if (ctx) {
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Activos', 'Suspendidos', 'Pendientes', 'Invitados'],
-                datasets: [{
-                    data: [
-                        <?= (int) $stats['users_active'] ?>,
-                        <?= (int) $stats['users_suspended'] ?>,
-                        <?= (int) $stats['users_pending'] ?>,
-                        <?= (int) $stats['users_invited'] ?>
-                    ],
-                    backgroundColor: ['#198754', '#ffc107', '#6c757d', '#0dcaf0']
-                }]
-            },
-            options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    try {
+        const ctx = document.getElementById('usersChart');
+        const allData = {$usersChartData};
+        const allLabels = ['Activos', 'Suspendidos', 'Pendientes', 'Invitados', 'Caducados'];
+        const allColors = ['#198754', '#ffc107', '#6c757d', '#0dcaf0', '#dc3545'];
+
+        // Filtramos las categorías en 0 para que la leyenda no se llene de
+        // etiquetas vacías y el donut siempre muestre algo si hay datos.
+        const labels = [];
+        const data = [];
+        const backgroundColor = [];
+        allData.forEach((value, i) => {
+            if (value > 0) {
+                labels.push(allLabels[i]);
+                data.push(value);
+                backgroundColor.push(allColors[i]);
+            }
         });
+
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js no se cargó (¿bloqueado por red/adblock?). No se puede pintar "Distribución de usuarios".');
+            document.getElementById('usersChartError')?.classList.remove('d-none');
+        } else if (ctx && data.length > 0) {
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{ data: data, backgroundColor: backgroundColor }]
+                },
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+            });
+        } else if (ctx) {
+            document.getElementById('usersChartEmpty')?.classList.remove('d-none');
+        }
+    } catch (err) {
+        console.error('Error al pintar el gráfico de distribución de usuarios:', err);
+        document.getElementById('usersChartError')?.classList.remove('d-none');
     }
 
-    if (window.MultiPanelRealtime) {
-        window.MultiPanelRealtime.connect();
+    try {
+        if (window.MultiPanelRealtime) {
+            window.MultiPanelRealtime.connect();
+        }
+    } catch (err) {
+        console.error('Error al conectar realtime:', err);
     }
 });
 </script>

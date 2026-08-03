@@ -71,6 +71,47 @@
             <div class="card-body">
                 <form method="POST" action="/settings/billing" id="billingForm">
                     <?= csrf_field() ?>
+
+                    <div class="mb-4 p-3 border rounded bg-light">
+                        <h6 class="d-flex align-items-center gap-2">
+                            <i class="bi bi-credit-card-2-front text-primary"></i>Conexión con Stripe
+                            <?php if ($stripeHasSecretKey): ?>
+                            <span class="badge bg-success">Configurado</span>
+                            <?php else: ?>
+                            <span class="badge bg-warning text-dark">Sin configurar</span>
+                            <?php endif; ?>
+                        </h6>
+                        <p class="form-text mt-0">
+                            Pega aquí tus claves de <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">dashboard.stripe.com/apikeys</a>.
+                            Sin esto, los botones de "Cobro con Stripe" de las fichas de usuario no podrán generar enlaces de pago.
+                        </p>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small">Clave secreta (Secret key, empieza por <code>sk_</code>)</label>
+                                <input type="password" name="stripe_secret_key" class="form-control" autocomplete="off"
+                                       placeholder="<?= $stripeHasSecretKey ? e($stripeSecretKeyMasked) : 'sk_live_...' ?>">
+                                <div class="form-text">Déjalo en blanco para no cambiar la clave ya guardada.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">Clave pública (Publishable key, empieza por <code>pk_</code>)</label>
+                                <input type="text" name="stripe_publishable_key" class="form-control" autocomplete="off"
+                                       value="<?= e($stripePublishableKey) ?>" placeholder="pk_live_...">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small">
+                                    Webhook signing secret (empieza por <code>whsec_</code>)
+                                    <?php if ($stripeHasWebhookSecret): ?><span class="badge bg-success ms-1">Configurado</span><?php endif; ?>
+                                </label>
+                                <input type="password" name="stripe_webhook_secret" class="form-control" autocomplete="off"
+                                       placeholder="<?= $stripeHasWebhookSecret ? '••••••••••' : 'whsec_...' ?>">
+                                <div class="form-text">
+                                    Configura en Stripe un webhook a <code><?= e(rtrim(config('app.url', ''), '/')) ?>/webhooks/payment/stripe</code>
+                                    escuchando el evento <code>checkout.session.completed</code>, y pega aquí su firma.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <label class="form-label">Concepto que ve el cliente al pagar</label>
                         <input name="payment_concept" class="form-control" value="<?= e($paymentConcept) ?>" placeholder="Digital services">

@@ -20,6 +20,12 @@ final class Handler
         ]);
 
         $debug = config('app.debug', false);
+        // Este panel solo lo usan administradores autenticados: mostrarles el
+        // mensaje real del error (en vez de un genérico "Error interno del
+        // servidor") es lo que permite diagnosticar fallos sin acceso directo
+        // a los logs del servidor. Los usuarios anónimos siguen viendo el
+        // mensaje genérico.
+        $revealMessage = $debug || self::isAuthenticated();
 
         if ($e instanceof HttpException) {
             http_response_code($e->getStatusCode());
@@ -31,7 +37,7 @@ final class Handler
             header('Content-Type: application/json');
             $payload = [
                 'error' => true,
-                'message' => $debug ? $e->getMessage() : 'Error interno del servidor.',
+                'message' => $revealMessage ? self::describe($e) : 'Error interno del servidor.',
                 'code' => $e instanceof HttpException ? $e->getStatusCode() : 500,
             ];
 
@@ -49,6 +55,11 @@ final class Handler
             return;
         }
 
+        if ($revealMessage) {
+            echo '<h1>Error</h1><pre>' . htmlspecialchars(self::describe($e)) . '</pre>';
+            return;
+        }
+
         $errorView = base_path('resources/views/errors/500.php');
         if (file_exists($errorView)) {
             include $errorView;
@@ -56,6 +67,25 @@ final class Handler
         }
 
         echo 'Error interno del servidor.';
+    }
+
+    private static function isAuthenticated(): bool
+    {
+        try {
+            return \Core\Session::getInstance()->get('user_id') !== null;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private static function describe(Throwable $e): string
+    {
+        return sprintf(
+            '%s en %s:%d',
+            $e->getMessage(),
+            basename($e->getFile()),
+            $e->getLine()
+        );
     }
 
     private static function wantsJson(): bool

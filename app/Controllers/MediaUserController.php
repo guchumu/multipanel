@@ -14,6 +14,7 @@ use App\Services\BillingService;
 use App\Services\BillingSettingsService;
 use App\Services\StreamingActivityService;
 use App\Services\MediaUserBulkService;
+use App\Services\MediaUserDedupeService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
@@ -47,6 +48,7 @@ class MediaUserController extends Controller
         private BillingService $billing = new BillingService(),
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
         private StreamingActivityService $streaming = new StreamingActivityService(),
+        private MediaUserDedupeService $dedupe = new MediaUserDedupeService(),
     ) {
     }
 
@@ -63,6 +65,7 @@ class MediaUserController extends Controller
     public function expiring(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $days = max(1, (int) $request->input('days', 15));
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
 
@@ -151,6 +154,7 @@ class MediaUserController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));

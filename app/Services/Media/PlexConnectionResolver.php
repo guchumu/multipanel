@@ -7,6 +7,7 @@ namespace App\Services\Media;
 use App\Models\Server;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Core\Cache;
 use Core\Logger;
 
 /**
@@ -14,9 +15,27 @@ use Core\Logger;
  */
 final class PlexConnectionResolver
 {
+    /**
+     * Cuánto tiempo se reutiliza un endpoint ya verificado sin volver a sondear
+     * candidatos ni consultar plex.tv. Esto es crítico para las carátulas: la
+     * vista "En directo" pide una imagen por sesión activa (varias peticiones
+     * en paralelo) y sin caché cada una repetía la resolución completa
+     * (candidatos + sondeo con timeouts de hasta varios segundos cada uno),
+     * lo que provocaba timeouts y carátulas que nunca cargaban.
+     */
+    private const ENDPOINT_CACHE_TTL = 120;
+
     /** @return array{endpoint: array{url: string, port: int, ssl: bool}, error: ?string, tried: array<int, string>} */
     public function resolve(Server $server, bool $quick = true): array
     {
+        $cacheKey = 'plex_resolved_endpoint_' . (int) $server->id;
+        if ($quick) {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached) && isset($cached['url'], $cached['port'], $cached['ssl'])) {
+                return ['endpoint' => $cached, 'error' => null, 'tried' => []];
+            }
+        }
+
         $token = trim((string) ($server->token ?? ''));
         $candidates = $this->buildCandidates($server);
         $tried = [];
@@ -39,6 +58,7 @@ final class PlexConnectionResolver
             $probes++;
 
             if ($error === null) {
+                Cache::set($cacheKey, $endpoint, self::ENDPOINT_CACHE_TTL);
                 return ['endpoint' => $endpoint, 'error' => null, 'tried' => $tried];
             }
 

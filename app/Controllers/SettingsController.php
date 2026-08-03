@@ -30,12 +30,18 @@ class SettingsController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $settings = $this->loadSettings($tenantId);
 
+        $stripeSecretKey = $this->billingSettings->getStripeSecretKey($tenantId);
+
         return $this->view('settings.index', [
             'title' => 'Configuración',
             'settings' => $settings,
             'user' => $this->auth->user(),
             'paymentConcept' => $this->billingSettings->getPaymentConcept($tenantId),
             'renewalPresets' => $this->billingSettings->getRenewalPresets($tenantId),
+            'stripeSecretKeyMasked' => $this->maskKey($stripeSecretKey),
+            'stripeHasSecretKey' => trim($stripeSecretKey) !== '',
+            'stripePublishableKey' => $this->billingSettings->getStripePublishableKey($tenantId),
+            'stripeHasWebhookSecret' => trim($this->billingSettings->getStripeWebhookSecret($tenantId)) !== '',
         ]);
     }
 
@@ -60,8 +66,26 @@ class SettingsController extends Controller
 
         $this->billingSettings->saveRenewalPresets($tenantId, $presets);
 
+        $this->billingSettings->saveStripeKeys(
+            $tenantId,
+            $request->input('stripe_secret_key') ? (string) $request->input('stripe_secret_key') : null,
+            $request->input('stripe_publishable_key') ? (string) $request->input('stripe_publishable_key') : null,
+            $request->input('stripe_webhook_secret') ? (string) $request->input('stripe_webhook_secret') : null,
+        );
+
         Session::getInstance()->flash('success', 'Configuración de facturación guardada.');
         return $this->redirect('/settings#billing');
+    }
+
+    private function maskKey(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '') {
+            return '';
+        }
+
+        $tail = substr($key, -4);
+        return str_repeat('•', 10) . $tail;
     }
 
     public function update(Request $request): Response

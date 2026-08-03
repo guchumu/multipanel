@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Payments;
 
 use App\Services\BillingService;
+use App\Services\BillingSettingsService;
 use Core\Database;
 use Core\Logger;
 
@@ -13,23 +14,35 @@ use Core\Logger;
  */
 final class PaymentService
 {
-    /** @var array<string, PaymentGatewayInterface> */
-    private array $gateways = [];
-
     public function __construct(
         private BillingService $billing = new BillingService(),
+        private BillingSettingsService $billingSettings = new BillingSettingsService(),
     ) {
-        $this->gateways = [
-            'stripe' => new StripeGateway(),
+    }
+
+    /**
+     * Las pasarelas se crean bajo demanda (no en el constructor) porque Stripe
+     * necesita las claves configuradas para el tenant que hace el cobro, y el
+     * tenant solo se conoce en el momento de la llamada, no al instanciar el
+     * servicio.
+     */
+    private function makeGateway(string $gateway, int $tenantId): ?PaymentGatewayInterface
+    {
+        return match ($gateway) {
+            'stripe' => new StripeGateway(
+                $this->billingSettings->getStripeSecretKey($tenantId),
+                $this->billingSettings->getStripeWebhookSecret($tenantId)
+            ),
             'paypal' => new PayPalGateway(),
             'bizum' => new BizumGateway(),
             'crypto' => new CryptoGateway(),
-        ];
+            default => null,
+        };
     }
 
-    public function checkout(string $gateway, float $amount, string $currency, array $metadata = []): array
+    public function checkout(string $gateway, float $amount, string $currency, array $metadata = [], int $tenantId = 1): array
     {
-        $gw = $this->gateways[$gateway] ?? null;
+        $gw = $this->makeGateway($gateway, $tenantId);
         if (!$gw) {
             return ['error' => 'Gateway no soportado'];
         }
@@ -37,9 +50,9 @@ final class PaymentService
         return $gw->createCheckoutSession($amount, $currency, $metadata);
     }
 
-    public function processWebhook(string $gateway, string $payload, array $headers = []): bool
+    public function processWebhook(string $gateway, string $payload, array $headers = [], int $tenantId = 1): bool
     {
-        $gw = $this->gateways[$gateway] ?? null;
+        $gw = $this->makeGateway($gateway, $tenantId);
         if (!$gw) {
             return false;
         }

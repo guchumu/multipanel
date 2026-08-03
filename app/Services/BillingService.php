@@ -218,24 +218,26 @@ final class BillingService
             return ['success' => false, 'message' => 'El importe y los días deben ser mayores que 0.'];
         }
 
-        if ($gateway === 'stripe' && trim((string) config('payments.stripe.secret_key', '')) === '') {
-            return ['success' => false, 'message' => 'Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).'];
+        $tenantId = (int) $user->tenant_id;
+        $billingSettings = new BillingSettingsService();
+
+        if ($gateway === 'stripe' && trim($billingSettings->getStripeSecretKey($tenantId)) === '') {
+            return ['success' => false, 'message' => 'Stripe no está configurado: añade tu clave secreta en Ajustes > Facturación.'];
         }
 
-        $tenantId = (int) $user->tenant_id;
         $customerId = $this->findOrCreateCustomerForMediaUser($tenantId, $user);
         $subscriptionId = $this->createRenewalSubscription($tenantId, $customerId, (int) $user->id, $amount, $currency, $days, $gateway);
 
         // El concepto que ve el cliente es siempre el mismo (ej. "Digital services"),
         // configurable en Ajustes > Facturación. La duración y el usuario nunca se
         // muestran en la pasarela de pago, solo se usan a nivel interno.
-        $concept = (new BillingSettingsService())->getPaymentConcept($tenantId);
+        $concept = $billingSettings->getPaymentConcept($tenantId);
 
         $result = (new PaymentService($this))->checkout($gateway, $amount, $currency, [
             'plan_name' => $concept,
             'subscription_id' => $subscriptionId,
             'customer_id' => $customerId,
-        ]);
+        ], $tenantId);
 
         if (empty($result['checkout_url'])) {
             return ['success' => false, 'message' => 'No se pudo generar el enlace de pago: ' . ($result['error'] ?? 'error desconocido')];
