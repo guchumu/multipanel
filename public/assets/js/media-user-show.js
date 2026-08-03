@@ -1,6 +1,13 @@
 (function () {
     const uuid = window.MEDIA_USER_UUID;
+    let whatsappPhone = window.MEDIA_USER_WHATSAPP || '';
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+
+    function waLink(text) {
+        const phone = (whatsappPhone || '').replace(/\D+/g, '');
+        const base = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
+        return `${base}?text=${encodeURIComponent(text)}`;
+    }
 
     async function post(url, body = {}) {
         const res = await fetch(url, {
@@ -27,6 +34,17 @@
         try {
             await post(`/media-users/${uuid}/telegram`, { telegram_chat_id: e.target.value });
             toast('Telegram guardado');
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
+    document.getElementById('whatsappPhone')?.addEventListener('change', async (e) => {
+        try {
+            const data = await post(`/media-users/${uuid}/whatsapp`, { whatsapp_phone: e.target.value });
+            whatsappPhone = data.whatsapp_phone || '';
+            e.target.value = whatsappPhone;
+            toast('WhatsApp guardado');
         } catch (err) {
             toast(err.message);
         }
@@ -178,8 +196,7 @@
             toast('Genera primero el enlace de pago.');
             return;
         }
-        const text = encodeURIComponent(`Hola! Para renovar tu acceso, completa el pago aquí:\n${link}`);
-        window.open(`https://wa.me/?text=${text}`, '_blank');
+        window.open(waLink(`Hola! Para renovar tu acceso, completa el pago aquí:\n${link}`), '_blank');
     });
 
     document.getElementById('btnSendMsg')?.addEventListener('click', async () => {
@@ -193,5 +210,14 @@
         } catch (err) {
             toast(err.message);
         }
+    });
+
+    document.getElementById('btnSendMsgWhatsapp')?.addEventListener('click', () => {
+        const body = document.getElementById('msgBody')?.value || '';
+        if (!body.trim()) {
+            toast('Escribe el mensaje.');
+            return;
+        }
+        window.open(waLink(body), '_blank');
     });
 })();

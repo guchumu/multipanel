@@ -384,6 +384,18 @@ class MediaUserController extends Controller
         }
     }
 
+    public function updateWhatsapp(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $phone = trim((string) $request->input('whatsapp_phone', ''));
+
+        return $this->json($this->management->updateWhatsapp($user, $phone !== '' ? $phone : null));
+    }
+
     public function messages(Request $request, string $uuid): Response
     {
         $user = $this->mediaUsers->findByUuid($uuid);

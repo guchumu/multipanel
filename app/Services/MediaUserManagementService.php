@@ -134,6 +134,26 @@ final class MediaUserManagementService
         ];
     }
 
+    /** @return array{success: bool, message: string, whatsapp_phone: ?string} */
+    public function updateWhatsapp(MediaUser $user, ?string $phone): array
+    {
+        $old = ['whatsapp_phone' => $user->metaGet('whatsapp_phone')];
+        $digits = $phone !== null ? preg_replace('/\D+/', '', $phone) : '';
+        $clean = $digits !== '' ? $digits : null;
+        $user->metaSet('whatsapp_phone', $clean);
+        $user->save();
+
+        AuditService::log('media_user.whatsapp_updated', 'media_user', (int) $user->id, $old, [
+            'whatsapp_phone' => $clean,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'WhatsApp actualizado.',
+            'whatsapp_phone' => $clean,
+        ];
+    }
+
     /** @return array{success: bool, message: string, sent: bool} */
     public function sendTelegramMessage(MediaUser $user, string $title, string $body): array
     {

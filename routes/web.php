@@ -129,6 +129,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/send-message', [MediaUserController::class, 'sendMessage'], 'media_users.send_message', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/remove-server', [MediaUserController::class, 'removeFromServer'], 'media_users.remove_server', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/telegram', [MediaUserController::class, 'updateTelegram'], 'media_users.telegram', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/whatsapp', [MediaUserController::class, 'updateWhatsapp'], 'media_users.whatsapp', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/stripe-checkout', [MediaUserController::class, 'stripeCheckout'], 'media_users.stripe_checkout', [CsrfMiddleware::class]);
     $router->get('/media-users/{uuid}/messages', [MediaUserController::class, 'messages'], 'media_users.messages');
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);

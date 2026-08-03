@@ -54,9 +54,15 @@ ob_start();
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white"><strong>Control del usuario</strong></div>
             <div class="card-body">
-                <div class="mb-3">
-                    <label class="form-label small">Telegram Chat ID</label>
-                    <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($user->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label small"><i class="bi bi-telegram me-1"></i>Telegram Chat ID</label>
+                        <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($user->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small"><i class="bi bi-whatsapp me-1"></i>WhatsApp</label>
+                        <input type="text" id="whatsappPhone" class="form-control form-control-sm" value="<?= e($user->metaGet('whatsapp_phone') ?? '') ?>" placeholder="Ej. 34612345678 (con código de país, sin +)">
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Fecha expiración</label>
@@ -128,12 +134,15 @@ ob_start();
         </div>
 
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white"><strong>Enviar Telegram</strong></div>
+            <div class="card-header bg-white"><strong>Enviar mensaje</strong></div>
             <div class="card-body">
                 <input type="text" id="msgTitle" class="form-control form-control-sm mb-2" value="Aviso" placeholder="Título">
                 <textarea id="msgBody" class="form-control form-control-sm mb-2" rows="5" placeholder="Mensaje…"></textarea>
                 <p class="small text-muted mb-2">Variables: {username}, {email}, {display_name}, {end_date}</p>
-                <button type="button" class="btn btn-primary btn-sm" id="btnSendMsg"><i class="bi bi-send me-1"></i>Enviar ahora</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-info btn-sm flex-fill" id="btnSendMsg"><i class="bi bi-telegram me-1"></i>Telegram</button>
+                    <button type="button" class="btn btn-outline-success btn-sm flex-fill" id="btnSendMsgWhatsapp"><i class="bi bi-whatsapp me-1"></i>WhatsApp</button>
+                </div>
             </div>
         </div>
     </div>
@@ -189,6 +198,7 @@ ob_start();
 
 <?php
 $content = ob_get_clean();
-$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($user->uuid) . ';</script>';
+$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($user->uuid) . ';';
+$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($user->metaGet('whatsapp_phone')) . ';</script>';
 $scripts .= '<script src="' . e(asset('js/media-user-show.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');
