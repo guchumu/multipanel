@@ -582,6 +582,158 @@ final class PlexService
         }
     }
 
+    /**
+     * Lista los "friends" con acceso compartido a este servidor (shared_servers de Plex.tv).
+     *
+     * @return array<int, array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}>
+     */
+    public function getSharedServers(): array
+    {
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+        $token = trim((string) ($this->server->token ?? ''));
+
+        if ($machineId === '' || $token === '') {
+            return [];
+        }
+
+        try {
+            $client = new Client([
+                'base_uri' => 'https://plex.tv',
+                'timeout' => 20,
+                'verify' => true,
+            ]);
+
+            $response = $client->get("/api/servers/{$machineId}/shared_servers", [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            $xml = simplexml_load_string($response->getBody()->getContents());
+            if ($xml === false) {
+                return [];
+            }
+
+            $shares = [];
+            foreach ($xml->SharedServer ?? [] as $shared) {
+                $sectionIds = [];
+                foreach ($shared->Section ?? [] as $section) {
+                    $sectionIds[] = (int) $section['id'];
+                }
+
+                $shares[] = [
+                    'id' => (int) $shared['id'],
+                    'user_id' => (string) ($shared['userID'] ?? $shared['invitedId'] ?? ''),
+                    'username' => (string) ($shared['username'] ?? ''),
+                    'email' => (string) ($shared['email'] ?? ''),
+                    'library_section_ids' => $sectionIds,
+                ];
+            }
+
+            return $shares;
+        } catch (GuzzleException $e) {
+            Logger::debug('Plex get shared_servers failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    /** @return array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}|null */
+    public function findSharedServerFor(?string $email, ?string $username = null): ?array
+    {
+        $email = trim((string) $email);
+        $username = trim((string) $username);
+        if ($email === '' && $username === '') {
+            return null;
+        }
+
+        foreach ($this->getSharedServers() as $share) {
+            if ($email !== '' && strcasecmp($share['email'], $email) === 0) {
+                return $share;
+            }
+            if ($username !== '' && strcasecmp($share['username'], $username) === 0) {
+                return $share;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<int, int> $sectionIds */
+    public function updateSharedServerLibraries(int $sharedServerId, array $sectionIds): bool
+    {
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+        $token = trim((string) ($this->server->token ?? ''));
+
+        if ($machineId === '' || $token === '' || $sharedServerId <= 0) {
+            return false;
+        }
+
+        try {
+            $client = new Client([
+                'base_uri' => 'https://plex.tv',
+                'timeout' => 20,
+                'verify' => true,
+            ]);
+
+            $client->put("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
+                'headers' => array_merge($this->authHeaders(), ['Content-Type' => 'application/json']),
+                'json' => [
+                    'server_id' => $machineId,
+                    'shared_server' => [
+                        'library_section_ids' => array_values(array_map('intval', $sectionIds)),
+                    ],
+                ],
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Plex update shared_server libraries failed', [
+                'server_id' => $this->server->id,
+                'shared_server_id' => $sharedServerId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    public function removeSharedServer(int $sharedServerId): bool
+    {
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+        $token = trim((string) ($this->server->token ?? ''));
+
+        if ($machineId === '' || $token === '' || $sharedServerId <= 0) {
+            return false;
+        }
+
+        try {
+            $client = new Client([
+                'base_uri' => 'https://plex.tv',
+                'timeout' => 20,
+                'verify' => true,
+            ]);
+
+            $client->delete("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
+                'headers' => $this->authHeaders(),
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Plex remove shared_server failed', [
+                'server_id' => $this->server->id,
+                'shared_server_id' => $sharedServerId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /** @return array<int, int> IDs de todas las secciones/bibliotecas del servidor */
+    public function allLibrarySectionIds(): array
+    {
+        return array_values(array_map(
+            static fn (array $lib): int => (int) $lib['external_id'],
+            $this->getLibraries()
+        ));
+    }
+
     public function testConnection(): bool
     {
         if ($this->lastError !== null) {

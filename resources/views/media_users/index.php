@@ -35,6 +35,8 @@ ob_start();
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Usuarios Media</h4>
     <div class="d-flex gap-2">
+        <a href="/media-users/activity" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Actividad</a>
+        <a href="/media-users/broadcast" class="btn btn-outline-info"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
         <a href="/media-users/bulk" class="btn btn-outline-primary"><i class="bi bi-envelope-plus me-1"></i>Añadir emails</a>
         <a href="/media-users/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo usuario</a>
     </div>
@@ -103,7 +105,7 @@ ob_start();
                 <?php foreach ($users as $u): ?>
                 <tr>
                     <td class="small text-muted"><?= (int) $u->id ?></td>
-                    <td><?= e($u->display_name ?? $u->username) ?></td>
+                    <td><a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none"><?= e($u->display_name ?? $u->username) ?></a></td>
                     <td class="small"><?= e($u->email ?? '-') ?></td>
                     <td class="small">
                         <?php if ($u->server_name): ?>
@@ -148,13 +150,34 @@ ob_start();
 $content = ob_get_clean();
 $scripts = <<<'JS'
 <script>
-async function suspendUser(uuid) {
-    await fetch(`/media-users/${uuid}/suspend`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-    location.reload();
+async function toggleUserStatus(uuid, action, confirmMsg) {
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    try {
+        const res = await fetch(`/media-users/${uuid}/${action}`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                'Accept': 'application/json',
+            },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+            alert(data.error || data.message || 'No se pudo completar la acción.');
+            return;
+        }
+        if (data.message) {
+            alert(data.message);
+        }
+        location.reload();
+    } catch (err) {
+        alert('Error de red: ' + err.message);
+    }
 }
-async function activateUser(uuid) {
-    await fetch(`/media-users/${uuid}/activate`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-    location.reload();
+function suspendUser(uuid) {
+    toggleUserStatus(uuid, 'suspend', '¿Suspender este usuario? Se cortará el acceso a la biblioteca.');
+}
+function activateUser(uuid) {
+    toggleUserStatus(uuid, 'activate');
 }
 </script>
 JS;

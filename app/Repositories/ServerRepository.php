@@ -67,4 +67,43 @@ class ServerRepository
 
         return (int) ($row['total'] ?? 0);
     }
+
+    public function ensureIsDefaultColumn(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS total FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                ['servers', 'is_default']
+            );
+            if (((int) ($row['total'] ?? 0)) > 0) {
+                $ensured = true;
+                return;
+            }
+        } catch (\Throwable) {
+            // fall through
+        }
+
+        try {
+            (new \Core\Updater())->runMigrations();
+        } catch (\Throwable) {
+        }
+
+        try {
+            Database::getInstance()->pdo()->exec(
+                'ALTER TABLE `servers` ADD COLUMN `is_default` TINYINT(1) NOT NULL DEFAULT 0'
+            );
+        } catch (\Throwable $e) {
+            if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+                throw $e;
+            }
+        }
+
+        $ensured = true;
+    }
 }

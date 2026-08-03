@@ -32,6 +32,7 @@ final class SqlInsertParserTest extends TestCase
         $this->assertCount(2, $users);
         $this->assertSame('Nucbox', $servers[0]['server_name']);
         $this->assertSame('guchumu@gmail.com', $users[0]['email']);
+        $this->assertSame('2023182976', $users[0]['telegram_chat_id']);
     }
 
     public function test_extract_table_from_phpmyadmin_dump(): void
@@ -93,6 +94,7 @@ SQL;
 
         $this->assertCount(2, $users);
         $this->assertSame('guchumu@gmail.com', $users[0]['email']);
+        $this->assertSame('2023182976', $users[0]['telegram_chat_id']);
         $this->assertSame('other@test.com', $users[1]['email']);
     }
 

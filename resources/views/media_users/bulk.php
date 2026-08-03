@@ -31,7 +31,12 @@
                     <label class="form-label">Emails *</label>
                     <textarea name="emails" class="form-control font-monospace" rows="10" required
                               placeholder="Un email por línea, o separados por comas&#10;usuario1@ejemplo.com&#10;usuario2@ejemplo.com"></textarea>
-                    <div class="form-text">Si el email ya existe, se actualizará su servidor y fecha de expiración.</div>
+                    <div class="form-text">
+                        Si el email ya existe, se actualizará su servidor y fecha de expiración.
+                        En servidores <strong>Plex</strong> se enviará automáticamente la invitación a cada email con acceso a todas las bibliotecas;
+                        el usuario pasará a "Activo" solo, sin acción manual, en cuanto Plex detecte que ha aceptado (próxima sincronización de servidor).
+                        En <strong>Jellyfin</strong> se crea la cuenta al instante con una contraseña generada.
+                    </div>
                 </div>
             </div>
             <div class="mt-4">

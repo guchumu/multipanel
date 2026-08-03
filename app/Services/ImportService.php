@@ -67,6 +67,9 @@ final class ImportService
 
                 $password = $data['password'] ?? $this->passwords->generate();
 
+                $telegramChatId = trim((string) ($data['telegram_chat_id'] ?? $data['telegram_id'] ?? ''));
+                $telegramChatId = $telegramChatId !== '' ? $telegramChatId : null;
+
                 $user = new MediaUser([
                     'tenant_id' => $tenantId,
                     'uuid' => Uuid::uuid4()->toString(),
@@ -78,6 +81,7 @@ final class ImportService
                     'max_streams' => (int) ($data['max_streams'] ?? 1),
                     'max_devices' => (int) ($data['max_devices'] ?? 5),
                     'expires_at' => $data['expires_at'] ?? null,
+                    'telegram_chat_id' => $telegramChatId,
                     'notes' => $data['notes'] ?? null,
                 ]);
 
@@ -116,6 +120,9 @@ final class ImportService
 
             try {
                 $password = $data['password'] ?? $this->passwords->generate();
+                $telegramChatId = trim((string) ($data['telegram_chat_id'] ?? $data['telegram_id'] ?? ''));
+                $telegramChatId = $telegramChatId !== '' ? $telegramChatId : null;
+
                 $user = new MediaUser([
                     'tenant_id' => $tenantId,
                     'uuid' => Uuid::uuid4()->toString(),
@@ -124,6 +131,7 @@ final class ImportService
                     'password' => $this->passwords->hash($password),
                     'status' => $data['status'] ?? 'pending',
                     'max_streams' => (int) ($data['max_streams'] ?? 1),
+                    'telegram_chat_id' => $telegramChatId,
                 ]);
                 $user->save();
                 $imported++;

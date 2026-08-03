@@ -1,0 +1,147 @@
+<?php
+$statusBadgeClass = static function (string $status): string {
+    return match ($status) {
+        'active' => 'bg-success',
+        'suspended' => 'bg-warning text-dark',
+        'pending' => 'bg-secondary',
+        default => 'bg-light text-dark border',
+    };
+};
+ob_start();
+?>
+<div class="mb-4">
+    <a href="/media-users" class="text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a usuarios</a>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mt-2">
+        <div>
+            <h4 class="mb-1"><?= e($user->display_name ?? $user->username) ?></h4>
+            <p class="text-muted small mb-0">ID <?= (int) $user->id ?> · <?= e($user->email ?? '-') ?> · <?= e($user->server_name ?? 'Sin servidor') ?></p>
+        </div>
+        <span class="badge <?= e($statusBadgeClass((string) $user->status)) ?> fs-6"><?= e($user->status) ?></span>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white"><strong>Editar datos del usuario</strong></div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">Nombre de usuario</label>
+                        <input type="text" id="editUsername" class="form-control form-control-sm" value="<?= e($user->username) ?>">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Nombre visible</label>
+                        <input type="text" id="editDisplayName" class="form-control form-control-sm" value="<?= e($user->display_name ?? '') ?>">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Email</label>
+                        <input type="email" id="editEmail" class="form-control form-control-sm" value="<?= e($user->email ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Streams</label>
+                        <input type="number" min="1" id="editMaxStreams" class="form-control form-control-sm" value="<?= (int) $user->max_streams ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Dispositivos</label>
+                        <input type="number" min="1" id="editMaxDevices" class="form-control form-control-sm" value="<?= (int) $user->max_devices ?>">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="btnSaveProfile"><i class="bi bi-save me-1"></i>Guardar datos</button>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white"><strong>Control del usuario</strong></div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label small">Telegram Chat ID</label>
+                    <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($user->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Fecha expiración</label>
+                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e($user->expires_at ? substr((string) $user->expires_at, 0, 10) : '') ?>">
+                </div>
+                <div class="mb-3 d-flex flex-wrap gap-2">
+                    <span class="small text-muted w-100">Sumar días:</span>
+                    <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
+                    <button type="button" class="btn btn-sm btn-outline-primary btn-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
+                    <?php endforeach; ?>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Notas privadas <span class="text-muted">(identificación, incidencias, etc.)</span></label>
+                    <textarea id="userNotes" class="form-control form-control-sm" rows="4" placeholder="Ej: cliente habitual, pagó por Bizum el día 3, tuvo problema de buffering…"><?= e($user->notes ?? '') ?></textarea>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $user->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
+                    <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $user->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>Enviar Telegram</strong></div>
+            <div class="card-body">
+                <input type="text" id="msgTitle" class="form-control form-control-sm mb-2" value="Aviso" placeholder="Título">
+                <textarea id="msgBody" class="form-control form-control-sm mb-2" rows="5" placeholder="Mensaje…"></textarea>
+                <p class="small text-muted mb-2">Variables: {username}, {email}, {display_name}, {end_date}</p>
+                <button type="button" class="btn btn-primary btn-sm" id="btnSendMsg"><i class="bi bi-send me-1"></i>Enviar ahora</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <strong>Historial de actividad</strong>
+                <a href="/media-users/activity" class="small">Ver global</a>
+            </div>
+            <div class="list-group list-group-flush" style="max-height: 420px; overflow-y: auto;">
+                <?php if (empty($timeline)): ?>
+                <div class="list-group-item text-muted small">Sin movimientos registrados</div>
+                <?php else: ?>
+                <?php foreach ($timeline as $event): ?>
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between gap-2">
+                        <span><i class="bi bi-<?= e($event['icon'] ?? 'clock') ?> me-1"></i><?= e($event['label']) ?></span>
+                        <span class="small text-muted text-nowrap"><?= e($event['at']) ?></span>
+                    </div>
+                    <?php if (!empty($event['detail'])): ?>
+                    <div class="small text-muted mt-1"><?= e($event['detail']) ?></div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><strong>Últimos mensajes enviados</strong></div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>Fecha</th><th>Tipo</th><th>Estado</th></tr></thead>
+                    <tbody>
+                    <?php if (empty($messages)): ?>
+                    <tr><td colspan="3" class="text-muted text-center py-3">Sin mensajes</td></tr>
+                    <?php else: ?>
+                    <?php foreach ($messages as $msg): ?>
+                    <tr>
+                        <td class="small"><?= e($msg['sent_at']) ?></td>
+                        <td class="small"><?= e($msg['message_type']) ?></td>
+                        <td><span class="badge bg-<?= $msg['status'] === 'sent' ? 'success' : 'danger' ?>"><?= e($msg['status']) ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php
+$content = ob_get_clean();
+$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($user->uuid) . ';</script>';
+$scripts .= '<script src="' . e(asset('js/media-user-show.js')) . '"></script>';
+include base_path('resources/views/layouts/app.php');

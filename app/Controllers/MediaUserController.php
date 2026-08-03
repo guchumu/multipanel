@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Models\MediaUser;
+use App\Models\Server;
 use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserMessageService;
+use App\Services\MediaUserManagementService;
+use App\Services\MediaUserActivityService;
+use App\Services\MediaUserProvisioningService;
 use App\Services\PasswordService;
 use App\Services\SubscriptionPeriod;
 use App\Services\Notifications\NotificationService;
@@ -34,7 +38,79 @@ class MediaUserController extends Controller
         private MediaUserBulkService $bulk = new MediaUserBulkService(),
         private NotificationService $notifications = new NotificationService(),
         private MediaUserMessageService $messages = new MediaUserMessageService(),
+        private MediaUserManagementService $management = new MediaUserManagementService(),
+        private MediaUserActivityService $activity = new MediaUserActivityService(),
+        private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
     ) {
+    }
+
+    public function activity(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        return $this->view('media_users.activity', [
+            'title' => 'Actividad de usuarios',
+            'events' => $this->activity->recentForTenant($tenantId, 150),
+        ]);
+    }
+
+    public function show(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->redirect('/media-users');
+        }
+
+        if ($user->server_id) {
+            $server = Server::find((int) $user->server_id);
+            if ($server) {
+                $user->server_name = $server->name;
+            }
+        }
+
+        return $this->view('media_users.show', [
+            'title' => $user->display_name ?? $user->username,
+            'user' => $user,
+            'timeline' => $this->activity->timeline((int) $user->id),
+            'messages' => $this->messages->listForUser((int) $user->id, 20),
+        ]);
+    }
+
+    public function broadcastForm(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        return $this->view('media_users.broadcast', [
+            'title' => 'Mensaje masivo Telegram',
+            'servers' => $this->servers->allByTenant($tenantId),
+            'recipientCount' => count($this->mediaUsers->listForBroadcast($tenantId, 'active', null, true)),
+        ]);
+    }
+
+    public function broadcastSend(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $title = trim((string) $request->input('title', 'Aviso'));
+        $body = trim((string) $request->input('body', ''));
+        $status = $request->input('status') ?: 'active';
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        if ($body === '') {
+            Session::getInstance()->flash('error', 'Escribe el mensaje.');
+            return $this->redirect('/media-users/broadcast');
+        }
+
+        $users = $this->mediaUsers->listForBroadcast($tenantId, $status, $serverId, true);
+        $result = $this->management->broadcastTelegram($users, $title, $body);
+
+        Session::getInstance()->flash('success', sprintf(
+            'Envío completado: %d enviados, %d fallidos, %d sin Telegram.',
+            $result['sent'],
+            $result['failed'],
+            $result['skipped']
+        ));
+
+        return $this->redirect('/media-users/broadcast');
     }
 
     public function index(Request $request): Response
@@ -135,7 +211,16 @@ class MediaUserController extends Controller
         $this->audit->log('media_user.created', 'media_user', (int) $user->id);
         $this->notifications->notifyUserCreated($user->username, $user->email ?? 'N/A');
 
-        Session::getInstance()->flash('success', 'Usuario creado. Contraseña: ' . $password);
+        $flash = 'Usuario creado. Contraseña: ' . $password;
+        if ($user->server_id) {
+            $server = Server::find((int) $user->server_id);
+            if ($server !== null) {
+                $result = $this->provisioning->provision($user, $server, $password);
+                $flash .= ' | ' . $result['message'];
+            }
+        }
+
+        Session::getInstance()->flash('success', $flash);
         return $this->redirect('/media-users');
     }
 
@@ -146,11 +231,7 @@ class MediaUserController extends Controller
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
-        $user->status = 'suspended';
-        $user->save();
-        $this->audit->log('media_user.suspended', 'media_user', (int) $user->id);
-
-        return $this->json(['success' => true, 'message' => 'Usuario suspendido.']);
+        return $this->json($this->management->suspend($user));
     }
 
     public function activate(Request $request, string $uuid): Response
@@ -160,11 +241,7 @@ class MediaUserController extends Controller
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
-        $user->status = 'active';
-        $user->save();
-        $this->audit->log('media_user.activated', 'media_user', (int) $user->id);
-
-        return $this->json(['success' => true, 'message' => 'Usuario activado.']);
+        return $this->json($this->management->activate($user));
     }
 
     public function updateExpires(Request $request, string $uuid): Response
@@ -175,15 +252,79 @@ class MediaUserController extends Controller
         }
 
         $expiresAt = trim((string) $request->input('expires_at', ''));
-        $user->expires_at = $expiresAt !== '' ? $expiresAt : null;
-        $user->save();
-        $this->audit->log('media_user.expires_updated', 'media_user', (int) $user->id);
 
-        return $this->json([
-            'success' => true,
-            'expires_at' => $user->expires_at,
-            'message' => 'Fecha de expiración actualizada.',
+        return $this->json($this->management->updateExpires($user, $expiresAt !== '' ? $expiresAt : null));
+    }
+
+    public function addDays(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $days = (int) $request->input('days', 0);
+        $result = $this->management->addDays($user, $days);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function updateNotes(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        return $this->json($this->management->updateNotes($user, trim((string) $request->input('notes', ''))));
+    }
+
+    public function updateProfile(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $result = $this->management->updateProfile($user, [
+            'username' => $request->input('username', $user->username),
+            'display_name' => $request->input('display_name', ''),
+            'email' => $request->input('email', ''),
+            'max_streams' => $request->input('max_streams', $user->max_streams),
+            'max_devices' => $request->input('max_devices', $user->max_devices),
         ]);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function sendMessage(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $title = trim((string) $request->input('title', 'Aviso'));
+        $body = trim((string) $request->input('body', ''));
+        if ($body === '') {
+            return $this->json(['success' => false, 'message' => 'Mensaje vacío.'], 422);
+        }
+
+        $result = $this->management->sendTelegramMessage($user, $title, $body);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function removeFromServer(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $result = $this->management->removeFromServer($user);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
     }
 
     public function updateTelegram(Request $request, string $uuid): Response
@@ -194,17 +335,9 @@ class MediaUserController extends Controller
                 return $this->json(['error' => 'Usuario no encontrado'], 404);
             }
 
-            $this->mediaUsers->ensureTelegramChatIdColumn();
-
             $chatId = trim((string) $request->input('telegram_chat_id', ''));
-            $user->telegram_chat_id = $chatId !== '' ? $chatId : null;
-            $user->save();
 
-            return $this->json([
-                'success' => true,
-                'telegram_chat_id' => $user->telegram_chat_id,
-                'message' => 'Telegram actualizado.',
-            ]);
+            return $this->json($this->management->updateTelegram($user, $chatId !== '' ? $chatId : null));
         } catch (\Throwable $e) {
             return $this->json([
                 'success' => false,

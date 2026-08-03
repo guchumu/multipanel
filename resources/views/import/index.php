@@ -29,7 +29,7 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6>Importar CSV / JSON</h6>
-                <p class="text-muted small">Columnas CSV: username, email, expires_at, status, notes...</p>
+                <p class="text-muted small">Columnas CSV: username, email, telegram_chat_id, expires_at, status, notes...</p>
                 <form method="POST" action="/import" enctype="multipart/form-data">
                     <?= csrf_field() ?>
                     <div class="mb-3">
@@ -54,8 +54,8 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
                     <li><strong>users</strong> → Usuarios media + clientes CRM</li>
                     <li><strong>end_date</strong> → Fecha expiración</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
-                    <li><strong>telegram_chat_id</strong> → Usuario media (para enviar mensajes Telegram)</li>
-                    <li><strong>telegram_id</strong> → Solo metadata CRM (fallback si no hay chat ID)</li>
+                    <li><strong>telegram_chat_id / telegram_id</strong> → Chat ID Telegram del usuario media (<code>media_users.telegram_chat_id</code>)</li>
+                    <li><strong>telegram_id</strong> → Fallback si no hay chat ID (también en metadata CRM)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>
                 <h6>Exportar</h6>

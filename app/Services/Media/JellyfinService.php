@@ -264,20 +264,33 @@ final class JellyfinService
 
     public function disableUser(string $userId): bool
     {
+        return $this->setUserDisabled($userId, true);
+    }
+
+    public function enableUser(string $userId): bool
+    {
+        return $this->setUserDisabled($userId, false);
+    }
+
+    private function setUserDisabled(string $userId, bool $disabled): bool
+    {
         try {
             $response = $this->client->get("/Users/{$userId}", [
                 'headers' => $this->authHeaders(),
             ]);
             $user = json_decode($response->getBody()->getContents(), true);
-            $user['Policy']['IsDisabled'] = true;
+            $policy = is_array($user['Policy'] ?? null) ? $user['Policy'] : [];
+            $policy['IsDisabled'] = $disabled;
 
-            $this->client->post("/Users/{$userId}", [
+            // Jellyfin expone la política de un usuario en un endpoint dedicado,
+            // no en el POST /Users/{id} (que no persiste IsDisabled).
+            $this->client->post("/Users/{$userId}/Policy", [
                 'headers' => $this->authHeaders(),
-                'json' => $user,
+                'json' => $policy,
             ]);
             return true;
         } catch (GuzzleException $e) {
-            Logger::error('Jellyfin disable user failed', ['error' => $e->getMessage()]);
+            Logger::error('Jellyfin user disable toggle failed', ['user_id' => $userId, 'error' => $e->getMessage()]);
             return false;
         }
     }

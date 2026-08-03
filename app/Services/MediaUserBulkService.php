@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\MediaUser;
+use App\Models\Server;
 use Core\Database;
 use Ramsey\Uuid\Uuid;
 
@@ -15,6 +16,7 @@ final class MediaUserBulkService
 {
     public function __construct(
         private AuditService $audit = new AuditService(),
+        private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
     ) {
     }
 
@@ -24,6 +26,7 @@ final class MediaUserBulkService
         $expiresAt = SubscriptionPeriod::toExpiresAt($period);
         $emails = $this->parseEmails($rawEmails);
         $db = Database::getInstance();
+        $server = Server::find($serverId);
         $created = 0;
         $updated = 0;
         $skipped = 0;
@@ -44,6 +47,15 @@ final class MediaUserBulkService
                         'status' => 'active',
                     ], 'id = ?', [$existing['id']]);
                     $updated++;
+                    if ($server !== null) {
+                        $existingUser = MediaUser::find((int) $existing['id']);
+                        if ($existingUser !== null && trim((string) ($existingUser->external_id ?? '')) === '') {
+                            $result = $this->provisioning->provision($existingUser, $server);
+                            if (!$result['success']) {
+                                $errors[] = "{$email}: {$result['message']}";
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -54,7 +66,7 @@ final class MediaUserBulkService
                     'username' => $username,
                     'email' => $email,
                     'display_name' => $username,
-                    'status' => 'active',
+                    'status' => 'pending',
                     'expires_at' => $expiresAt,
                     'max_streams' => 1,
                     'max_devices' => 5,
@@ -62,6 +74,13 @@ final class MediaUserBulkService
                 $user->save();
                 $this->audit->log('media_user.bulk_created', 'media_user', (int) $user->id);
                 $created++;
+
+                if ($server !== null) {
+                    $result = $this->provisioning->provision($user, $server);
+                    if (!$result['success']) {
+                        $errors[] = "{$email}: {$result['message']}";
+                    }
+                }
             } catch (\Throwable $e) {
                 $errors[] = "{$email}: {$e->getMessage()}";
                 $skipped++;

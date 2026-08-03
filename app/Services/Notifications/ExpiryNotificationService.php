@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Notifications;
 
 use App\Models\MediaUser;
+use App\Services\NotificationTemplateService;
 use Core\Database;
 use Core\Logger;
 use DateTimeImmutable;
@@ -17,6 +18,7 @@ final class ExpiryNotificationService
 {
     public function __construct(
         private TelegramChannel $telegram = new TelegramChannel(),
+        private NotificationTemplateService $templates = new NotificationTemplateService(),
     ) {
     }
 
@@ -27,8 +29,8 @@ final class ExpiryNotificationService
             return ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
         }
 
-        $milestones = config('expiry_notifications.milestones', [10, 7, 5, 4, 3, 2, 1, 0, -1]);
-        $messages = config('expiry_notifications.messages', []);
+        $milestones = $this->templates->getMilestones($tenantId);
+        $messages = $this->templates->getExpiryMessages($tenantId);
         $title = (string) config('expiry_notifications.title', 'Aviso de caducidad');
         $notifyAdmin = (bool) config('expiry_notifications.notify_admin', true);
         $deactivateOnExpiry = (bool) config('expiry_notifications.deactivate_on_expiry', true);

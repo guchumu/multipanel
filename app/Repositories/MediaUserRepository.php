@@ -144,6 +144,35 @@ class MediaUserRepository
         return array_map(fn ($row) => new MediaUser($row), $rows);
     }
 
+    /** @return array<int, MediaUser> */
+    public function listForBroadcast(int $tenantId, ?string $status = null, ?int $serverId = null, bool $withTelegramOnly = false): array
+    {
+        $params = [$tenantId];
+        $sql = 'SELECT mu.*, s.name AS server_name
+                FROM media_users mu
+                LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL';
+
+        if ($status !== null) {
+            $sql .= ' AND mu.status = ?';
+            $params[] = $status;
+        }
+
+        if ($serverId !== null) {
+            $sql .= ' AND mu.server_id = ?';
+            $params[] = $serverId;
+        }
+
+        if ($withTelegramOnly && $this->hasTelegramChatIdColumn()) {
+            $sql .= ' AND mu.telegram_chat_id IS NOT NULL AND mu.telegram_chat_id != ""';
+        }
+
+        $sql .= ' ORDER BY mu.username ASC LIMIT 500';
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+
+        return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
     private function hasTelegramChatIdColumn(): bool
     {
         return $this->hasColumn('media_users', 'telegram_chat_id');

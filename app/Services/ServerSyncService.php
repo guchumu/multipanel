@@ -238,6 +238,32 @@ final class ServerSyncService
                 continue;
             }
 
+            // Autoaceptar: si había una invitación pendiente con este email (sin external_id aún),
+            // se vincula en vez de crear un usuario duplicado; así se detecta la aceptación sin
+            // intervención manual del administrador.
+            $email = trim((string) ($remoteUser['email'] ?? ''));
+            $pending = $email !== '' ? $db->fetchOne(
+                "SELECT id FROM media_users
+                 WHERE server_id = ? AND deleted_at IS NULL AND email = ?
+                   AND (external_id IS NULL OR external_id = '')
+                   AND status IN ('invited', 'pending')
+                 LIMIT 1",
+                [$server->id, $email]
+            ) : null;
+
+            if ($pending) {
+                $db->update('media_users', [
+                    'external_id' => $externalId,
+                    'username' => $username,
+                    'display_name' => $username,
+                    'avatar' => $remoteUser['thumb'] ?? null,
+                    'status' => 'active',
+                ], 'id = ?', [$pending['id']]);
+                Logger::info('Media user invite auto-accepted', ['media_user_id' => $pending['id'], 'server_id' => $server->id, 'email' => $email]);
+                $updated++;
+                continue;
+            }
+
             $db->insert('media_users', [
                 'tenant_id' => $server->tenant_id,
                 'uuid' => Uuid::uuid4()->toString(),

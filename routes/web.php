@@ -17,6 +17,7 @@ use App\Controllers\IntegrationController;
 use App\Controllers\UpdaterController;
 use App\Controllers\PluginController;
 use App\Controllers\ImportController;
+use App\Controllers\NotificationSettingsController;
 use App\Controllers\TenantController;
 use App\Controllers\StreamController;
 use App\Controllers\DiagnosticsController;
@@ -109,14 +110,23 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
 
     // Media Users
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
+    $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
+    $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
+    $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
     $router->get('/media-users/bulk', [MediaUserController::class, 'bulkCreate'], 'media_users.bulk');
     $router->post('/media-users/bulk', [MediaUserController::class, 'bulkStore'], 'media_users.bulk.store', [CsrfMiddleware::class]);
     $router->get('/media-users/create', [MediaUserController::class, 'create'], 'media_users.create');
     $router->post('/media-users', [MediaUserController::class, 'store'], 'media_users.store', [CsrfMiddleware::class]);
+    $router->get('/media-users/{uuid}', [MediaUserController::class, 'show'], 'media_users.show');
     $router->post('/media-users/{uuid}/suspend', [MediaUserController::class, 'suspend'], 'media_users.suspend', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/activate', [MediaUserController::class, 'activate'], 'media_users.activate', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/expires', [MediaUserController::class, 'updateExpires'], 'media_users.expires', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/add-days', [MediaUserController::class, 'addDays'], 'media_users.add_days', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/notes', [MediaUserController::class, 'updateNotes'], 'media_users.notes', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/profile', [MediaUserController::class, 'updateProfile'], 'media_users.profile', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/send-message', [MediaUserController::class, 'sendMessage'], 'media_users.send_message', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/remove-server', [MediaUserController::class, 'removeFromServer'], 'media_users.remove_server', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/telegram', [MediaUserController::class, 'updateTelegram'], 'media_users.telegram', [CsrfMiddleware::class]);
     $router->get('/media-users/{uuid}/messages', [MediaUserController::class, 'messages'], 'media_users.messages');
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);
@@ -157,6 +167,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/enable', [SettingsController::class, 'enable2fa'], 'settings.2fa.enable', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/confirm', [SettingsController::class, 'confirm2fa'], 'settings.2fa.confirm', [CsrfMiddleware::class]);
+    $router->get('/settings/notifications', [NotificationSettingsController::class, 'index'], 'settings.notifications');
+    $router->post('/settings/notifications', [NotificationSettingsController::class, 'update'], 'settings.notifications.update', [CsrfMiddleware::class]);
 
     // Billing
     $router->get('/billing', [BillingController::class, 'index'], 'billing.index');

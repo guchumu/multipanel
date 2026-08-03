@@ -56,7 +56,7 @@
 
             return `<tr>
                 <td class="small text-muted">${Number(u.id || 0)}</td>
-                <td>${escapeHtml(u.username)}</td>
+                <td><a href="/media-users/${escapeHtml(u.uuid)}" class="fw-medium text-decoration-none">${escapeHtml(u.username)}</a></td>
                 <td class="small">${escapeHtml(u.email || '-')}</td>
                 <td class="small">${serverBadge}</td>
                 <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>

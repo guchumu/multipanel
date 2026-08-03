@@ -35,4 +35,36 @@ class MediaUser extends Model
 
         return strtotime($this->expires_at) < time();
     }
+
+    /** @return array<string, mixed> */
+    public function metaAll(): array
+    {
+        $raw = $this->metadata ?? null;
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    public function metaGet(string $key, mixed $default = null): mixed
+    {
+        $meta = $this->metaAll();
+
+        return $meta[$key] ?? $default;
+    }
+
+    public function metaSet(string $key, mixed $value): void
+    {
+        $meta = $this->metaAll();
+        if ($value === null) {
+            unset($meta[$key]);
+        } else {
+            $meta[$key] = $value;
+        }
+
+        $this->metadata = $meta === [] ? null : json_encode($meta, JSON_UNESCAPED_UNICODE);
+    }
 }

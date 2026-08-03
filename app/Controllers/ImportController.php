@@ -98,14 +98,15 @@ class ImportController extends Controller
             }
 
             $msg = sprintf(
-                'Migración plex_manager: leídas %d filas servers / %d users → importados %d servidores, %d usuarios, %d clientes, %d bibliotecas. Omitidos/actualizados: %d.',
+                'Migración plex_manager: leídas %d filas servers / %d users → importados %d servidores, %d usuarios, %d clientes, %d bibliotecas. Omitidos/actualizados: %d. Telegram rellenados: %d.',
                 $parsed['servers'],
                 $parsed['users'],
                 $result['servers'],
                 $result['users'],
                 $result['customers'],
                 $result['libraries'] ?? 0,
-                $result['skipped']
+                $result['skipped'],
+                $result['telegram_backfilled'] ?? 0
             );
 
             foreach ($result['sync'] ?? [] as $sync) {
@@ -148,8 +149,8 @@ class ImportController extends Controller
     {
         header('Content-Type: text/csv');
         header('Content-Disposition: attachment; filename="media_users_template.csv"');
-        echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,notes\n";
-        echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,\n";
+        echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,telegram_chat_id,notes\n";
+        echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,2023182976,\n";
         exit;
     }
 

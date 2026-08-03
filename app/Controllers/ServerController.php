@@ -375,6 +375,7 @@ class ServerController extends Controller
 
     private function setDefaultServer(int $tenantId, int $serverId, string $type): void
     {
+        $this->servers->ensureIsDefaultColumn();
         $db = \Core\Database::getInstance();
         $db->query(
             'UPDATE servers SET is_default = 0 WHERE tenant_id = ? AND type = ? AND deleted_at IS NULL',

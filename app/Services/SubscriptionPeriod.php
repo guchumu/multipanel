@@ -38,4 +38,19 @@ final class SubscriptionPeriod
             default => $now->modify('+1 month')->format('Y-m-d 23:59:59'),
         };
     }
+
+    public static function addDaysToExpires(?string $currentExpires, int $days): string
+    {
+        $today = new \DateTimeImmutable('today');
+        if ($currentExpires !== null && trim($currentExpires) !== '') {
+            $base = new \DateTimeImmutable(substr($currentExpires, 0, 10));
+            if ($base < $today) {
+                $base = $today;
+            }
+        } else {
+            $base = $today;
+        }
+
+        return $base->modify('+' . $days . ' days')->format('Y-m-d 23:59:59');
+    }
 }
