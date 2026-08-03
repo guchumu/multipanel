@@ -144,6 +144,39 @@ class MediaUserRepository
         return array_map(fn ($row) => new MediaUser($row), $rows);
     }
 
+    /**
+     * Usuarios cuya suscripción vence dentro de X días (incluye ya caducados si $includeExpired).
+     *
+     * @return array<int, MediaUser>
+     */
+    public function findExpiringSoon(int $tenantId, int $days = 30, ?int $serverId = null, bool $includeExpired = true): array
+    {
+        $params = [$tenantId];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid,
+                       DATEDIFF(mu.expires_at, CURDATE()) AS days_left
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+                  AND mu.`expires_at` IS NOT NULL
+                  AND mu.`status` IN (\'active\', \'invited\', \'suspended\')';
+
+        if (!$includeExpired) {
+            $sql .= ' AND mu.`expires_at` >= CURDATE()';
+        }
+
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $sql .= ' HAVING `days_left` <= ? ORDER BY mu.`expires_at` ASC LIMIT 500';
+        $params[] = $days;
+
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+
+        return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
     /** @return array<int, MediaUser> */
     public function listForBroadcast(int $tenantId, ?string $status = null, ?int $serverId = null, bool $withTelegramOnly = false): array
     {

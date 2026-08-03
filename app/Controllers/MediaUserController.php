@@ -54,6 +54,23 @@ class MediaUserController extends Controller
         ]);
     }
 
+    public function expiring(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $days = max(1, (int) $request->input('days', 15));
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        $users = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
+
+        return $this->view('media_users.expiring', [
+            'title' => 'Próximos vencimientos',
+            'users' => $users,
+            'servers' => $this->servers->allByTenant($tenantId),
+            'currentDays' => $days,
+            'currentServerId' => $serverId,
+        ]);
+    }
+
     public function show(Request $request, string $uuid): Response
     {
         $user = $this->mediaUsers->findByUuid($uuid);

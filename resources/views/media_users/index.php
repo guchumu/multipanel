@@ -36,6 +36,7 @@ ob_start();
     <h4 class="mb-0">Usuarios Media</h4>
     <div class="d-flex gap-2">
         <a href="/media-users/activity" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Actividad</a>
+        <a href="/media-users/expiring" class="btn btn-outline-warning"><i class="bi bi-hourglass-split me-1"></i>Próximos vencimientos</a>
         <a href="/media-users/broadcast" class="btn btn-outline-info"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
         <a href="/media-users/bulk" class="btn btn-outline-primary"><i class="bi bi-envelope-plus me-1"></i>Añadir emails</a>
         <a href="/media-users/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo usuario</a>
@@ -94,13 +95,14 @@ ob_start();
                     <th>Estado</th>
                     <th>Streams</th>
                     <th>Expira</th>
+                    <th>Vence en</th>
                     <th>Telegram</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody">
                 <?php if (empty($users)): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="10" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
                 <tr>
@@ -123,6 +125,10 @@ ob_start();
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
+                    </td>
+                    <td class="small text-nowrap">
+                        <?php $dl = days_left_badge($u->expires_at); ?>
+                        <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
                     </td>
                     <td class="small" style="min-width: 120px;">
                         <input type="text" class="form-control form-control-sm telegram-input" data-uuid="<?= e($u->uuid) ?>"

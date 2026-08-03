@@ -39,9 +39,25 @@
         }
     }
 
+    function daysLeftBadge(expiresAt) {
+        if (!expiresAt) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expires = new Date(expiresAt + 'T00:00:00');
+        if (Number.isNaN(expires.getTime())) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
+        const days = Math.floor((expires.getTime() - today.getTime()) / 86400000);
+
+        if (days < 0) return { label: `Caducó hace ${Math.abs(days)}d`, cls: 'bg-dark' };
+        if (days === 0) return { label: 'Caduca hoy', cls: 'bg-danger' };
+        if (days <= 3) return { label: `Quedan ${days}d`, cls: 'bg-danger' };
+        if (days <= 7) return { label: `Quedan ${days}d`, cls: 'bg-warning text-dark' };
+        if (days <= 30) return { label: `Quedan ${days}d`, cls: 'bg-info text-dark' };
+        return { label: `Quedan ${days}d`, cls: 'bg-light text-dark border' };
+    }
+
     function renderRows(users) {
         if (!users.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Sin resultados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Sin resultados</td></tr>';
             return;
         }
 
@@ -53,6 +69,7 @@
             const actionBtn = active
                 ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')"><i class="bi bi-pause"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
+            const dl = daysLeftBadge(u.expires_at);
 
             return `<tr>
                 <td class="small text-muted">${Number(u.id || 0)}</td>
@@ -65,6 +82,7 @@
                     <input type="date" class="form-control form-control-sm expires-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(u.expires_at || '')}">
                 </td>
+                <td class="small text-nowrap"><span class="badge ${dl.cls}">${escapeHtml(dl.label)}</span></td>
                 <td class="small" style="min-width: 120px;">
                     <input type="text" class="form-control form-control-sm telegram-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(u.telegram_chat_id || '')}" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">

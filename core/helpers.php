@@ -165,6 +165,60 @@ if (!function_exists('listen')) {
     }
 }
 
+if (!function_exists('days_left')) {
+    function days_left(?string $expiresAt): ?int
+    {
+        if ($expiresAt === null || trim($expiresAt) === '') {
+            return null;
+        }
+
+        $tz = new DateTimeZone(config('app.timezone', 'UTC'));
+        $today = new DateTimeImmutable('today', $tz);
+
+        try {
+            $expires = new DateTimeImmutable(substr($expiresAt, 0, 10), $tz);
+        } catch (\Exception) {
+            return null;
+        }
+
+        return (int) floor(($expires->getTimestamp() - $today->getTimestamp()) / 86400);
+    }
+}
+
+if (!function_exists('days_left_badge')) {
+    /** @return array{label: string, class: string} */
+    function days_left_badge(?string $expiresAt): array
+    {
+        $days = days_left($expiresAt);
+
+        if ($days === null) {
+            return ['label' => 'Sin fecha', 'class' => 'bg-light text-dark border'];
+        }
+
+        if ($days < 0) {
+            return ['label' => 'Caducó hace ' . abs($days) . 'd', 'class' => 'bg-dark'];
+        }
+
+        if ($days === 0) {
+            return ['label' => 'Caduca hoy', 'class' => 'bg-danger'];
+        }
+
+        if ($days <= 3) {
+            return ['label' => "Quedan {$days}d", 'class' => 'bg-danger'];
+        }
+
+        if ($days <= 7) {
+            return ['label' => "Quedan {$days}d", 'class' => 'bg-warning text-dark'];
+        }
+
+        if ($days <= 30) {
+            return ['label' => "Quedan {$days}d", 'class' => 'bg-info text-dark'];
+        }
+
+        return ['label' => "Quedan {$days}d", 'class' => 'bg-light text-dark border'];
+    }
+}
+
 if (!function_exists('can')) {
     function can(string $permission): bool
     {

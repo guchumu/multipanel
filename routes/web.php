@@ -111,6 +111,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Media Users
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
     $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
+    $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
