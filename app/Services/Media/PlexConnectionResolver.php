@@ -25,14 +25,35 @@ final class PlexConnectionResolver
      */
     private const ENDPOINT_CACHE_TTL = 120;
 
+    /**
+     * Cuando NINGÚN candidato responde (servidor apagado, caído, firewall, etc.),
+     * cacheamos también ese fallo un rato corto. Sin esto, una vista con varias
+     * carátulas a la vez (o varios refrescos seguidos) repite la ronda completa
+     * de sondeos (hasta 4 intentos x 4s = ~16s) por cada imagen mientras el
+     * servidor sigue caído, dejando la página colgada. Con el fallo cacheado,
+     * solo se paga ese coste una vez cada 20s.
+     */
+    private const FAILURE_CACHE_TTL = 20;
+
     /** @return array{endpoint: array{url: string, port: int, ssl: bool}, error: ?string, tried: array<int, string>} */
     public function resolve(Server $server, bool $quick = true): array
     {
         $cacheKey = 'plex_resolved_endpoint_' . (int) $server->id;
+        $failureCacheKey = 'plex_resolve_failed_' . (int) $server->id;
+
         if ($quick) {
             $cached = Cache::get($cacheKey);
             if (is_array($cached) && isset($cached['url'], $cached['port'], $cached['ssl'])) {
                 return ['endpoint' => $cached, 'error' => null, 'tried' => []];
+            }
+
+            $failedRecently = Cache::get($failureCacheKey);
+            if (is_array($failedRecently) && isset($failedRecently['error'])) {
+                return [
+                    'endpoint' => $failedRecently['endpoint'],
+                    'error' => (string) $failedRecently['error'],
+                    'tried' => $failedRecently['tried'] ?? [],
+                ];
             }
         }
 
@@ -75,6 +96,14 @@ final class PlexConnectionResolver
             (int) $server->port,
             (bool) $server->ssl
         );
+
+        if ($quick) {
+            Cache::set($failureCacheKey, [
+                'endpoint' => $configured,
+                'error' => $lastError,
+                'tried' => $tried,
+            ], self::FAILURE_CACHE_TTL);
+        }
 
         return ['endpoint' => $configured, 'error' => $lastError, 'tried' => $tried];
     }
