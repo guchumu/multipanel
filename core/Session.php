@@ -85,6 +85,22 @@ final class Session
         return hash_equals($this->getCsrfToken(), $token ?? '');
     }
 
+    /**
+     * Libera el lock del archivo de sesión sin terminar la petición. PHP bloquea
+     * la sesión por archivo durante todo el request: cualquier endpoint largo
+     * (SSE, long-poll, proxy de carátulas) que no lo suelte deja en cola al
+     * resto de peticiones del mismo navegador, que parecen "no cargar nunca".
+     * Tras llamar a close(), $_SESSION sigue siendo legible pero los cambios
+     * ya no se persisten: úsalo solo en endpoints de lectura.
+     */
+    public function close(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        $this->started = false;
+    }
+
     public function destroy(): void
     {
         session_destroy();

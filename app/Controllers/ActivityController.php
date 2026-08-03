@@ -45,6 +45,11 @@ class ActivityController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        // Solo lectura y potencialmente lento (consulta servidores de medios):
+        // soltamos el lock de sesión para no bloquear otras páginas del navegador.
+        \Core\Session::getInstance()->close();
+
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
 
         return $this->json([
@@ -64,6 +69,10 @@ class ActivityController extends Controller
         if ($server === null || (int) $server->tenant_id !== $tenantId) {
             return new Response('', 404);
         }
+
+        // El navegador pide varias carátulas en paralelo; sin esto cada una
+        // retendría el lock de sesión y se servirían en serie.
+        \Core\Session::getInstance()->close();
 
         $artPath = (string) $request->input('path', '');
         $itemId = (string) $request->input('item', '');

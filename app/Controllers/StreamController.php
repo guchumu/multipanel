@@ -31,6 +31,10 @@ class StreamController extends Controller
 
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
+        // Sin esto, este stream retiene el lock de sesión hasta 5 minutos y
+        // bloquea la carga de cualquier otra página del mismo navegador.
+        \Core\Session::getInstance()->close();
+
         header('Content-Type: text/event-stream');
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');

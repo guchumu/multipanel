@@ -50,6 +50,10 @@ class ServerController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
+        // Solo lectura y lento (consulta todos los servidores): soltar el lock
+        // de sesión para no bloquear otras páginas del mismo navegador.
+        \Core\Session::getInstance()->close();
+
         return $this->json([
             'load' => $this->load->getTenantLoad($tenantId),
             'updated_at' => date('c'),

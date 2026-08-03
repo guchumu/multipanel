@@ -27,6 +27,10 @@ class EventsApiController extends Controller
             return $this->json(['error' => 'Unauthorized'], 401);
         }
 
+        // Long-poll de hasta 30s: hay que soltar el lock de sesión o bloquea
+        // el resto de peticiones del mismo navegador mientras espera eventos.
+        \Core\Session::getInstance()->close();
+
         $since = (float) $request->input('since', 0);
         $channel = (string) $request->input('channel', 'dashboard');
         $timeout = min(30, max(1, (int) $request->input('timeout', 15)));

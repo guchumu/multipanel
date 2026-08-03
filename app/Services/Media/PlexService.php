@@ -31,6 +31,15 @@ final class PlexService
         );
 
         $resolved = $resolver->resolve($server);
+        if ($resolved['error'] !== null && $resolved['tried'] !== []) {
+            // Todos los endpoints sondeados fallaron: marcamos el error ya para
+            // que los métodos de la API (sesiones, bibliotecas, etc.) devuelvan
+            // vacío al instante en vez de esperar otros 30s de timeout contra
+            // un servidor que sabemos inaccesible. Si no se sondeó ninguno
+            // (p. ej. solo hay candidatos locales en modo rápido), se intenta
+            // igualmente con la URL configurada.
+            $this->lastError = $resolved['error'];
+        }
         if ($resolved['error'] === null) {
             $endpoint = $resolved['endpoint'];
             if ($this->shouldPersistEndpoint($endpoint)) {
@@ -445,7 +454,7 @@ final class PlexService
 
     public function fetchArtwork(string $path): ?array
     {
-        if ($path === '' || !str_starts_with($path, '/')) {
+        if ($this->lastError !== null || $path === '' || !str_starts_with($path, '/')) {
             return null;
         }
 

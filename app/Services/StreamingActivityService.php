@@ -9,12 +9,21 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use Core\Cache;
 
 /**
  * Aggregates live playback sessions from all media servers.
  */
 final class StreamingActivityService
 {
+    /**
+     * El snapshot consulta todos los servidores en serie (con timeouts que
+     * pueden sumar decenas de segundos si alguno está caído). Se cachea unos
+     * segundos para que el polling de "En directo", el listado de servidores
+     * y las fichas de usuario no repitan ese coste en cada petición.
+     */
+    private const SNAPSHOT_CACHE_TTL = 15;
+
     public function __construct(
         private ServerRepository $servers = new ServerRepository(),
         private ServerSyncService $sync = new ServerSyncService(),
@@ -36,7 +45,15 @@ final class StreamingActivityService
      */
     public function getSessionsForUser(int $tenantId, int $serverId, string $username, ?string $displayName = null): array
     {
-        $sessions = $this->getSnapshot($tenantId, $serverId)['sessions'];
+        // Solo consultamos el servidor del usuario, no todos los del tenant:
+        // esta llamada se hace al abrir cada ficha de usuario y no debe pagar
+        // el coste del snapshot completo.
+        $server = Server::find($serverId);
+        if ($server === null || (int) $server->tenant_id !== $tenantId) {
+            return [];
+        }
+
+        $sessions = $this->fetchServerSessions($server);
         $needles = array_filter(array_map(
             static fn (?string $v): string => mb_strtolower(trim((string) $v)),
             [$username, $displayName]
@@ -64,23 +81,36 @@ final class StreamingActivityService
      */
     public function getSnapshot(int $tenantId, ?int $serverId = null): array
     {
-        $allSessions = [];
-        $serverStats = [];
+        $cacheKey = 'activity_snapshot_' . $tenantId;
+        $cached = Cache::get($cacheKey);
 
-        foreach ($this->servers->allByTenant($tenantId) as $server) {
-            $serverSessions = $this->fetchServerSessions($server);
-            $liveStatus = (string) $server->status;
-            if ($liveStatus !== 'online' && $serverSessions !== []) {
-                $liveStatus = 'online';
+        if (is_array($cached) && isset($cached['sessions'], $cached['server_stats'])) {
+            $allSessions = $cached['sessions'];
+            $serverStats = $cached['server_stats'];
+        } else {
+            $allSessions = [];
+            $serverStats = [];
+
+            foreach ($this->servers->allByTenant($tenantId) as $server) {
+                $serverSessions = $this->fetchServerSessions($server);
+                $liveStatus = (string) $server->status;
+                if ($liveStatus !== 'online' && $serverSessions !== []) {
+                    $liveStatus = 'online';
+                }
+                $serverStats[] = [
+                    'id' => (int) $server->id,
+                    'name' => (string) $server->name,
+                    'type' => (string) $server->type,
+                    'status' => $liveStatus,
+                    'count' => count($serverSessions),
+                ];
+                $allSessions = array_merge($allSessions, $serverSessions);
             }
-            $serverStats[] = [
-                'id' => (int) $server->id,
-                'name' => (string) $server->name,
-                'type' => (string) $server->type,
-                'status' => $liveStatus,
-                'count' => count($serverSessions),
-            ];
-            $allSessions = array_merge($allSessions, $serverSessions);
+
+            Cache::set($cacheKey, [
+                'sessions' => $allSessions,
+                'server_stats' => $serverStats,
+            ], self::SNAPSHOT_CACHE_TTL);
         }
 
         $filtered = $serverId !== null
