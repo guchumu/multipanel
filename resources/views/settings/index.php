@@ -5,6 +5,7 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#general">General</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">Email / SMTP</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegram">Telegram</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Facturación</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#security">Seguridad</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#oauth">SSO / OAuth</button></li>
 </ul>
@@ -60,6 +61,47 @@
                     <div class="mb-3"><label class="form-label">Bot Token</label><input name="telegram_bot_token" class="form-control" value="<?= e($settings['telegram_bot_token'] ?? '') ?>"></div>
                     <div class="mb-3"><label class="form-label">Chat ID</label><input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>"></div>
                     <button class="btn btn-primary">Guardar Telegram</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="billing">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST" action="/settings/billing" id="billingForm">
+                    <?= csrf_field() ?>
+                    <div class="mb-4">
+                        <label class="form-label">Concepto que ve el cliente al pagar</label>
+                        <input name="payment_concept" class="form-control" value="<?= e($paymentConcept) ?>" placeholder="Digital services">
+                        <p class="form-text">Este texto es siempre el mismo, sea lo que sea que esté renovando el cliente (nunca se muestran los días ni el usuario en la pasarela de pago).</p>
+                    </div>
+
+                    <label class="form-label">Duraciones rápidas (uso interno)</label>
+                    <p class="form-text mt-0">Define las combinaciones de duración + precio que usarás para generar enlaces de pago rápidos desde la ficha de cada cliente. El precio y los días solo se usan internamente para saber cuánto sumar y cuánto se cobró.</p>
+                    <table class="table table-sm align-middle" id="presetsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Etiqueta (uso interno)</th>
+                                <th style="width:140px;">Días</th>
+                                <th style="width:160px;">Precio (EUR)</th>
+                                <th style="width:50px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($renewalPresets as $preset): ?>
+                            <tr>
+                                <td><input type="text" name="preset_label[]" class="form-control form-control-sm" value="<?= e($preset['label']) ?>" placeholder="Ej. 1 año"></td>
+                                <td><input type="number" min="1" name="preset_days[]" class="form-control form-control-sm" value="<?= (int) $preset['days'] ?>"></td>
+                                <td><input type="number" min="0.5" step="0.01" name="preset_price[]" class="form-control form-control-sm" value="<?= e($preset['price']) ?>"></td>
+                                <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-preset"><i class="bi bi-trash"></i></button></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnAddPreset"><i class="bi bi-plus-lg me-1"></i>Añadir duración</button>
+                    <br>
+                    <button class="btn btn-primary">Guardar facturación</button>
                 </form>
             </div>
         </div>
@@ -130,6 +172,28 @@ document.getElementById('btnConfirm2fa')?.addEventListener('click', async () => 
     alert(data.message || data.error);
     if (data.success) location.reload();
 });
+
+document.getElementById('btnAddPreset')?.addEventListener('click', () => {
+    const tbody = document.querySelector('#presetsTable tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="text" name="preset_label[]" class="form-control form-control-sm" placeholder="Ej. 1 año"></td>
+        <td><input type="number" min="1" name="preset_days[]" class="form-control form-control-sm" value="30"></td>
+        <td><input type="number" min="0.5" step="0.01" name="preset_price[]" class="form-control form-control-sm" value="15"></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-preset"><i class="bi bi-trash"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+});
+
+document.querySelector('#presetsTable tbody')?.addEventListener('click', (e) => {
+    if (e.target.closest('.btn-remove-preset')) {
+        e.target.closest('tr').remove();
+    }
+});
+
+if (location.hash === '#billing') {
+    document.querySelector('[data-bs-target="#billing"]')?.click();
+}
 </script>
 JS;
 include base_path('resources/views/layouts/app.php');

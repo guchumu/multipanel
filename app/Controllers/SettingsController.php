@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Services\AuthService;
+use App\Services\BillingSettingsService;
 use App\Services\TwoFactorService;
 use Core\Controller;
 use Core\Database;
@@ -20,6 +21,7 @@ class SettingsController extends Controller
     public function __construct(
         private AuthService $auth = new AuthService(),
         private TwoFactorService $twoFactor = new TwoFactorService(),
+        private BillingSettingsService $billingSettings = new BillingSettingsService(),
     ) {
     }
 
@@ -32,7 +34,34 @@ class SettingsController extends Controller
             'title' => 'Configuración',
             'settings' => $settings,
             'user' => $this->auth->user(),
+            'paymentConcept' => $this->billingSettings->getPaymentConcept($tenantId),
+            'renewalPresets' => $this->billingSettings->getRenewalPresets($tenantId),
         ]);
+    }
+
+    public function updateBilling(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        $this->billingSettings->savePaymentConcept($tenantId, (string) $request->input('payment_concept', 'Digital services'));
+
+        $labels = (array) $request->input('preset_label', []);
+        $days = (array) $request->input('preset_days', []);
+        $prices = (array) $request->input('preset_price', []);
+
+        $presets = [];
+        foreach ($labels as $i => $label) {
+            $presets[] = [
+                'label' => $label,
+                'days' => $days[$i] ?? 0,
+                'price' => $prices[$i] ?? 0,
+            ];
+        }
+
+        $this->billingSettings->saveRenewalPresets($tenantId, $presets);
+
+        Session::getInstance()->flash('success', 'Configuración de facturación guardada.');
+        return $this->redirect('/settings#billing');
     }
 
     public function update(Request $request): Response

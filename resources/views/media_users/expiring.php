@@ -72,6 +72,7 @@
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-primary" title="Ver ficha"><i class="bi bi-eye"></i></a>
+                            <a href="/media-users/<?= e($u->uuid) ?>#stripe" class="btn btn-outline-warning" title="Generar enlace de pago (Stripe)"><i class="bi bi-credit-card"></i></a>
                             <button type="button" class="btn btn-outline-success btn-quick-renew" data-uuid="<?= e($u->uuid) ?>" data-days="30" title="Sumar 30 días ahora mismo">
                                 <i class="bi bi-calendar-plus"></i> +30d
                             </button>

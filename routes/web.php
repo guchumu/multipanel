@@ -167,6 +167,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Settings
     $router->get('/settings', [SettingsController::class, 'index'], 'settings.index');
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
+    $router->post('/settings/billing', [SettingsController::class, 'updateBilling'], 'settings.billing.update', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/enable', [SettingsController::class, 'enable2fa'], 'settings.2fa.enable', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/confirm', [SettingsController::class, 'confirm2fa'], 'settings.2fa.confirm', [CsrfMiddleware::class]);
     $router->get('/settings/notifications', [NotificationSettingsController::class, 'index'], 'settings.notifications');

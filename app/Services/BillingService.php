@@ -226,8 +226,13 @@ final class BillingService
         $customerId = $this->findOrCreateCustomerForMediaUser($tenantId, $user);
         $subscriptionId = $this->createRenewalSubscription($tenantId, $customerId, (int) $user->id, $amount, $currency, $days, $gateway);
 
+        // El concepto que ve el cliente es siempre el mismo (ej. "Digital services"),
+        // configurable en Ajustes > Facturación. La duración y el usuario nunca se
+        // muestran en la pasarela de pago, solo se usan a nivel interno.
+        $concept = (new BillingSettingsService())->getPaymentConcept($tenantId);
+
         $result = (new PaymentService($this))->checkout($gateway, $amount, $currency, [
-            'plan_name' => sprintf('Renovación %d días – %s', $days, $user->display_name ?? $user->username),
+            'plan_name' => $concept,
             'subscription_id' => $subscriptionId,
             'customer_id' => $customerId,
         ]);

@@ -112,6 +112,13 @@
         }
     });
 
+    document.getElementById('stripePreset')?.addEventListener('change', (e) => {
+        const opt = e.target.selectedOptions[0];
+        if (!opt || opt.value === '') return;
+        document.getElementById('stripeAmount').value = opt.dataset.price;
+        document.getElementById('stripeDays').value = opt.dataset.days;
+    });
+
     document.getElementById('btnStripeCheckout')?.addEventListener('click', async () => {
         const btn = document.getElementById('btnStripeCheckout');
         const amount = Number(document.getElementById('stripeAmount')?.value || 0);
@@ -163,6 +170,16 @@
         } catch (err) {
             toast(err.message);
         }
+    });
+
+    document.getElementById('btnSendStripeWhatsapp')?.addEventListener('click', () => {
+        const link = document.getElementById('stripeLink')?.value || '';
+        if (!link) {
+            toast('Genera primero el enlace de pago.');
+            return;
+        }
+        const text = encodeURIComponent(`Hola! Para renovar tu acceso, completa el pago aquí:\n${link}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank');
     });
 
     document.getElementById('btnSendMsg')?.addEventListener('click', async () => {

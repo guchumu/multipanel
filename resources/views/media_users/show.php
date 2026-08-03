@@ -80,10 +80,19 @@ ob_start();
             </div>
         </div>
 
-        <div class="card border-0 shadow-sm mb-4">
+        <div class="card border-0 shadow-sm mb-4" id="stripe">
             <div class="card-header bg-white"><strong><i class="bi bi-credit-card me-1"></i>Cobro con Stripe</strong></div>
             <div class="card-body">
-                <p class="small text-muted mb-2">Genera un enlace de pago para que el cliente renueve. En cuanto Stripe confirme el cobro, se le sumarán los días automáticamente y se reactivará su acceso.</p>
+                <p class="small text-muted mb-2">Genera un enlace de pago para que el cliente renueve. El cliente solo verá el concepto configurado en Ajustes (ej. "Digital services") y el precio; en cuanto Stripe confirme el cobro, se le sumarán los días automáticamente y se reactivará su acceso.</p>
+
+                <label class="form-label small">Duración</label>
+                <select id="stripePreset" class="form-select form-select-sm mb-2">
+                    <option value="">Personalizado…</option>
+                    <?php foreach ($renewalPresets as $i => $p): ?>
+                    <option value="<?= (int) $i ?>" data-days="<?= (int) $p['days'] ?>" data-price="<?= e($p['price']) ?>"><?= e($p['label']) ?> · <?= number_format((float) $p['price'], 2) ?> €</option>
+                    <?php endforeach; ?>
+                </select>
+
                 <div class="row g-2 mb-2">
                     <div class="col-5">
                         <label class="form-label small">Importe</label>
@@ -97,7 +106,7 @@ ob_start();
                         <input type="number" min="1" id="stripeDays" class="form-control form-control-sm" value="30">
                     </div>
                     <div class="col-3 d-flex align-items-end">
-                        <button type="button" class="btn btn-sm btn-primary w-100" id="btnStripeCheckout"><i class="bi bi-link-45deg"></i></button>
+                        <button type="button" class="btn btn-sm btn-primary w-100" id="btnStripeCheckout" title="Generar enlace"><i class="bi bi-link-45deg"></i></button>
                     </div>
                 </div>
                 <div id="stripeLinkBox" class="d-none">
@@ -106,9 +115,14 @@ ob_start();
                         <input type="text" id="stripeLink" class="form-control" readonly>
                         <button type="button" class="btn btn-outline-secondary" id="btnCopyStripeLink" title="Copiar"><i class="bi bi-clipboard"></i></button>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-info w-100" id="btnSendStripeLink" <?= $user->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
-                        <i class="bi bi-send me-1"></i>Enviar enlace por Telegram
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-success flex-fill" id="btnSendStripeWhatsapp">
+                            <i class="bi bi-whatsapp me-1"></i>WhatsApp
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info flex-fill" id="btnSendStripeLink" <?= $user->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
+                            <i class="bi bi-telegram me-1"></i>Telegram
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -11,6 +11,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\BillingService;
+use App\Services\BillingSettingsService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
@@ -43,6 +44,7 @@ class MediaUserController extends Controller
         private MediaUserActivityService $activity = new MediaUserActivityService(),
         private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
         private BillingService $billing = new BillingService(),
+        private BillingSettingsService $billingSettings = new BillingSettingsService(),
     ) {
     }
 
@@ -92,6 +94,7 @@ class MediaUserController extends Controller
             'user' => $user,
             'timeline' => $this->activity->timeline((int) $user->id),
             'messages' => $this->messages->listForUser((int) $user->id, 20),
+            'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
         ]);
     }
 
