@@ -131,11 +131,10 @@ ob_start();
 <?php
 $content = ob_get_clean();
 
-// IMPORTANTE: nunca metas tags <?= ?> dentro de un heredoc/nowdoc (<<<JS / <<<'JS').
-// El lexer de PHP trata todo el bloque como una única cadena literal, así que esos
-// tags no se ejecutan nunca: llegan al navegador como texto suelto dentro del
-// <script>, rompen la sintaxis JS y el gráfico (y todo lo que va detrás) se queda
-// sin pintar. Por eso el donut de "Distribución de usuarios" nunca se veía.
+// IMPORTANTE: nunca metas tags PHP de eco corto dentro de un heredoc/nowdoc, ni
+// escribas un cierre de PHP dentro de un comentario como este: PHP lo honra
+// incluso dentro de comentarios de una línea y saca el resto del archivo como
+// texto plano al navegador. Pre-codifica los datos con json_encode e interpólalos.
 $usersChartData = json_encode([
     (int) $stats['users_active'],
     (int) $stats['users_suspended'],
