@@ -80,6 +80,39 @@ ob_start();
             </div>
         </div>
 
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white"><strong><i class="bi bi-credit-card me-1"></i>Cobro con Stripe</strong></div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">Genera un enlace de pago para que el cliente renueve. En cuanto Stripe confirme el cobro, se le sumarán los días automáticamente y se reactivará su acceso.</p>
+                <div class="row g-2 mb-2">
+                    <div class="col-5">
+                        <label class="form-label small">Importe</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" step="0.01" min="0.5" id="stripeAmount" class="form-control" value="9.99">
+                            <span class="input-group-text">EUR</span>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small">Días a sumar</label>
+                        <input type="number" min="1" id="stripeDays" class="form-control form-control-sm" value="30">
+                    </div>
+                    <div class="col-3 d-flex align-items-end">
+                        <button type="button" class="btn btn-sm btn-primary w-100" id="btnStripeCheckout"><i class="bi bi-link-45deg"></i></button>
+                    </div>
+                </div>
+                <div id="stripeLinkBox" class="d-none">
+                    <label class="form-label small">Enlace de pago</label>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" id="stripeLink" class="form-control" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="btnCopyStripeLink" title="Copiar"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-info w-100" id="btnSendStripeLink" <?= $user->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
+                        <i class="bi bi-send me-1"></i>Enviar enlace por Telegram
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white"><strong>Enviar Telegram</strong></div>
             <div class="card-body">

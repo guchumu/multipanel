@@ -10,6 +10,7 @@ use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
+use App\Services\BillingService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
@@ -41,6 +42,7 @@ class MediaUserController extends Controller
         private MediaUserManagementService $management = new MediaUserManagementService(),
         private MediaUserActivityService $activity = new MediaUserActivityService(),
         private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
+        private BillingService $billing = new BillingService(),
     ) {
     }
 
@@ -328,6 +330,22 @@ class MediaUserController extends Controller
         }
 
         $result = $this->management->sendTelegramMessage($user, $title, $body);
+
+        return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function stripeCheckout(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $amount = (float) $request->input('amount', 0);
+        $days = (int) $request->input('days', 30);
+        $currency = strtoupper(trim((string) $request->input('currency', 'EUR')));
+
+        $result = $this->billing->createRenewalCheckout($user, $amount, $currency !== '' ? $currency : 'EUR', $days);
 
         return $this->json($result, $result['success'] ? 200 : 422);
     }

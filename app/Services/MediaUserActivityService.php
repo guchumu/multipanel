@@ -103,6 +103,9 @@ final class MediaUserActivityService
             'media_user.message_sent' => 'Mensaje enviado',
             'media_user.removed_from_server' => 'Quitado del servidor',
             'media_user.deleted' => 'Eliminado',
+            'media_user.profile_updated' => 'Datos actualizados',
+            'media_user.payment_link_created' => 'Enlace de pago generado',
+            'media_user.payment_renewed' => 'Pago recibido (renovación)',
             default => str_replace(['media_user.', '_'], ['', ' '], $action),
         };
     }
@@ -116,6 +119,8 @@ final class MediaUserActivityService
             'media_user.telegram_updated', 'media_user.message_sent' => 'telegram',
             'media_user.notes_updated' => 'journal-text',
             'media_user.removed_from_server' => 'person-x',
+            'media_user.payment_link_created' => 'credit-card',
+            'media_user.payment_renewed' => 'cash-coin',
             default => 'clock-history',
         };
     }
@@ -131,7 +136,7 @@ final class MediaUserActivityService
         }
 
         $parts = [];
-        foreach (['status', 'expires_at', 'telegram_chat_id', 'notes', 'days_added'] as $field) {
+        foreach (['status', 'expires_at', 'telegram_chat_id', 'notes', 'days_added', 'amount', 'currency', 'days'] as $field) {
             $o = is_array($old) ? ($old[$field] ?? null) : null;
             $n = is_array($new) ? ($new[$field] ?? null) : null;
             if ($o !== $n && ($o !== null || $n !== null)) {

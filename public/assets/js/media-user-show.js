@@ -112,6 +112,59 @@
         }
     });
 
+    document.getElementById('btnStripeCheckout')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btnStripeCheckout');
+        const amount = Number(document.getElementById('stripeAmount')?.value || 0);
+        const days = Number(document.getElementById('stripeDays')?.value || 0);
+        if (amount <= 0 || days <= 0) {
+            toast('Introduce un importe y unos días válidos.');
+            return;
+        }
+
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            const data = await post(`/media-users/${uuid}/stripe-checkout`, { amount, days, currency: 'EUR' });
+            document.getElementById('stripeLink').value = data.checkout_url || '';
+            document.getElementById('stripeLinkBox').classList.remove('d-none');
+            toast(data.message || 'Enlace generado');
+        } catch (err) {
+            toast(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+
+    document.getElementById('btnCopyStripeLink')?.addEventListener('click', () => {
+        const input = document.getElementById('stripeLink');
+        if (!input?.value) return;
+        navigator.clipboard?.writeText(input.value).then(() => toast('Enlace copiado')).catch(() => {
+            input.select();
+            document.execCommand('copy');
+            toast('Enlace copiado');
+        });
+    });
+
+    document.getElementById('btnSendStripeLink')?.addEventListener('click', async () => {
+        const link = document.getElementById('stripeLink')?.value || '';
+        if (!link) {
+            toast('Genera primero el enlace de pago.');
+            return;
+        }
+        try {
+            const data = await post(`/media-users/${uuid}/send-message`, {
+                title: 'Pago pendiente',
+                body: `Para renovar tu acceso, completa el pago aquí:\n${link}`,
+            });
+            toast(data.message || 'Enviado');
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
     document.getElementById('btnSendMsg')?.addEventListener('click', async () => {
         try {
             const data = await post(`/media-users/${uuid}/send-message`, {

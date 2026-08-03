@@ -212,6 +212,37 @@ final class MediaUserManagementService
         ];
     }
 
+    /**
+     * Aplica un pago confirmado (Stripe, etc.) a un usuario media: suma los días
+     * pagados, reactiva el acceso si estaba suspendido/caducado y avisa por Telegram.
+     *
+     * @return array{success: bool, message: string, expires_at: string}
+     */
+    public function applyPayment(MediaUser $user, int $days, float $amount, string $currency): array
+    {
+        $result = $this->addDays($user, $days);
+
+        AuditService::log('media_user.payment_renewed', 'media_user', (int) $user->id, null, [
+            'days' => $days,
+            'amount' => $amount,
+            'currency' => $currency,
+            'expires_at' => $result['expires_at'] ?? null,
+        ]);
+
+        $chatId = trim((string) ($user->telegram_chat_id ?? ''));
+        if ($chatId !== '' && ($result['expires_at'] ?? '') !== '') {
+            $body = sprintf(
+                "✅ Hemos recibido tu pago de %s %s.\nTu suscripción ha sido renovada hasta el %s.\n¡Gracias por confiar en nosotros!",
+                number_format($amount, 2, ',', '.'),
+                strtoupper($currency),
+                substr((string) $result['expires_at'], 0, 10)
+            );
+            $this->sendTelegramMessage($user, 'Pago recibido ✅', $body);
+        }
+
+        return $result;
+    }
+
     /** @return array{success: bool, message: string} */
     public function updateProfile(MediaUser $user, array $data): array
     {

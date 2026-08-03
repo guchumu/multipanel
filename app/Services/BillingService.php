@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\MediaUser;
+use App\Services\Payments\PaymentService;
 use Core\Database;
+use Core\Logger;
 use Ramsey\Uuid\Uuid;
 
 /**
@@ -87,9 +90,16 @@ final class BillingService
             return false;
         }
 
+        $meta = json_decode((string) ($sub['metadata'] ?? ''), true);
+        $meta = is_array($meta) ? $meta : [];
+        $plan = $db->fetchOne('SELECT * FROM subscription_plans WHERE id = ?', [$sub['plan_id']]);
+        $days = isset($meta['renewal_days'])
+            ? (int) $meta['renewal_days']
+            : $this->intervalToDays((string) ($plan['interval'] ?? 'monthly'));
+
         $db->update('subscriptions', [
             'status' => 'active',
-            'ends_at' => date('Y-m-d H:i:s', strtotime('+1 month')),
+            'ends_at' => $days !== null ? date('Y-m-d H:i:s', strtotime("+{$days} days")) : null,
         ], 'id = ?', [$subscriptionId]);
 
         $invoiceNumber = 'INV-' . date('Y') . '-' . str_pad((string) $subscriptionId, 6, '0', STR_PAD_LEFT);
@@ -108,6 +118,27 @@ final class BillingService
             'gateway' => $sub['gateway'],
         ]);
 
+        // Si la suscripción está ligada a un usuario media (Plex/Jellyfin), el pago
+        // le suma automáticamente los días correspondientes y reactiva su acceso.
+        if (!empty($sub['media_user_id']) && $days !== null) {
+            try {
+                $mediaUser = MediaUser::find((int) $sub['media_user_id']);
+                if ($mediaUser !== null) {
+                    (new MediaUserManagementService())->applyPayment(
+                        $mediaUser,
+                        $days,
+                        (float) $sub['amount'],
+                        (string) $sub['currency']
+                    );
+                }
+            } catch (\Throwable $e) {
+                Logger::error('No se pudo aplicar el pago al usuario media', [
+                    'subscription_id' => $subscriptionId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         try {
             (new InvoiceService())->generateForSubscription($subscriptionId);
             \App\Services\EventHub::push('subscription.paid', ['subscription_id' => $subscriptionId]);
@@ -115,6 +146,144 @@ final class BillingService
         }
 
         return true;
+    }
+
+    /**
+     * Busca (o crea) el cliente de facturación asociado a un usuario media,
+     * para poder generarle enlaces de pago (Stripe, PayPal, etc.).
+     */
+    public function findOrCreateCustomerForMediaUser(int $tenantId, MediaUser $user): int
+    {
+        $db = Database::getInstance();
+        $row = $db->fetchOne(
+            'SELECT id FROM customers WHERE tenant_id = ? AND media_user_id = ? LIMIT 1',
+            [$tenantId, $user->id]
+        );
+        if ($row) {
+            return (int) $row['id'];
+        }
+
+        $email = trim((string) ($user->email ?? ''));
+
+        return $this->createCustomer($tenantId, [
+            'email' => $email !== '' ? $email : ($user->username . '@sin-email.local'),
+            'first_name' => $user->display_name ?? $user->username,
+            'media_user_id' => $user->id,
+            'status' => 'active',
+        ]);
+    }
+
+    /**
+     * Crea una suscripción "pendiente de pago" para una renovación puntual
+     * generada desde la ficha del usuario (no asociada a un plan fijo).
+     */
+    public function createRenewalSubscription(
+        int $tenantId,
+        int $customerId,
+        ?int $mediaUserId,
+        float $amount,
+        string $currency,
+        int $days,
+        string $gateway = 'stripe'
+    ): int {
+        return Database::getInstance()->insert('subscriptions', [
+            'tenant_id' => $tenantId,
+            'customer_id' => $customerId,
+            'plan_id' => $this->ensureManualRenewalPlan($tenantId),
+            'media_user_id' => $mediaUserId,
+            'status' => 'trialing',
+            'gateway' => $gateway,
+            'amount' => $amount,
+            'currency' => strtoupper($currency),
+            'starts_at' => date('Y-m-d H:i:s'),
+            'ends_at' => null,
+            'metadata' => json_encode(['renewal_days' => $days]),
+        ]);
+    }
+
+    /**
+     * Genera un enlace de pago (checkout) para renovar manualmente a un usuario media,
+     * sumándole automáticamente los días indicados en cuanto Stripe confirme el cobro.
+     *
+     * @return array{success: bool, message: string, checkout_url?: string}
+     */
+    public function createRenewalCheckout(
+        MediaUser $user,
+        float $amount,
+        string $currency,
+        int $days,
+        string $gateway = 'stripe'
+    ): array {
+        if ($amount <= 0 || $days <= 0) {
+            return ['success' => false, 'message' => 'El importe y los días deben ser mayores que 0.'];
+        }
+
+        if ($gateway === 'stripe' && trim((string) config('payments.stripe.secret_key', '')) === '') {
+            return ['success' => false, 'message' => 'Stripe no está configurado (falta STRIPE_SECRET_KEY en el .env).'];
+        }
+
+        $tenantId = (int) $user->tenant_id;
+        $customerId = $this->findOrCreateCustomerForMediaUser($tenantId, $user);
+        $subscriptionId = $this->createRenewalSubscription($tenantId, $customerId, (int) $user->id, $amount, $currency, $days, $gateway);
+
+        $result = (new PaymentService($this))->checkout($gateway, $amount, $currency, [
+            'plan_name' => sprintf('Renovación %d días – %s', $days, $user->display_name ?? $user->username),
+            'subscription_id' => $subscriptionId,
+            'customer_id' => $customerId,
+        ]);
+
+        if (empty($result['checkout_url'])) {
+            return ['success' => false, 'message' => 'No se pudo generar el enlace de pago: ' . ($result['error'] ?? 'error desconocido')];
+        }
+
+        AuditService::log('media_user.payment_link_created', 'media_user', (int) $user->id, null, [
+            'amount' => $amount,
+            'currency' => strtoupper($currency),
+            'days' => $days,
+            'gateway' => $gateway,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'Enlace de pago generado.',
+            'checkout_url' => $result['checkout_url'],
+        ];
+    }
+
+    private function ensureManualRenewalPlan(int $tenantId): int
+    {
+        $db = Database::getInstance();
+        $row = $db->fetchOne(
+            'SELECT id FROM subscription_plans WHERE tenant_id = ? AND slug = ? LIMIT 1',
+            [$tenantId, 'renovacion-manual']
+        );
+        if ($row) {
+            return (int) $row['id'];
+        }
+
+        return $db->insert('subscription_plans', [
+            'tenant_id' => $tenantId,
+            'name' => 'Renovación manual',
+            'slug' => 'renovacion-manual',
+            'description' => 'Plan interno usado para generar enlaces de pago puntuales desde la ficha de un usuario.',
+            'price' => 0,
+            'currency' => 'EUR',
+            'interval' => 'monthly',
+            'is_active' => 0,
+        ]);
+    }
+
+    private function intervalToDays(string $interval): ?int
+    {
+        return match ($interval) {
+            'daily' => 1,
+            'weekly' => 7,
+            'monthly' => 30,
+            'quarterly' => 90,
+            'yearly' => 365,
+            'lifetime' => null,
+            default => 30,
+        };
     }
 
     /** @return array<int, array<string, mixed>> */

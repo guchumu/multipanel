@@ -72,6 +72,17 @@
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-primary" title="Ver ficha"><i class="bi bi-eye"></i></a>
+                            <button type="button" class="btn btn-outline-success btn-quick-renew" data-uuid="<?= e($u->uuid) ?>" data-days="30" title="Sumar 30 días ahora mismo">
+                                <i class="bi bi-calendar-plus"></i> +30d
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Otras cantidades">
+                                <span class="visually-hidden">Otras cantidades</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <?php foreach ([7, 15, 30, 90, 365] as $opt): ?>
+                                <li><a class="dropdown-item btn-quick-renew" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= $opt ?>">+<?= $opt ?> días</a></li>
+                                <?php endforeach; ?>
+                            </ul>
                             <?php if ($u->telegram_chat_id): ?>
                             <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-info" title="Tiene Telegram configurado"><i class="bi bi-send"></i></a>
                             <?php endif; ?>
@@ -84,4 +95,8 @@
         </table>
     </div>
 </div>
-<?php $content = ob_get_clean(); include base_path('resources/views/layouts/app.php'); ?>
+<?php
+$content = ob_get_clean();
+$scripts = '<script src="' . e(asset('js/media-users-expiring.js')) . '"></script>';
+include base_path('resources/views/layouts/app.php');
+?>

@@ -28,7 +28,7 @@ class BillingController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
         $plans = Database::getInstance()->fetchAll(
-            'SELECT * FROM subscription_plans WHERE tenant_id = ? ORDER BY sort_order, price',
+            'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order, price',
             [$tenantId]
         );
 
