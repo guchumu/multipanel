@@ -10,15 +10,21 @@
     }
 
     async function post(url, body = {}) {
+        const token = document.querySelector('meta[name=csrf-token]')?.content || csrf || '';
+        if (!token) {
+            return { success: false, message: 'No hay token CSRF. Recarga la página (F5).', __httpOk: false, __status: 0 };
+        }
+        const payload = { ...body, _token: token };
         const res = await fetch(url, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrf,
-                'X-Csrf-Token': csrf,
+                'X-CSRF-TOKEN': token,
+                'X-Csrf-Token': token,
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify(payload),
         });
         const data = await res.json().catch(() => ({}));
         data.__httpOk = res.ok;

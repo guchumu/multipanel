@@ -35,6 +35,14 @@ final class Request
             }
         }
 
+        // CONTENT_TYPE / CONTENT_LENGTH no vienen como HTTP_* en PHP.
+        if (!empty($_SERVER['CONTENT_TYPE'])) {
+            $headers['Content-Type'] = (string) $_SERVER['CONTENT_TYPE'];
+        }
+        if (!empty($_SERVER['CONTENT_LENGTH'])) {
+            $headers['Content-Length'] = (string) $_SERVER['CONTENT_LENGTH'];
+        }
+
         $body = file_get_contents('php://input') ?: '';
 
         $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');

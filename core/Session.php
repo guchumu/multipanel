@@ -30,10 +30,15 @@ final class Session
         }
 
         $lifetime = config('session.lifetime', 120) * 60;
-        $secure = config('session.secure', false);
+        $secure = $this->shouldUseSecureCookie();
 
+        // Cookie de sesión (lifetime 0): se renueva mientras el navegador esté
+        // abierto. Antes se usaba SESSION_LIFETIME como caducidad ABSOLUTA de la
+        // cookie (p. ej. 2h desde el login), y al expirar el POST llegaba con
+        // una sesión nueva → CSRF inválido aunque el meta token siguiera en la página.
+        ini_set('session.gc_maxlifetime', (string) max(60, $lifetime));
         session_set_cookie_params([
-            'lifetime' => $lifetime,
+            'lifetime' => 0,
             'path' => '/',
             'secure' => $secure,
             'httponly' => true,
@@ -43,9 +48,19 @@ final class Session
         session_start();
         $this->started = true;
 
-        if (!isset($_SESSION['_csrf_token'])) {
+        if (!isset($_SESSION['_csrf_token']) || !is_string($_SESSION['_csrf_token']) || $_SESSION['_csrf_token'] === '') {
             $_SESSION['_csrf_token'] = bin2hex(random_bytes(32));
         }
+    }
+
+    private function shouldUseSecureCookie(): bool
+    {
+        // Solo Secure si la petición es realmente HTTPS. Si .env fuerza
+        // SESSION_SECURE=true pero entras por HTTP, la cookie no se envía y
+        // cada POST genera sesión nueva → "Token CSRF inválido".
+        return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || ((int) ($_SERVER['SERVER_PORT'] ?? 0) === 443)
+            || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
     }
 
     public function get(string $key, mixed $default = null): mixed
@@ -82,7 +97,14 @@ final class Session
 
     public function validateCsrf(?string $token): bool
     {
-        return hash_equals($this->getCsrfToken(), $token ?? '');
+        $expected = $this->getCsrfToken();
+        $provided = is_string($token) ? trim($token) : '';
+
+        if ($expected === '' || $provided === '') {
+            return false;
+        }
+
+        return hash_equals($expected, $provided);
     }
 
     /**

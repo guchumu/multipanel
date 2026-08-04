@@ -38,11 +38,16 @@
     if (csrfToken) {
         const originalFetch = window.fetch;
         window.fetch = function (url, options = {}) {
+            options = options || {};
+            options.credentials = options.credentials || 'same-origin';
             options.headers = options.headers || {};
-            if (options.method && options.method !== 'GET') {
+            const method = (options.method || 'GET').toUpperCase();
+            if (method !== 'GET' && method !== 'HEAD') {
                 if (options.headers instanceof Headers) {
-                    options.headers.set('X-CSRF-TOKEN', csrfToken);
-                } else {
+                    if (!options.headers.has('X-CSRF-TOKEN')) {
+                        options.headers.set('X-CSRF-TOKEN', csrfToken);
+                    }
+                } else if (!options.headers['X-CSRF-TOKEN'] && !options.headers['X-Csrf-Token']) {
                     options.headers['X-CSRF-TOKEN'] = csrfToken;
                 }
             }

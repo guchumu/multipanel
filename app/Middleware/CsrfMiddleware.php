@@ -19,9 +19,14 @@ class CsrfMiddleware
         if (in_array($request->method(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
             $token = $request->input('_token')
                 ?? $request->header('X-CSRF-TOKEN')
-                ?? $request->header('X-Csrf-Token');
-            if (!Session::getInstance()->validateCsrf($token)) {
-                throw new HttpException('Token CSRF inválido. Recarga la página e inténtalo de nuevo.', 419);
+                ?? $request->header('X-Csrf-Token')
+                ?? $request->header('X-XSRF-TOKEN');
+
+            if (!Session::getInstance()->validateCsrf(is_string($token) ? $token : null)) {
+                throw new HttpException(
+                    'Token CSRF inválido. Recarga la página (F5) e inténtalo de nuevo. Si sigue fallando, cierra sesión y vuelve a entrar.',
+                    419
+                );
             }
         }
 

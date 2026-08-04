@@ -160,15 +160,20 @@ async function toggleUserStatus(uuid, action, confirmMsg) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     try {
         const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            alert('No hay token CSRF en la página. Recarga con F5 e inténtalo de nuevo.');
+            return;
+        }
         const res = await fetch(`/media-users/${uuid}/${action}`, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'X-CSRF-TOKEN': csrf,
                 'X-Csrf-Token': csrf,
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ _token: csrf }),
         });
         const data = await res.json().catch(() => ({}));
         // Nunca usar data.error si es boolean (el handler global manda error:true).

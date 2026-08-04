@@ -97,7 +97,16 @@ if (!function_exists('json_response')) {
 if (!function_exists('csrf_token')) {
     function csrf_token(): string
     {
-        return Core\Session::getInstance()->getCsrfToken();
+        $session = Core\Session::getInstance();
+        $session->start();
+        $token = $session->getCsrfToken();
+        if ($token === '') {
+            // Fallback defensivo si la sesión arrancó sin token.
+            $token = bin2hex(random_bytes(32));
+            $session->set('_csrf_token', $token);
+        }
+
+        return $token;
     }
 }
 
