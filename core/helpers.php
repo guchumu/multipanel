@@ -118,8 +118,9 @@ if (!function_exists('old')) {
 if (!function_exists('asset')) {
     function asset(string $path): string
     {
-        $base = rtrim(config('app.url', ''), '/');
-        return $base . '/assets/' . ltrim($path, '/');
+        // Ruta relativa al host actual: si APP_URL apunta a localhost (o está
+        // mal configurada), los JS/CSS del panel seguirían cargando igual.
+        return '/assets/' . ltrim($path, '/');
     }
 }
 

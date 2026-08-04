@@ -496,8 +496,16 @@ final class MediaUserManagementService
         // Resumen legible de los intentos fallidos para el toast.
         $attemptSummary = [];
         foreach ($revoke['attempts'] ?? [] as $attempt) {
-            $attemptSummary[] = ($attempt['type'] ?? '?') . '=' . ($attempt['http'] ?? 'err');
+            if (isset($attempt['http'])) {
+                $attemptSummary[] = ($attempt['type'] ?? '?') . '=' . $attempt['http'];
+            } elseif (isset($attempt['status'])) {
+                $attemptSummary[] = ($attempt['type'] ?? '?') . '=' . $attempt['status'];
+            } elseif (isset($attempt['detail'])) {
+                $attemptSummary[] = ($attempt['type'] ?? '?') . ': ' . $attempt['detail'];
+            }
         }
+
+        $error = trim((string) ($revoke['error'] ?? ''));
 
         return [
             'ok' => false,
@@ -505,9 +513,9 @@ final class MediaUserManagementService
             'method' => $revoke['method'] ?? null,
             'attempts' => $revoke['attempts'] ?? [],
             'sessions_killed' => $killed,
-            'message' => 'Plex.tv no confirmó el corte. Intentos: '
-                . ($attemptSummary !== [] ? implode(', ', $attemptSummary) : 'ninguno')
-                . '. Comprueba machine_id y token del servidor.',
+            'message' => ($error !== '' ? $error . ' ' : 'Plex.tv no confirmó el corte. ')
+                . 'Intentos: ' . ($attemptSummary !== [] ? implode(', ', $attemptSummary) : 'ninguno')
+                . '. Comprueba machine_id y token del servidor en Servidores.',
         ];
     }
 

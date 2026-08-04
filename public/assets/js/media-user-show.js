@@ -16,6 +16,7 @@
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrf,
+                'X-Csrf-Token': csrf,
             },
             body: JSON.stringify(body),
         });
@@ -26,7 +27,20 @@
     }
 
     function toast(msg) {
-        alert(msg);
+        const text = (typeof msg === 'string' && msg.trim() !== '')
+            ? msg
+            : 'Operación completada.';
+        alert(text);
+    }
+
+    function responseMessage(data, fallbackOk, fallbackFail) {
+        if (typeof data?.message === 'string' && data.message.trim() !== '') {
+            return data.message;
+        }
+        if (typeof data?.error === 'string' && data.error.trim() !== '') {
+            return data.error;
+        }
+        return data?.success === false ? fallbackFail : fallbackOk;
     }
 
     document.getElementById('telegramChatId')?.addEventListener('change', async (e) => {
@@ -106,7 +120,7 @@
     document.getElementById('btnActivate')?.addEventListener('click', async () => {
         try {
             const data = await post(`/media-users/${uuid}/activate`);
-            toast(data.message || (data.success === false ? 'No se pudo activar del todo' : 'Usuario activado'));
+            toast(responseMessage(data, 'Usuario activado', 'No se pudo activar del todo'));
             location.reload();
         } catch (err) {
             toast(err.message);
@@ -117,10 +131,14 @@
         if (!confirm('¿Suspender este usuario? Se cortará el acceso a la biblioteca y se terminarán las sesiones activas.')) return;
         try {
             const data = await post(`/media-users/${uuid}/suspend`);
-            toast(data.message || (data.success === false ? 'No se pudo cortar el acceso en el servidor' : 'Usuario suspendido'));
+            toast(responseMessage(
+                data,
+                'Usuario suspendido. Acceso cortado.',
+                'Marcado suspendido en el panel, pero NO se cortó el acceso en el servidor.'
+            ));
             location.reload();
         } catch (err) {
-            toast(err.message);
+            toast(err.message || 'Error al suspender');
         }
     });
 

@@ -159,17 +159,23 @@ $scripts = <<<'JS'
 async function toggleUserStatus(uuid, action, confirmMsg) {
     if (confirmMsg && !confirm(confirmMsg)) return;
     try {
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
         const res = await fetch(`/media-users/${uuid}/${action}`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                'X-CSRF-TOKEN': csrf,
+                'X-Csrf-Token': csrf,
                 'Accept': 'application/json',
+                'Content-Type': 'application/json',
             },
+            body: JSON.stringify({}),
         });
         const data = await res.json().catch(() => ({}));
-        const msg = data.error || data.message || (res.ok ? 'Hecho.' : 'No se pudo completar la acción.');
+        // Nunca usar data.error si es boolean (el handler global manda error:true).
+        const msg = (typeof data.message === 'string' && data.message)
+            || (typeof data.error === 'string' && data.error)
+            || (res.ok ? 'Hecho.' : 'No se pudo completar la acción (HTTP ' + res.status + ').');
         alert(msg);
-        // Recargar siempre: el estado en BD puede haber cambiado aunque falle la sync del servidor.
         location.reload();
     } catch (err) {
         alert('Error de red: ' + err.message);

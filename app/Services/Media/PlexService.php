@@ -831,11 +831,28 @@ final class PlexService
      */
     public function getSharedServers(): array
     {
+        $result = $this->fetchSharedServers();
+
+        return $result['ok'] ? $result['shares'] : [];
+    }
+
+    /**
+     * Igual que getSharedServers pero distingue fallo de red/API de lista vacía.
+     * Sin esto, un error de plex.tv se interpretaba como "ya no hay shares" y
+     * el panel daba por cortado un acceso que seguía activo.
+     *
+     * @return array{ok: bool, shares: array<int, array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}>, error: ?string}
+     */
+    public function fetchSharedServers(): array
+    {
         $machineId = trim((string) ($this->server->machine_id ?? ''));
         $token = trim((string) ($this->server->token ?? ''));
 
-        if ($machineId === '' || $token === '') {
-            return [];
+        if ($machineId === '') {
+            return ['ok' => false, 'shares' => [], 'error' => 'El servidor no tiene machine_id configurado.'];
+        }
+        if ($token === '') {
+            return ['ok' => false, 'shares' => [], 'error' => 'El servidor no tiene token Plex configurado.'];
         }
 
         try {
@@ -865,7 +882,8 @@ final class PlexService
                     'http' => $code,
                     'body_preview' => substr($body, 0, 200),
                 ]);
-                return [];
+
+                return ['ok' => false, 'shares' => [], 'error' => "plex.tv shared_servers HTTP {$code}"];
             }
 
             $xml = simplexml_load_string($body);
@@ -874,14 +892,14 @@ final class PlexService
                     'server_id' => $this->server->id,
                     'body_preview' => substr($body, 0, 200),
                 ]);
-                return [];
+
+                return ['ok' => false, 'shares' => [], 'error' => 'No se pudo parsear la respuesta XML de shared_servers.'];
             }
 
             $shares = [];
             foreach ($xml->SharedServer ?? [] as $shared) {
                 $sectionIds = [];
                 foreach ($shared->Section ?? [] as $section) {
-                    // El id de sección en shared_servers suele venir en key o id.
                     $sectionIds[] = (int) ($section['id'] ?? $section['key'] ?? 0);
                 }
                 $sectionIds = array_values(array_filter($sectionIds, static fn (int $id): bool => $id > 0));
@@ -895,10 +913,11 @@ final class PlexService
                 ];
             }
 
-            return $shares;
+            return ['ok' => true, 'shares' => $shares, 'error' => null];
         } catch (GuzzleException $e) {
             Logger::error('Plex get shared_servers failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
-            return [];
+
+            return ['ok' => false, 'shares' => [], 'error' => $e->getMessage()];
         }
     }
 
@@ -914,7 +933,12 @@ final class PlexService
             return null;
         }
 
-        foreach ($this->getSharedServers() as $share) {
+        $result = $this->fetchSharedServers();
+        if (!$result['ok']) {
+            return null;
+        }
+
+        foreach ($result['shares'] as $share) {
             if ($email !== '' && strcasecmp($share['email'], $email) === 0) {
                 return $share;
             }
@@ -1035,14 +1059,25 @@ final class PlexService
 
     /**
      * Revoca el acceso al estilo SERVEROLD/removeUserMultipleAttempts:
-     * prueba varios endpoints de plex.tv y SOLO considera éxito si el usuario
-     * deja de aparecer en shared_servers (o queda sin bibliotecas).
+     * prueba varios endpoints de plex.tv y SOLO considera éxito si una
+     * reconsulta EXITOSA confirma que el share ya no existe (o sin libs).
      *
-     * @return array{ok: bool, method: ?string, attempts: array<int, array<string, mixed>>, verified: bool}
+     * @return array{ok: bool, method: ?string, attempts: array<int, array<string, mixed>>, verified: bool, error?: string}
      */
     public function revokeFriendAccess(?string $email, ?string $username = null, ?string $externalId = null): array
     {
-        $share = $this->findSharedServerFor($email, $username, $externalId);
+        $lookup = $this->fetchSharedServers();
+        if (!$lookup['ok']) {
+            return [
+                'ok' => false,
+                'method' => null,
+                'attempts' => [['type' => 'lookup', 'ok' => false, 'detail' => $lookup['error']]],
+                'verified' => false,
+                'error' => (string) $lookup['error'],
+            ];
+        }
+
+        $share = $this->matchShareInList($lookup['shares'], $email, $username, $externalId);
         $attempts = [];
 
         if ($share === null) {
@@ -1051,6 +1086,7 @@ final class PlexService
                 'method' => null,
                 'attempts' => [['type' => 'lookup', 'ok' => false, 'detail' => 'No aparece en shared_servers de plex.tv']],
                 'verified' => false,
+                'error' => 'No aparece en shared_servers de plex.tv (¿machine_id incorrecto o usuario Home?).',
             ];
         }
 
@@ -1058,20 +1094,17 @@ final class PlexService
         $userId = trim((string) ($share['user_id'] ?? ''));
         $machineId = trim((string) ($this->server->machine_id ?? ''));
 
-        // Orden inspirado en SERVEROLD: share id, share con userID, friend, invite, vaciar libs.
+        // Orden inspirado en SERVEROLD: share id, share con userID, friend, invite, home, vaciar libs.
         $endpoints = [
-            'share_id' => $shareId > 0
+            'share_id' => $shareId > 0 && $machineId !== ''
                 ? "/api/servers/{$machineId}/shared_servers/{$shareId}"
                 : null,
             'share_userid' => ($userId !== '' && $machineId !== '')
                 ? "/api/servers/{$machineId}/shared_servers/{$userId}"
                 : null,
-            'friend' => $userId !== ''
-                ? "/api/friends/{$userId}"
-                : null,
-            'invite' => $userId !== ''
-                ? "/api/invites/invited/{$userId}"
-                : null,
+            'friend' => $userId !== '' ? "/api/friends/{$userId}" : null,
+            'invite' => $userId !== '' ? "/api/invites/invited/{$userId}" : null,
+            'home' => $userId !== '' ? "/api/home/users/{$userId}" : null,
         ];
 
         $methodWorked = null;
@@ -1087,10 +1120,13 @@ final class PlexService
                 'ok' => $result['ok'],
                 'body' => $result['body'],
             ];
-            if ($result['ok']) {
+            if ($result['ok'] || $result['http'] === 404) {
                 $methodWorked = $type;
-                // Verificar enseguida; si ya no está, paramos.
-                if (!$this->stillHasLibraryAccess($email, $username, $externalId, $shareId)) {
+                // Como SERVEROLD: pequeña espera y reconsulta.
+                usleep(800000);
+                $check = $this->accessStatusAfterRevoke($email, $username, $externalId, $shareId);
+                $attempts[] = ['type' => 'verify_after_' . $type, 'ok' => $check['ok'], 'status' => $check['status'], 'detail' => $check['error']];
+                if ($check['status'] === 'cut') {
                     return [
                         'ok' => true,
                         'method' => $type,
@@ -1098,10 +1134,20 @@ final class PlexService
                         'verified' => true,
                     ];
                 }
+                // Si la verificación falló (API error), no afirmamos éxito.
+                if ($check['status'] === 'unknown') {
+                    return [
+                        'ok' => false,
+                        'method' => $type,
+                        'attempts' => $attempts,
+                        'verified' => false,
+                        'error' => 'DELETE respondió pero no se pudo verificar en plex.tv: ' . (string) $check['error'],
+                    ];
+                }
             }
         }
 
-        // Último recurso: vaciar bibliotecas (PUT), por si el DELETE no está permitido.
+        // Último recurso: vaciar bibliotecas (PUT).
         if ($shareId > 0) {
             $zeroed = $this->updateSharedServerLibraries($shareId, []);
             $attempts[] = [
@@ -1109,17 +1155,21 @@ final class PlexService
                 'ok' => $zeroed,
                 'http' => $zeroed ? 200 : 0,
             ];
-            if ($zeroed && !$this->stillHasLibraryAccess($email, $username, $externalId, $shareId)) {
-                return [
-                    'ok' => true,
-                    'method' => 'zero_libraries',
-                    'attempts' => $attempts,
-                    'verified' => true,
-                ];
+            if ($zeroed) {
+                usleep(800000);
+                $check = $this->accessStatusAfterRevoke($email, $username, $externalId, $shareId);
+                $attempts[] = ['type' => 'verify_after_zero', 'ok' => $check['ok'], 'status' => $check['status'], 'detail' => $check['error']];
+                if ($check['status'] === 'cut') {
+                    return [
+                        'ok' => true,
+                        'method' => 'zero_libraries',
+                        'attempts' => $attempts,
+                        'verified' => true,
+                    ];
+                }
             }
         }
 
-        $stillThere = $this->stillHasLibraryAccess($email, $username, $externalId, $shareId);
         Logger::warning('Plex revokeFriendAccess did not verify cut', [
             'server_id' => $this->server->id,
             'email' => $email,
@@ -1127,7 +1177,6 @@ final class PlexService
             'share_id' => $shareId,
             'user_id' => $userId,
             'method_http_ok' => $methodWorked,
-            'still_has_access' => $stillThere,
             'attempts' => $attempts,
         ]);
 
@@ -1136,12 +1185,97 @@ final class PlexService
             'method' => $methodWorked,
             'attempts' => $attempts,
             'verified' => false,
+            'error' => 'Plex.tv no confirmó el corte tras varios intentos.',
         ];
     }
 
     /**
-     * ¿Sigue el usuario con bibliotecas compartidas en este servidor?
-     * Si el share desapareció o tiene 0 secciones → ya no tiene acceso.
+     * @param array<int, array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}> $shares
+     * @return array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}|null
+     */
+    private function matchShareInList(array $shares, ?string $email, ?string $username, ?string $externalId): ?array
+    {
+        $email = trim((string) $email);
+        $username = trim((string) $username);
+        $externalId = trim((string) $externalId);
+
+        foreach ($shares as $share) {
+            if ($email !== '' && strcasecmp((string) $share['email'], $email) === 0) {
+                return $share;
+            }
+            if ($username !== '' && strcasecmp((string) $share['username'], $username) === 0) {
+                return $share;
+            }
+            if ($externalId !== '' && (
+                (string) $share['user_id'] === $externalId || (string) $share['id'] === $externalId
+            )) {
+                return $share;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Reconsulta plex.tv tras un intento de corte.
+     * - cut: share ausente O presente sin bibliotecas (solo tras PUT vacío verificado)
+     * - active: sigue con bibliotecas
+     * - unknown: no pudimos consultar (NO equivale a cortado)
+     *
+     * @return array{ok: bool, status: 'cut'|'active'|'unknown', error: ?string}
+     */
+    public function accessStatusAfterRevoke(
+        ?string $email,
+        ?string $username = null,
+        ?string $externalId = null,
+        ?int $shareId = null
+    ): array {
+        $result = $this->fetchSharedServers();
+        if (!$result['ok']) {
+            return ['ok' => false, 'status' => 'unknown', 'error' => $result['error']];
+        }
+
+        $match = null;
+        foreach ($result['shares'] as $share) {
+            $isMatch = false;
+            if ($shareId !== null && (int) $share['id'] === $shareId) {
+                $isMatch = true;
+            }
+            $email = trim((string) $email);
+            $username = trim((string) $username);
+            $externalId = trim((string) $externalId);
+            if ($email !== '' && strcasecmp((string) $share['email'], $email) === 0) {
+                $isMatch = true;
+            }
+            if ($username !== '' && strcasecmp((string) $share['username'], $username) === 0) {
+                $isMatch = true;
+            }
+            if ($externalId !== '' && (
+                (string) $share['user_id'] === $externalId || (string) $share['id'] === $externalId
+            )) {
+                $isMatch = true;
+            }
+            if ($isMatch) {
+                $match = $share;
+                break;
+            }
+        }
+
+        if ($match === null) {
+            return ['ok' => true, 'status' => 'cut', 'error' => null];
+        }
+
+        // Si el share sigue listado, solo contamos "cut" si ya no tiene secciones.
+        // (Una lista de secciones vacía real = bibliotecas quitadas.)
+        if (($match['library_section_ids'] ?? []) === []) {
+            return ['ok' => true, 'status' => 'cut', 'error' => null];
+        }
+
+        return ['ok' => true, 'status' => 'active', 'error' => null];
+    }
+
+    /**
+     * @deprecated Usa accessStatusAfterRevoke(); se mantiene por compatibilidad.
      */
     public function stillHasLibraryAccess(
         ?string $email,
@@ -1149,34 +1283,10 @@ final class PlexService
         ?string $externalId = null,
         ?int $shareId = null
     ): bool {
-        // Reconsulta fresca a plex.tv (sin caché).
-        $shares = $this->getSharedServers();
-        foreach ($shares as $share) {
-            $match = false;
-            if ($shareId !== null && (int) $share['id'] === $shareId) {
-                $match = true;
-            }
-            $email = trim((string) $email);
-            $username = trim((string) $username);
-            $externalId = trim((string) $externalId);
-            if ($email !== '' && strcasecmp((string) $share['email'], $email) === 0) {
-                $match = true;
-            }
-            if ($username !== '' && strcasecmp((string) $share['username'], $username) === 0) {
-                $match = true;
-            }
-            if ($externalId !== '' && (
-                (string) $share['user_id'] === $externalId || (string) $share['id'] === $externalId
-            )) {
-                $match = true;
-            }
+        $status = $this->accessStatusAfterRevoke($email, $username, $externalId, $shareId);
 
-            if ($match && ($share['library_section_ids'] ?? []) !== []) {
-                return true;
-            }
-        }
-
-        return false;
+        // Ante duda (unknown), asumimos que SIGUE con acceso: nunca un falso "cortado".
+        return $status['status'] !== 'cut';
     }
 
     /**

@@ -103,7 +103,19 @@ final class Request
 
     public function header(string $name, ?string $default = null): ?string
     {
-        return $this->headers[$name] ?? $default;
+        if (array_key_exists($name, $this->headers)) {
+            return $this->headers[$name];
+        }
+
+        // Case-insensitive: HTTP_X_CSRF_TOKEN se normaliza a "X-Csrf-Token",
+        // pero el código suele buscar "X-CSRF-TOKEN".
+        foreach ($this->headers as $key => $value) {
+            if (strcasecmp((string) $key, $name) === 0) {
+                return is_string($value) ? $value : (string) $value;
+            }
+        }
+
+        return $default;
     }
 
     public function bearerToken(): ?string
