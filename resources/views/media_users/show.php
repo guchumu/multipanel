@@ -29,10 +29,10 @@ ob_start();
     <a href="/media-users" class="text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a usuarios</a>
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mt-2">
         <div>
-            <h4 class="mb-1"><?= e($user->display_name ?? $user->username) ?></h4>
-            <p class="text-muted small mb-0">ID <?= (int) $user->id ?> · <?= e($user->email ?? '-') ?> · <?= e($user->server_name ?? 'Sin servidor') ?></p>
+            <h4 class="mb-1"><?= e($mediaUser->display_name ?? $mediaUser->username) ?></h4>
+            <p class="text-muted small mb-0">ID <?= (int) $mediaUser->id ?> · <?= e($mediaUser->email ?? '-') ?> · <?= e($mediaUser->server_name ?? 'Sin servidor') ?></p>
         </div>
-        <span class="badge <?= e($statusBadgeClass((string) $user->status)) ?> fs-6"><?= e($user->status) ?></span>
+        <span class="badge <?= e($statusBadgeClass((string) $mediaUser->status)) ?> fs-6"><?= e($mediaUser->status) ?></span>
     </div>
 </div>
 
@@ -44,23 +44,23 @@ ob_start();
                 <div class="row g-2">
                     <div class="col-md-6">
                         <label class="form-label small">Nombre de usuario</label>
-                        <input type="text" id="editUsername" class="form-control form-control-sm" value="<?= e($user->username) ?>">
+                        <input type="text" id="editUsername" class="form-control form-control-sm" value="<?= e($mediaUser->username) ?>">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small">Nombre visible</label>
-                        <input type="text" id="editDisplayName" class="form-control form-control-sm" value="<?= e($user->display_name ?? '') ?>">
+                        <input type="text" id="editDisplayName" class="form-control form-control-sm" value="<?= e($mediaUser->display_name ?? '') ?>">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small">Email</label>
-                        <input type="email" id="editEmail" class="form-control form-control-sm" value="<?= e($user->email ?? '') ?>">
+                        <input type="email" id="editEmail" class="form-control form-control-sm" value="<?= e($mediaUser->email ?? '') ?>">
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Streams</label>
-                        <input type="number" min="1" id="editMaxStreams" class="form-control form-control-sm" value="<?= (int) $user->max_streams ?>">
+                        <input type="number" min="1" id="editMaxStreams" class="form-control form-control-sm" value="<?= (int) $mediaUser->max_streams ?>">
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Dispositivos</label>
-                        <input type="number" min="1" id="editMaxDevices" class="form-control form-control-sm" value="<?= (int) $user->max_devices ?>">
+                        <input type="number" min="1" id="editMaxDevices" class="form-control form-control-sm" value="<?= (int) $mediaUser->max_devices ?>">
                     </div>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="btnSaveProfile"><i class="bi bi-save me-1"></i>Guardar datos</button>
@@ -73,16 +73,16 @@ ob_start();
                 <div class="row g-2 mb-3">
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-telegram me-1"></i>Telegram Chat ID</label>
-                        <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($user->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
+                        <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($mediaUser->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-whatsapp me-1"></i>WhatsApp</label>
-                        <input type="text" id="whatsappPhone" class="form-control form-control-sm" value="<?= e($user->metaGet('whatsapp_phone') ?? '') ?>" placeholder="Ej. 34612345678 (con código de país, sin +)">
+                        <input type="text" id="whatsappPhone" class="form-control form-control-sm" value="<?= e($mediaUser->metaGet('whatsapp_phone') ?? '') ?>" placeholder="Ej. 34612345678 (con código de país, sin +)">
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Fecha expiración</label>
-                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e($user->expires_at ? substr((string) $user->expires_at, 0, 10) : '') ?>">
+                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e($mediaUser->expires_at ? substr((string) $mediaUser->expires_at, 0, 10) : '') ?>">
                 </div>
                 <div class="mb-3 d-flex flex-wrap gap-2">
                     <span class="small text-muted w-100">Sumar días:</span>
@@ -92,11 +92,11 @@ ob_start();
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Notas privadas <span class="text-muted">(identificación, incidencias, etc.)</span></label>
-                    <textarea id="userNotes" class="form-control form-control-sm" rows="4" placeholder="Ej: cliente habitual, pagó por Bizum el día 3, tuvo problema de buffering…"><?= e($user->notes ?? '') ?></textarea>
+                    <textarea id="userNotes" class="form-control form-control-sm" rows="4" placeholder="Ej: cliente habitual, pagó por Bizum el día 3, tuvo problema de buffering…"><?= e($mediaUser->notes ?? '') ?></textarea>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $user->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
-                    <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $user->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
+                    <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $mediaUser->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
+                    <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
                 </div>
             </div>
@@ -141,7 +141,7 @@ ob_start();
                         <button type="button" class="btn btn-sm btn-outline-success flex-fill" id="btnSendStripeWhatsapp">
                             <i class="bi bi-whatsapp me-1"></i>WhatsApp
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-info flex-fill" id="btnSendStripeLink" <?= $user->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
+                        <button type="button" class="btn btn-sm btn-outline-info flex-fill" id="btnSendStripeLink" <?= $mediaUser->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
                             <i class="bi bi-telegram me-1"></i>Telegram
                         </button>
                     </div>
@@ -230,7 +230,7 @@ ob_start();
 
 <?php
 $content = ob_get_clean();
-$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($user->uuid) . ';';
-$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($user->metaGet('whatsapp_phone')) . ';</script>';
+$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($mediaUser->uuid) . ';';
+$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($mediaUser->metaGet('whatsapp_phone')) . ';</script>';
 $scripts .= '<script src="' . e(asset('js/media-user-show.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');

@@ -23,7 +23,7 @@
         </button>
         <div class="dropdown">
             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                <i class="bi bi-person-circle me-1"></i><span class="d-none d-sm-inline"><?= e($user->fullName() ?? 'Usuario') ?></span>
+                <i class="bi bi-person-circle me-1"></i><span class="d-none d-sm-inline"><?= e(is_object($user) && method_exists($user, 'fullName') ? $user->fullName() : ($user->username ?? 'Usuario')) ?></span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li><a class="dropdown-item" href="/settings"><i class="bi bi-gear me-2"></i><?= __('settings') ?></a></li>

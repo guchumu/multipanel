@@ -35,9 +35,17 @@ final class MediaUserMessageService
     /** @return array<int, array<string, mixed>> */
     public function listForUser(int $mediaUserId, int $limit = 50): array
     {
-        return Database::getInstance()->fetchAll(
-            'SELECT * FROM media_user_messages WHERE media_user_id = ? ORDER BY sent_at DESC LIMIT ?',
-            [$mediaUserId, $limit]
-        );
+        $limit = max(1, min(200, $limit));
+
+        try {
+            // LIMIT must be inlined: native PDO prepares reject bound LIMIT params.
+            return Database::getInstance()->fetchAll(
+                "SELECT * FROM media_user_messages WHERE media_user_id = ? ORDER BY sent_at DESC LIMIT {$limit}",
+                [$mediaUserId]
+            );
+        } catch (\Throwable) {
+            // Table may not exist yet on older installs.
+            return [];
+        }
     }
 }

@@ -106,7 +106,8 @@ class MediaUserController extends Controller
 
         return $this->view('media_users.show', [
             'title' => $user->display_name ?? $user->username,
-            'user' => $user,
+            // Must not be named "user": AuthMiddleware shares auth $user for the layout/navbar.
+            'mediaUser' => $user,
             'timeline' => $this->activity->timeline((int) $user->id),
             'messages' => $this->messages->listForUser((int) $user->id, 20),
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
@@ -291,7 +292,9 @@ class MediaUserController extends Controller
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
-        return $this->json($this->management->suspend($user));
+        $result = $this->management->suspend($user);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
     public function activate(Request $request, string $uuid): Response
@@ -301,7 +304,9 @@ class MediaUserController extends Controller
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
-        return $this->json($this->management->activate($user));
+        $result = $this->management->activate($user);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
     public function updateExpires(Request $request, string $uuid): Response
@@ -370,6 +375,7 @@ class MediaUserController extends Controller
             return $this->json(['success' => false, 'message' => 'Mensaje vacío.'], 422);
         }
 
+        $body = $this->management->personalizeMessage($body, $user);
         $result = $this->management->sendTelegramMessage($user, $title, $body);
 
         return $this->json($result, $result['success'] ? 200 : 422);
@@ -443,7 +449,8 @@ class MediaUserController extends Controller
 
         return $this->view('media_users.messages', [
             'title' => 'Mensajes: ' . ($user->display_name ?? $user->username),
-            'user' => $user,
+            // Must not be named "user": AuthMiddleware shares auth $user for the layout/navbar.
+            'mediaUser' => $user,
             'messages' => $this->messages->listForUser((int) $user->id),
         ]);
     }

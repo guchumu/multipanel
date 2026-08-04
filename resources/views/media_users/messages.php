@@ -2,7 +2,27 @@
 <div class="mb-4">
     <a href="/media-users" class="text-decoration-none"><i class="bi bi-arrow-left me-1"></i>Volver a usuarios</a>
     <h4 class="mt-2">Historial de mensajes</h4>
-    <p class="text-muted small mb-0"><?= e($user->display_name ?? $user->username) ?> · <?= e($user->email ?? '') ?></p>
+    <p class="text-muted small mb-0"><?= e($mediaUser->display_name ?? $mediaUser->username) ?> · <?= e($mediaUser->email ?? '') ?></p>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong>Enviar mensaje</strong>
+        <a href="/media-users/<?= e($mediaUser->uuid) ?>" class="small">Abrir ficha del usuario</a>
+    </div>
+    <div class="card-body">
+        <input type="text" id="msgTitle" class="form-control form-control-sm mb-2" value="Aviso" placeholder="Título">
+        <textarea id="msgBody" class="form-control form-control-sm mb-2" rows="5" placeholder="Mensaje…"></textarea>
+        <p class="small text-muted mb-2">Variables: {username}, {email}, {display_name}, {end_date}</p>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-info btn-sm flex-fill" id="btnSendMsg" <?= $mediaUser->telegram_chat_id ? '' : 'disabled title="El usuario no tiene Telegram configurado"' ?>>
+                <i class="bi bi-telegram me-1"></i>Telegram
+            </button>
+            <button type="button" class="btn btn-outline-success btn-sm flex-fill" id="btnSendMsgWhatsapp">
+                <i class="bi bi-whatsapp me-1"></i>WhatsApp
+            </button>
+        </div>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm">
@@ -35,4 +55,10 @@
         </table>
     </div>
 </div>
-<?php $content = ob_get_clean(); include base_path('resources/views/layouts/app.php'); ?>
+<?php
+$content = ob_get_clean();
+$scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($mediaUser->uuid) . ';';
+$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($mediaUser->metaGet('whatsapp_phone')) . ';</script>';
+$scripts .= '<script src="' . e(asset('js/media-user-show.js')) . '"></script>';
+include base_path('resources/views/layouts/app.php');
+?>
