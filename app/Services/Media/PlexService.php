@@ -512,9 +512,9 @@ final class PlexService
 
     /**
      * Descarga una carátula al estilo del panel antiguo (SERVEROLD/image-proxy.php):
-     * URL absoluta del PMS + X-Plex-Token en la query, Accept */*, follow redirects.
-     * No depende del lastError del resolve: aunque el sondeo haya fallado, se
-     * intenta igual con la URL configurada (que es lo que usaba el panel viejo).
+     * URL absoluta del PMS + X-Plex-Token en la query, Accept any (asterisco/asterisco),
+     * follow redirects. No depende del lastError del resolve: aunque el sondeo
+     * haya fallado, se intenta igual con la URL configurada (panel viejo).
      *
      * @return array{body: string, content_type: string}|null
      */
