@@ -25,17 +25,19 @@ final class MediaUserManagementService
     ) {
     }
 
-    /** @return array{success: bool, message: string, server_sync?: bool} */
+    /** @return array{success: bool, message: string, server_sync?: bool, detail?: array<string, mixed>} */
     public function suspend(MediaUser $user): array
     {
         $old = ['status' => $user->status];
         $user->status = 'suspended';
         $user->save();
 
-        $sync = $this->syncServerAccess($user, disable: true);
+        $syncResult = $this->syncServerAccessDetailed($user, disable: true);
+        $sync = (bool) ($syncResult['ok'] ?? false);
         AuditService::log('media_user.suspended', 'media_user', (int) $user->id, $old, [
             'status' => 'suspended',
             'server_sync' => $sync,
+            'revoke' => $syncResult,
         ]);
 
         $hasServer = (int) ($user->server_id ?? 0) > 0;
@@ -46,9 +48,11 @@ final class MediaUserManagementService
             'message' => $sync
                 ? 'Usuario suspendido. Acceso a la biblioteca cortado y sesiones activas terminadas.'
                 : ($hasServer
-                    ? 'Usuario marcado como suspendido en el panel, pero NO se pudo cortar el acceso en el servidor. Revisa token, machine_id y conexión.'
+                    ? 'Usuario marcado como suspendido en el panel, pero NO se pudo cortar el acceso en el servidor. '
+                        . (string) ($syncResult['message'] ?? 'Revisa token, machine_id y que el usuario exista como friend en plex.tv.')
                     : 'Usuario suspendido (sin servidor asociado).'),
             'server_sync' => $sync,
+            'detail' => $syncResult,
         ];
     }
 
@@ -375,75 +379,75 @@ final class MediaUserManagementService
 
     private function syncServerAccess(MediaUser $user, bool $disable): bool
     {
+        return (bool) ($this->syncServerAccessDetailed($user, $disable)['ok'] ?? false);
+    }
+
+    /**
+     * @return array{ok: bool, message?: string, method?: ?string, attempts?: array<int, mixed>, sessions_killed?: int}
+     */
+    private function syncServerAccessDetailed(MediaUser $user, bool $disable): array
+    {
         if (!$user->server_id) {
-            return false;
+            return ['ok' => false, 'message' => 'Usuario sin servidor asociado.'];
         }
 
         $server = Server::find((int) $user->server_id);
         if ($server === null) {
-            return false;
+            return ['ok' => false, 'message' => 'Servidor no encontrado en la base de datos.'];
         }
 
         if ($server->type === 'jellyfin') {
             $externalId = trim((string) ($user->external_id ?? ''));
             if ($externalId === '') {
-                return false;
+                return ['ok' => false, 'message' => 'Falta external_id de Jellyfin.'];
             }
             $service = new JellyfinService($server);
             $ok = $disable ? $service->disableUser($externalId) : $service->enableUser($externalId);
+            $killed = 0;
             if ($ok && $disable) {
-                $service->terminateSessionsForUser(
+                $killed = $service->terminateSessionsForUser(
                     (string) $user->username,
                     (string) ($user->display_name ?? ''),
                 );
             }
 
-            return $ok;
+            return [
+                'ok' => $ok,
+                'method' => $disable ? 'jellyfin_disable' : 'jellyfin_enable',
+                'sessions_killed' => $killed,
+                'message' => $ok ? null : 'Jellyfin rechazó desactivar/activar al usuario.',
+            ];
         }
 
         if ($server->type === 'plex') {
             return $disable
                 ? $this->cutPlexAccess($user, $server)
-                : $this->restorePlexAccess($user, $server);
+                : ['ok' => $this->restorePlexAccess($user, $server), 'method' => 'plex_restore'];
         }
 
-        return false;
+        return ['ok' => false, 'message' => 'Tipo de servidor no soportado.'];
     }
 
     /**
-     * Corta el acceso Plex como SERVEROLD: elimina el shared_server en plex.tv
-     * (DELETE /api/servers/{machine}/shared_servers/{id}) y termina sesiones activas.
-     * Guarda las secciones para poder restaurarlas al reactivar.
+     * Corta el acceso Plex como SERVEROLD (varios DELETE + verificación real).
+     *
+     * @return array{ok: bool, message?: string, method?: ?string, attempts?: array<int, mixed>, sessions_killed?: int, verified?: bool}
      */
-    private function cutPlexAccess(MediaUser $user, Server $server): bool
+    private function cutPlexAccess(MediaUser $user, Server $server): array
     {
         $plex = new PlexService($server);
+        $email = trim((string) ($user->email ?? ''));
+        $username = trim((string) ($user->username ?? ''));
+        $externalId = trim((string) ($user->external_id ?? ''));
 
-        $share = $plex->findSharedServerFor(
-            $user->email,
-            $user->username,
-            trim((string) ($user->external_id ?? ''))
-        );
-
-        // Fallback: meta cacheado (puede estar desfasado).
+        $share = $plex->findSharedServerFor($email, $username, $externalId);
         $cachedId = (int) ($user->metaGet('plex_shared_server_id') ?? 0);
-        if ($share === null && $cachedId > 0) {
-            $share = ['id' => $cachedId, 'library_section_ids' => []];
+
+        // Guardar secciones actuales para poder restaurar al reactivar.
+        $currentSections = [];
+        if ($share !== null) {
+            $currentSections = $share['library_section_ids'] ?? [];
         }
-
-        if ($share === null) {
-            // Sin share visible: igual intentamos matar sesiones (p. ej. Home user).
-            $plex->terminateSessionsForUser(
-                (string) $user->username,
-                (string) ($user->display_name ?? ''),
-                (string) ($user->email ?? ''),
-            );
-
-            return false;
-        }
-
-        $sharedServerId = (int) $share['id'];
-        $currentSections = $share['library_section_ids'] ?? null;
         if (!is_array($currentSections) || $currentSections === []) {
             $currentSections = $user->metaGet('plex_library_section_ids');
         }
@@ -452,33 +456,59 @@ final class MediaUserManagementService
         }
         $currentSections = array_values(array_map('intval', (array) $currentSections));
 
-        // Como SERVEROLD: DELETE del shared_server. Dejar bibliotecas a 0 no
-        // basta: el usuario sigue “amigo” y a menudo puede seguir reproduciendo.
-        $removed = $plex->removeSharedServer($sharedServerId);
+        if ($share === null && $cachedId <= 0) {
+            $killed = $plex->terminateSessionsForUser($username, (string) ($user->display_name ?? ''), $email);
 
-        // Fallback si el DELETE falla (p. ej. permisos): vaciar bibliotecas.
-        $zeroed = false;
-        if (!$removed) {
-            $zeroed = $plex->updateSharedServerLibraries($sharedServerId, []);
+            return [
+                'ok' => false,
+                'verified' => false,
+                'sessions_killed' => $killed,
+                'message' => 'No aparece en shared_servers de plex.tv (¿falta machine_id/token del servidor, o es usuario Home?). '
+                    . 'Se intentó matar sesiones (' . $killed . ').',
+                'attempts' => [],
+            ];
         }
 
-        // Terminar reproducciones activas siempre.
-        $plex->terminateSessionsForUser(
-            (string) $user->username,
+        $revoke = $plex->revokeFriendAccess($email, $username, $externalId !== '' ? $externalId : (string) $cachedId);
+
+        $killed = $plex->terminateSessionsForUser(
+            $username,
             (string) ($user->display_name ?? ''),
-            (string) ($user->email ?? ''),
+            $email,
             (string) ($share['username'] ?? ''),
         );
 
-        $ok = $removed || $zeroed;
-        if ($ok) {
+        if ($revoke['ok'] && ($revoke['verified'] ?? false)) {
             $user->metaSet('plex_library_section_ids', $currentSections);
-            $user->metaSet('plex_share_removed', $removed);
-            $user->metaSet('plex_shared_server_id', $removed ? null : $sharedServerId);
+            $user->metaSet('plex_share_removed', ($revoke['method'] ?? '') !== 'zero_libraries');
+            $user->metaSet('plex_shared_server_id', null);
             $user->save();
+
+            return [
+                'ok' => true,
+                'verified' => true,
+                'method' => $revoke['method'],
+                'attempts' => $revoke['attempts'],
+                'sessions_killed' => $killed,
+            ];
         }
 
-        return $ok;
+        // Resumen legible de los intentos fallidos para el toast.
+        $attemptSummary = [];
+        foreach ($revoke['attempts'] ?? [] as $attempt) {
+            $attemptSummary[] = ($attempt['type'] ?? '?') . '=' . ($attempt['http'] ?? 'err');
+        }
+
+        return [
+            'ok' => false,
+            'verified' => false,
+            'method' => $revoke['method'] ?? null,
+            'attempts' => $revoke['attempts'] ?? [],
+            'sessions_killed' => $killed,
+            'message' => 'Plex.tv no confirmó el corte. Intentos: '
+                . ($attemptSummary !== [] ? implode(', ', $attemptSummary) : 'ninguno')
+                . '. Comprueba machine_id y token del servidor.',
+        ];
     }
 
     /** Restaura el acceso Plex: PUT de bibliotecas o re-invitación si el share se eliminó. */

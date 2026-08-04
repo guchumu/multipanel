@@ -842,19 +842,35 @@ final class PlexService
             $client = new Client([
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 20,
-                'verify' => true,
+                'verify' => false,
+                'http_errors' => false,
             ]);
 
             $response = $client->get("/api/servers/{$machineId}/shared_servers", [
-                'headers' => array_merge($this->authHeaders(), [
+                'headers' => [
                     'Accept' => 'application/xml',
-                ]),
+                    'X-Plex-Token' => $token,
+                    'X-Plex-Client-Identifier' => 'multipanel-erp',
+                    'X-Plex-Product' => 'MultiPanel ERP',
+                ],
+                'query' => ['X-Plex-Token' => $token],
             ]);
 
+            $code = $response->getStatusCode();
             $body = $response->getBody()->getContents();
+            if ($code < 200 || $code >= 300) {
+                Logger::error('Plex get shared_servers HTTP error', [
+                    'server_id' => $this->server->id,
+                    'machine_id' => $machineId,
+                    'http' => $code,
+                    'body_preview' => substr($body, 0, 200),
+                ]);
+                return [];
+            }
+
             $xml = simplexml_load_string($body);
             if ($xml === false) {
-                Logger::debug('Plex shared_servers XML parse failed', [
+                Logger::warning('Plex shared_servers XML parse failed', [
                     'server_id' => $this->server->id,
                     'body_preview' => substr($body, 0, 200),
                 ]);
@@ -865,8 +881,10 @@ final class PlexService
             foreach ($xml->SharedServer ?? [] as $shared) {
                 $sectionIds = [];
                 foreach ($shared->Section ?? [] as $section) {
-                    $sectionIds[] = (int) $section['id'];
+                    // El id de sección en shared_servers suele venir en key o id.
+                    $sectionIds[] = (int) ($section['id'] ?? $section['key'] ?? 0);
                 }
+                $sectionIds = array_values(array_filter($sectionIds, static fn (int $id): bool => $id > 0));
 
                 $shares[] = [
                     'id' => (int) $shared['id'],
@@ -925,25 +943,55 @@ final class PlexService
             return false;
         }
 
+        $ids = array_values(array_map('intval', $sectionIds));
+
         try {
             $client = new Client([
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 20,
-                'verify' => true,
+                'verify' => false,
                 'http_errors' => false,
             ]);
 
-            $response = $client->put("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
-                'headers' => array_merge($this->authHeaders(), [
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                ]),
+            $path = "/api/servers/{$machineId}/shared_servers/{$sharedServerId}";
+            $headers = [
+                'Accept' => 'application/json, application/xml',
+                'X-Plex-Token' => $token,
+                'X-Plex-Client-Identifier' => 'multipanel-erp',
+                'X-Plex-Product' => 'MultiPanel ERP',
+            ];
+
+            // 1) JSON (API moderna)
+            $response = $client->put($path, [
+                'headers' => array_merge($headers, ['Content-Type' => 'application/json']),
+                'query' => ['X-Plex-Token' => $token],
                 'json' => [
                     'server_id' => $machineId,
                     'shared_server' => [
-                        'library_section_ids' => array_values(array_map('intval', $sectionIds)),
+                        'library_section_ids' => $ids,
                     ],
                 ],
+            ]);
+            if ($response->getStatusCode() >= 200 && $response->getStatusCode() < 300) {
+                return true;
+            }
+
+            // 2) form-urlencoded (lo que usan muchos paneles antiguos / Ombi).
+            // Guzzle no admite bien claves repetidas en arrays asociativos.
+            $parts = [];
+            if ($ids === []) {
+                $parts[] = 'shared_server%5Blibrary_section_ids%5D%5B%5D=';
+            } else {
+                foreach ($ids as $id) {
+                    $parts[] = 'shared_server%5Blibrary_section_ids%5D%5B%5D=' . (int) $id;
+                }
+            }
+            $response = $client->put($path, [
+                'headers' => array_merge($headers, [
+                    'Content-Type' => 'application/x-www-form-urlencoded',
+                ]),
+                'query' => ['X-Plex-Token' => $token],
+                'body' => implode('&', $parts),
             ]);
 
             $code = $response->getStatusCode();
@@ -971,54 +1019,219 @@ final class PlexService
     /**
      * Revoca el acceso como hacía SERVEROLD: DELETE del shared_server en plex.tv.
      * Eso corta bibliotecas y suele forzar la desconexión del cliente.
+     *
+     * Ojo: un HTTP 404 por sí solo NO se considera éxito (podría ser un id
+     * incorrecto). Usa revokeFriendAccess() que verifica después.
      */
     public function removeSharedServer(int $sharedServerId): bool
+    {
+        $result = $this->plexTvDelete(
+            "/api/servers/{machine}/shared_servers/{$sharedServerId}",
+            $sharedServerId
+        );
+
+        return $result['ok'];
+    }
+
+    /**
+     * Revoca el acceso al estilo SERVEROLD/removeUserMultipleAttempts:
+     * prueba varios endpoints de plex.tv y SOLO considera éxito si el usuario
+     * deja de aparecer en shared_servers (o queda sin bibliotecas).
+     *
+     * @return array{ok: bool, method: ?string, attempts: array<int, array<string, mixed>>, verified: bool}
+     */
+    public function revokeFriendAccess(?string $email, ?string $username = null, ?string $externalId = null): array
+    {
+        $share = $this->findSharedServerFor($email, $username, $externalId);
+        $attempts = [];
+
+        if ($share === null) {
+            return [
+                'ok' => false,
+                'method' => null,
+                'attempts' => [['type' => 'lookup', 'ok' => false, 'detail' => 'No aparece en shared_servers de plex.tv']],
+                'verified' => false,
+            ];
+        }
+
+        $shareId = (int) $share['id'];
+        $userId = trim((string) ($share['user_id'] ?? ''));
+        $machineId = trim((string) ($this->server->machine_id ?? ''));
+
+        // Orden inspirado en SERVEROLD: share id, share con userID, friend, invite, vaciar libs.
+        $endpoints = [
+            'share_id' => $shareId > 0
+                ? "/api/servers/{$machineId}/shared_servers/{$shareId}"
+                : null,
+            'share_userid' => ($userId !== '' && $machineId !== '')
+                ? "/api/servers/{$machineId}/shared_servers/{$userId}"
+                : null,
+            'friend' => $userId !== ''
+                ? "/api/friends/{$userId}"
+                : null,
+            'invite' => $userId !== ''
+                ? "/api/invites/invited/{$userId}"
+                : null,
+        ];
+
+        $methodWorked = null;
+        foreach ($endpoints as $type => $path) {
+            if ($path === null) {
+                continue;
+            }
+            $result = $this->plexTvDelete($path, $shareId);
+            $attempts[] = [
+                'type' => $type,
+                'path' => $path,
+                'http' => $result['http'],
+                'ok' => $result['ok'],
+                'body' => $result['body'],
+            ];
+            if ($result['ok']) {
+                $methodWorked = $type;
+                // Verificar enseguida; si ya no está, paramos.
+                if (!$this->stillHasLibraryAccess($email, $username, $externalId, $shareId)) {
+                    return [
+                        'ok' => true,
+                        'method' => $type,
+                        'attempts' => $attempts,
+                        'verified' => true,
+                    ];
+                }
+            }
+        }
+
+        // Último recurso: vaciar bibliotecas (PUT), por si el DELETE no está permitido.
+        if ($shareId > 0) {
+            $zeroed = $this->updateSharedServerLibraries($shareId, []);
+            $attempts[] = [
+                'type' => 'zero_libraries',
+                'ok' => $zeroed,
+                'http' => $zeroed ? 200 : 0,
+            ];
+            if ($zeroed && !$this->stillHasLibraryAccess($email, $username, $externalId, $shareId)) {
+                return [
+                    'ok' => true,
+                    'method' => 'zero_libraries',
+                    'attempts' => $attempts,
+                    'verified' => true,
+                ];
+            }
+        }
+
+        $stillThere = $this->stillHasLibraryAccess($email, $username, $externalId, $shareId);
+        Logger::warning('Plex revokeFriendAccess did not verify cut', [
+            'server_id' => $this->server->id,
+            'email' => $email,
+            'username' => $username,
+            'share_id' => $shareId,
+            'user_id' => $userId,
+            'method_http_ok' => $methodWorked,
+            'still_has_access' => $stillThere,
+            'attempts' => $attempts,
+        ]);
+
+        return [
+            'ok' => false,
+            'method' => $methodWorked,
+            'attempts' => $attempts,
+            'verified' => false,
+        ];
+    }
+
+    /**
+     * ¿Sigue el usuario con bibliotecas compartidas en este servidor?
+     * Si el share desapareció o tiene 0 secciones → ya no tiene acceso.
+     */
+    public function stillHasLibraryAccess(
+        ?string $email,
+        ?string $username = null,
+        ?string $externalId = null,
+        ?int $shareId = null
+    ): bool {
+        // Reconsulta fresca a plex.tv (sin caché).
+        $shares = $this->getSharedServers();
+        foreach ($shares as $share) {
+            $match = false;
+            if ($shareId !== null && (int) $share['id'] === $shareId) {
+                $match = true;
+            }
+            $email = trim((string) $email);
+            $username = trim((string) $username);
+            $externalId = trim((string) $externalId);
+            if ($email !== '' && strcasecmp((string) $share['email'], $email) === 0) {
+                $match = true;
+            }
+            if ($username !== '' && strcasecmp((string) $share['username'], $username) === 0) {
+                $match = true;
+            }
+            if ($externalId !== '' && (
+                (string) $share['user_id'] === $externalId || (string) $share['id'] === $externalId
+            )) {
+                $match = true;
+            }
+
+            if ($match && ($share['library_section_ids'] ?? []) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{ok: bool, http: int, body: string}
+     */
+    private function plexTvDelete(string $path, int $contextId = 0): array
     {
         $machineId = trim((string) ($this->server->machine_id ?? ''));
         $token = trim((string) ($this->server->token ?? ''));
 
-        if ($machineId === '' || $token === '' || $sharedServerId <= 0) {
-            return false;
+        if ($token === '') {
+            return ['ok' => false, 'http' => 0, 'body' => 'Sin token'];
+        }
+
+        $path = str_replace('{machine}', $machineId, $path);
+        if (str_contains($path, '//') || str_contains($path, '/shared_servers/0') || str_ends_with($path, '/shared_servers/')) {
+            return ['ok' => false, 'http' => 0, 'body' => 'Path inválido'];
         }
 
         try {
             $client = new Client([
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 20,
-                'verify' => true,
+                'verify' => false,
                 'http_errors' => false,
             ]);
 
-            // Igual que SERVEROLD: token en query + cabecera (algunos entornos
-            // de plex.tv son más fiables con el query param).
-            $response = $client->delete("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
-                'headers' => array_merge($this->authHeaders(), [
-                    'Accept' => 'application/json',
+            $response = $client->delete($path, [
+                'headers' => [
+                    'Accept' => 'application/json, application/xml',
+                    'X-Plex-Token' => $token,
                     'X-Plex-Product' => 'MultiPanel ERP',
-                ]),
+                    'X-Plex-Client-Identifier' => 'multipanel-erp',
+                ],
                 'query' => ['X-Plex-Token' => $token],
             ]);
 
-            $code = $response->getStatusCode();
-            // 404 = ya no existe el share → acceso ya cortado
-            if (($code >= 200 && $code < 300) || $code === 404) {
-                return true;
+            $code = (int) $response->getStatusCode();
+            $body = substr($response->getBody()->getContents(), 0, 300);
+            // Solo 2xx es éxito real. El 404 se verifica aparte (id incorrecto ≠ cortado).
+            $ok = $code >= 200 && $code < 300;
+
+            if (!$ok) {
+                Logger::debug('Plex.tv DELETE attempt', [
+                    'server_id' => $this->server->id,
+                    'path' => $path,
+                    'context_id' => $contextId,
+                    'http' => $code,
+                    'body' => $body,
+                ]);
             }
 
-            Logger::error('Plex remove shared_server HTTP error', [
-                'server_id' => $this->server->id,
-                'shared_server_id' => $sharedServerId,
-                'http' => $code,
-                'body' => substr($response->getBody()->getContents(), 0, 300),
-            ]);
-            return false;
+            return ['ok' => $ok, 'http' => $code, 'body' => $body];
         } catch (GuzzleException $e) {
-            Logger::error('Plex remove shared_server failed', [
-                'server_id' => $this->server->id,
-                'shared_server_id' => $sharedServerId,
-                'error' => $e->getMessage(),
-            ]);
-            return false;
+            return ['ok' => false, 'http' => 0, 'body' => $e->getMessage()];
         }
     }
 
