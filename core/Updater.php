@@ -6,10 +6,29 @@ namespace Core;
 
 /**
  * Application updater with migration runner.
+ *
+ * Scans database/migrations/*.sql, tracks applied files in `migrations`,
+ * and applies pending (or stale/incomplete) migrations in order.
  */
 final class Updater
 {
     private string $migrationsPath;
+
+    /**
+     * Integrity checks used to detect migrations that were recorded as
+     * executed but never actually applied (e.g. SQL skipped due to header comments).
+     *
+     * @var array<string, array{table?: string, column?: array{0: string, 1: string}}>
+     */
+    private const INTEGRITY_CHECKS = [
+        '002_integrations_payments.sql' => ['table' => 'integrations'],
+        '004_oauth_events.sql' => ['table' => 'oauth_accounts'],
+        '005_crm_webhooks_gdpr.sql' => ['table' => 'webhook_endpoints'],
+        '006_expiry_notifications.sql' => ['column' => ['media_users', 'telegram_chat_id']],
+        '007_payments_history.sql' => ['table' => 'payments_history'],
+        '008_user_messages_and_registro.sql' => ['table' => 'media_user_messages'],
+        '009_server_is_default.sql' => ['column' => ['servers', 'is_default']],
+    ];
 
     public function __construct()
     {
@@ -25,6 +44,8 @@ final class Updater
     public function getPendingMigrations(): array
     {
         $this->ensureMigrationsTable();
+        $this->releaseStaleMigrationMarks();
+
         $executed = $this->getExecutedMigrations();
         $pending = [];
 
@@ -43,6 +64,8 @@ final class Updater
     public function runMigrations(): array
     {
         $this->ensureMigrationsTable();
+        $this->releaseStaleMigrationMarks();
+
         $results = [];
         $batch = $this->getNextBatch();
 
@@ -74,11 +97,13 @@ final class Updater
 
     public function checkForUpdates(): array
     {
+        $pending = $this->getPendingMigrations();
+
         return [
             'current_version' => $this->getCurrentVersion(),
-            'pending_migrations' => count($this->getPendingMigrations()),
+            'pending_migrations' => count($pending),
             'php_version' => PHP_VERSION,
-            'needs_update' => count($this->getPendingMigrations()) > 0,
+            'needs_update' => count($pending) > 0,
         ];
     }
 
@@ -100,16 +125,42 @@ final class Updater
         }
     }
 
-    private function execMigrationSql(string $sql): void
+    /**
+     * Split a migration SQL file into executable statements, stripping comments.
+     * Exposed for unit tests.
+     *
+     * @return array<int, string>
+     */
+    public static function parseMigrationStatements(string $sql): array
     {
-        $statements = preg_split('/;\s*(?:\n|$)/', $sql) ?: [];
+        $sql = preg_replace('/\/\*.*?\*\//s', '', $sql) ?? $sql;
+        $chunks = preg_split('/;\s*(?:\n|$)/', $sql) ?: [];
+        $statements = [];
 
-        foreach ($statements as $statement) {
-            $statement = trim($statement);
-            if ($statement === '' || str_starts_with($statement, '--')) {
-                continue;
+        foreach ($chunks as $chunk) {
+            $lines = preg_split('/\R/', $chunk) ?: [];
+            $kept = [];
+
+            foreach ($lines as $line) {
+                $trimmed = ltrim($line);
+                if ($trimmed === '' || str_starts_with($trimmed, '--')) {
+                    continue;
+                }
+                $kept[] = $line;
             }
 
+            $statement = trim(implode("\n", $kept));
+            if ($statement !== '') {
+                $statements[] = $statement;
+            }
+        }
+
+        return $statements;
+    }
+
+    private function execMigrationSql(string $sql): void
+    {
+        foreach (self::parseMigrationStatements($sql) as $statement) {
             try {
                 Database::getInstance()->pdo()->exec($statement);
             } catch (\Throwable $e) {
@@ -127,7 +178,77 @@ final class Updater
 
         return str_contains($message, 'duplicate column')
             || str_contains($message, 'already exists')
-            || str_contains($message, 'duplicate key name');
+            || str_contains($message, 'duplicate key name')
+            || str_contains($message, 'duplicate entry');
+    }
+
+    /**
+     * If a migration was marked executed but its schema object is missing,
+     * clear the mark so the next run reapplies it (idempotent SQL).
+     */
+    private function releaseStaleMigrationMarks(): void
+    {
+        try {
+            $executed = $this->getExecutedMigrations();
+            if ($executed === []) {
+                return;
+            }
+
+            $db = Database::getInstance();
+
+            foreach (self::INTEGRITY_CHECKS as $migration => $check) {
+                if (!in_array($migration, $executed, true)) {
+                    continue;
+                }
+
+                if ($this->passesIntegrityCheck($check)) {
+                    continue;
+                }
+
+                $db->query('DELETE FROM migrations WHERE migration = ?', [$migration]);
+                Logger::warning("Released stale migration mark (schema missing): {$migration}");
+            }
+        } catch (\Throwable $e) {
+            Logger::warning('Could not release stale migration marks', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /** @param array{table?: string, column?: array{0: string, 1: string}} $check */
+    private function passesIntegrityCheck(array $check): bool
+    {
+        try {
+            $db = Database::getInstance();
+
+            if (isset($check['table'])) {
+                $row = $db->fetchOne(
+                    'SELECT COUNT(*) AS total
+                     FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = ?',
+                    [$check['table']]
+                );
+
+                return ((int) ($row['total'] ?? 0)) > 0;
+            }
+
+            if (isset($check['column'])) {
+                [$table, $column] = $check['column'];
+                $row = $db->fetchOne(
+                    'SELECT COUNT(*) AS total
+                     FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = ?
+                       AND COLUMN_NAME = ?',
+                    [$table, $column]
+                );
+
+                return ((int) ($row['total'] ?? 0)) > 0;
+            }
+        } catch (\Throwable) {
+            return true; // Avoid infinite re-run loops if information_schema is unavailable.
+        }
+
+        return true;
     }
 
     /** @return array<int, string> */

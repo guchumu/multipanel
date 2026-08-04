@@ -114,5 +114,8 @@ Panel: `https://quizzical-beaver.212-227-98-60.plesk.page/dashboard`
 cd /var/www/vhosts/quizzical-beaver.212-227-98-60.plesk.page/multipanel
 git pull origin main
 composer install --no-dev --optimize-autoloader
-php cron/run.php migrate 2>/dev/null || true
+php cron/run.php migrate
 ```
+
+También desde el panel: **Sistema → Actualizaciones → Importar actualizaciones**.
+Con `AUTO_MIGRATE=true` (por defecto) las migraciones pendientes se aplican al cargar el panel tras el `git pull`.

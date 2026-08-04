@@ -22,7 +22,7 @@ ws:
 	php scripts/websocket-server.php 8081
 
 migrate:
-	@for f in database/migrations/*.sql; do echo "Applying $$f"; mysql -u$${DB_USERNAME:-root} -p$${DB_PASSWORD} $${DB_DATABASE:-multipanel} < $$f; done
+	php cron/run.php migrate
 
 license:
 	php scripts/generate-license.php enterprise 365

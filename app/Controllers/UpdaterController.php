@@ -34,11 +34,32 @@ class UpdaterController extends Controller
     public function run(Request $request): Response
     {
         $results = $this->updater->runMigrations();
+        $session = Session::getInstance();
 
-        if (empty($results)) {
-            Session::getInstance()->flash('success', 'Sistema actualizado. No había migraciones pendientes.');
-        } else {
-            Session::getInstance()->flash('success', 'Migraciones ejecutadas: ' . count($results));
+        if ($results === []) {
+            $session->flash('success', 'Sistema actualizado. No había migraciones pendientes.');
+            return $this->redirect('/updater');
+        }
+
+        $ok = [];
+        $errors = [];
+        foreach ($results as $name => $status) {
+            if ($status === 'ok') {
+                $ok[] = $name;
+            } else {
+                $errors[] = "{$name}: {$status}";
+            }
+        }
+
+        if ($ok !== []) {
+            $session->flash(
+                'success',
+                'Migraciones aplicadas (' . count($ok) . '): ' . implode(', ', $ok)
+            );
+        }
+
+        if ($errors !== []) {
+            $session->flash('error', 'Errores al migrar: ' . implode(' | ', $errors));
         }
 
         return $this->redirect('/updater');

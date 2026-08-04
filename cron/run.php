@@ -7,7 +7,7 @@ declare(strict_types=1);
  * MultiPanel ERP - Cron Job Runner
  *
  * Usage: php cron/run.php [task]
- * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, expiry, all
+ * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, expiry, migrate, all
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
@@ -21,6 +21,7 @@ use App\Services\Notifications\ExpiryNotificationService;
 use App\Services\ServerSyncService;
 use App\Repositories\ServerRepository;
 use Core\Database;
+use Core\Updater;
 
 $dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
 $dotenv->safeLoad();
@@ -40,12 +41,14 @@ match ($task) {
     'gdpr' => runGdpr(),
     'cleanup' => runCleanup(),
     'expiry' => runExpiryNotifications(),
+    'migrate' => runMigrations(),
     'all' => runAll(),
     default => echo "Unknown task: {$task}\n",
 };
 
 function runAll(): void
 {
+    runMigrations();
     runBilling();
     runServerSync();
     runAutomation();
@@ -54,6 +57,23 @@ function runAll(): void
     runExpiryNotifications();
     runGdpr();
     runCleanup();
+}
+
+function runMigrations(): void
+{
+    echo "Running pending database migrations...\n";
+    try {
+        $results = (new Updater())->runMigrations();
+        if ($results === []) {
+            echo "  No pending migrations.\n";
+            return;
+        }
+        foreach ($results as $name => $status) {
+            echo "  {$name}: {$status}\n";
+        }
+    } catch (\Throwable $e) {
+        echo "  Migrations failed: {$e->getMessage()}\n";
+    }
 }
 
 function runExpiryNotifications(): void

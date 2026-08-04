@@ -53,13 +53,29 @@ final class MediaUserMessageService
     }
 
     /**
-     * Auto-create media_user_messages if missing (VPS often git-pull without migrate).
-     * Safe to call repeatedly; matches database/migrations/008_user_messages_and_registro.sql.
+     * Prefer the official Updater/migrations path; fall back to CREATE IF NOT EXISTS
+     * only if the table is still missing (AUTO_MIGRATE off or migrate failed).
      */
     public static function ensureMediaUserMessagesTable(): void
     {
         static $ensured = false;
         if ($ensured) {
+            return;
+        }
+
+        if (self::tableExists('media_user_messages')) {
+            $ensured = true;
+            return;
+        }
+
+        try {
+            (new \Core\Updater())->runMigrations();
+        } catch (\Throwable) {
+            // Fall through to direct CREATE.
+        }
+
+        if (self::tableExists('media_user_messages')) {
+            $ensured = true;
             return;
         }
 
@@ -83,7 +99,6 @@ final class MediaUserMessageService
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
             );
         } catch (\Throwable) {
-            // If FK fails (e.g. media_users missing/mismatch), retry without constraint.
             try {
                 Database::getInstance()->pdo()->exec(
                     'CREATE TABLE IF NOT EXISTS `media_user_messages` (
@@ -103,11 +118,27 @@ final class MediaUserMessageService
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
                 );
             } catch (\Throwable) {
-                // Leave $ensured false so a later request can retry.
                 return;
             }
         }
 
         $ensured = true;
+    }
+
+    private static function tableExists(string $table): bool
+    {
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS total
+                 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?',
+                [$table]
+            );
+
+            return ((int) ($row['total'] ?? 0)) > 0;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 }
