@@ -200,6 +200,9 @@ final class StreamingActivityService
         // Siempre proxificar: nunca devolver URL directa http://Plex al navegador
         // (mixed content en HTTPS + token expuesto). Usamos ?p= base64url para
         // evitar que WAFs/Apache alteren %2F en ?path=/library/...
+        // Formato idéntico a ActivityController::thumbsDebug → proxy_url.
+        $session['server_uuid'] = (string) $server->uuid;
+
         if (!empty($session['art_path'])) {
             $session['thumb_url'] = '/activity/thumb/' . (string) $server->uuid
                 . '?p=' . self::encodeThumbParam((string) $session['art_path']);

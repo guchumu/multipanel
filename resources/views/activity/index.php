@@ -185,21 +185,79 @@ function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
+/** base64url sin padding — igual que StreamingActivityService::encodeThumbParam */
+function toBase64Url(str) {
+    const bytes = new TextEncoder().encode(String(str));
+    let bin = '';
+    bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Misma construcción que /activity/thumbs-debug → proxy_url.
+ * Reconstruye si thumb_url falta, es URL directa al PMS, o usa el legacy ?path=.
+ */
+function sessionThumbUrl(s) {
+    const uuid = String(s.server_uuid || '');
+    let url = String(s.thumb_url || '');
+
+    if (url.includes('/activity/thumb/') && url.includes('?p=')) return url;
+    if (url.includes('/activity/thumb/') && url.includes('?item=')) return url;
+
+    if (uuid && s.art_path) {
+        return '/activity/thumb/' + uuid + '?p=' + toBase64Url(s.art_path);
+    }
+    if (uuid && s.item_id) {
+        return '/activity/thumb/' + uuid + '?item=' + encodeURIComponent(String(s.item_id));
+    }
+
+    const pathIdx = url.indexOf('?path=');
+    if (pathIdx !== -1 && url.includes('/activity/thumb/')) {
+        const uuidPart = url.slice(0, pathIdx).split('/activity/thumb/')[1] || '';
+        const pathPart = url.slice(pathIdx + 6).split('&')[0];
+        if (uuidPart && pathPart) {
+            try {
+                return '/activity/thumb/' + uuidPart + '?p=' + toBase64Url(decodeURIComponent(pathPart));
+            } catch (e) { /* ignore */ }
+        }
+    }
+
+    return url.includes('/activity/thumb/') ? url : '';
+}
+
+const thumbFallbackSrc = 'data:image/svg+xml,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">'
+    + '<rect width="200" height="300" fill="#2b2f36"/>'
+    + '<text x="100" y="150" fill="#9aa0a6" text-anchor="middle" font-family="sans-serif" font-size="14">Sin carátula</text>'
+    + '</svg>'
+);
+
+function onSessionThumbError(img) {
+    img.onerror = null;
+    img.src = thumbFallbackSrc;
+}
+
+function thumbHtml(s) {
+    const url = sessionThumbUrl(s);
+    if (!url) {
+        return '<div class="session-poster-fallback"><i class="bi bi-film fs-1"></i></div>';
+    }
+    return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">`;
+}
+
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
     const label = playLabels[method] || method;
     const progress = Number(s.progress || 0);
-    const thumb = s.thumb_url
-        ? `<img src="\${escapeHtml(s.thumb_url)}" alt="" class="object-fit-cover w-100 h-100" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="d-none align-items-center justify-content-center h-100 text-white-50 position-absolute top-0 start-0 w-100"><i class="bi bi-film fs-1"></i></div>`
-        : '<div class="d-flex align-items-center justify-content-center h-100 text-white-50"><i class="bi bi-film fs-1"></i></div>';
+    const thumb = thumbHtml(s);
     const killBtn = s.can_kill && s.session_id
         ? `<button type="button" class="btn btn-outline-danger btn-sm w-100 mt-2 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Detener reproducción</button>`
         : '';
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
         <div class="card border-0 shadow-sm h-100 session-card">
-            <div class="ratio ratio-2x3 bg-dark rounded-top overflow-hidden position-relative">\${thumb}</div>
+            <div class="session-poster rounded-top">\${thumb}</div>
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
                     <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
