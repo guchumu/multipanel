@@ -33,13 +33,21 @@ final class MediaUserManagementService
         $user->save();
 
         $sync = $this->syncServerAccess($user, disable: true);
-        AuditService::log('media_user.suspended', 'media_user', (int) $user->id, $old, ['status' => 'suspended']);
+        AuditService::log('media_user.suspended', 'media_user', (int) $user->id, $old, [
+            'status' => 'suspended',
+            'server_sync' => $sync,
+        ]);
+
+        $hasServer = (int) ($user->server_id ?? 0) > 0;
 
         return [
-            'success' => true,
+            // Si hay servidor asociado, el éxito real depende de cortar el acceso allí.
+            'success' => !$hasServer || $sync,
             'message' => $sync
-                ? 'Usuario suspendido. Acceso a la biblioteca cortado.'
-                : 'Usuario suspendido en el panel, pero no se pudo cortar el acceso en el servidor (revisa la conexión/servidor).',
+                ? 'Usuario suspendido. Acceso a la biblioteca cortado y sesiones activas terminadas.'
+                : ($hasServer
+                    ? 'Usuario marcado como suspendido en el panel, pero NO se pudo cortar el acceso en el servidor. Revisa token, machine_id y conexión.'
+                    : 'Usuario suspendido (sin servidor asociado).'),
             'server_sync' => $sync,
         ];
     }
@@ -52,13 +60,20 @@ final class MediaUserManagementService
         $user->save();
 
         $sync = $this->syncServerAccess($user, disable: false);
-        AuditService::log('media_user.activated', 'media_user', (int) $user->id, $old, ['status' => 'active']);
+        AuditService::log('media_user.activated', 'media_user', (int) $user->id, $old, [
+            'status' => 'active',
+            'server_sync' => $sync,
+        ]);
+
+        $hasServer = (int) ($user->server_id ?? 0) > 0;
 
         return [
-            'success' => true,
+            'success' => !$hasServer || $sync,
             'message' => $sync
                 ? 'Usuario activado. Acceso a la biblioteca restaurado.'
-                : 'Usuario activado en el panel, pero no se pudo restaurar el acceso en el servidor (revisa la conexión/servidor).',
+                : ($hasServer
+                    ? 'Usuario marcado como activo en el panel, pero NO se pudo restaurar el acceso en el servidor. Revisa token/machine_id o vuelve a invitar.'
+                    : 'Usuario activado (sin servidor asociado).'),
             'server_sync' => $sync,
         ];
     }
@@ -88,10 +103,15 @@ final class MediaUserManagementService
         $old = ['expires_at' => $user->expires_at];
         $newDate = SubscriptionPeriod::addDaysToExpires($user->expires_at, $days);
         $user->expires_at = $newDate;
-        if ($user->status === 'suspended' || $user->status === 'expired') {
+        $wasInactive = in_array($user->status, ['suspended', 'expired'], true);
+        if ($wasInactive) {
             $user->status = 'active';
         }
         $user->save();
+
+        if ($wasInactive) {
+            $this->syncServerAccess($user, disable: false);
+        }
 
         AuditService::log('media_user.days_added', 'media_user', (int) $user->id, $old, [
             'expires_at' => $newDate,
@@ -370,8 +390,15 @@ final class MediaUserManagementService
                 return false;
             }
             $service = new JellyfinService($server);
+            $ok = $disable ? $service->disableUser($externalId) : $service->enableUser($externalId);
+            if ($ok && $disable) {
+                $service->terminateSessionsForUser(
+                    (string) $user->username,
+                    (string) ($user->display_name ?? ''),
+                );
+            }
 
-            return $disable ? $service->disableUser($externalId) : $service->enableUser($externalId);
+            return $ok;
         }
 
         if ($server->type === 'plex') {
@@ -384,59 +411,125 @@ final class MediaUserManagementService
     }
 
     /**
-     * Corta el acceso de un usuario Plex quitándole las secciones de biblioteca compartidas,
-     * conservando la amistad para poder restaurarlas después sin necesidad de re-aceptación.
+     * Corta el acceso Plex como SERVEROLD: elimina el shared_server en plex.tv
+     * (DELETE /api/servers/{machine}/shared_servers/{id}) y termina sesiones activas.
+     * Guarda las secciones para poder restaurarlas al reactivar.
      */
     private function cutPlexAccess(MediaUser $user, Server $server): bool
     {
         $plex = new PlexService($server);
-        $sharedServerId = (int) ($user->metaGet('plex_shared_server_id') ?? 0);
-        $share = $sharedServerId > 0 ? null : $plex->findSharedServerFor($user->email, $user->username);
 
-        if ($sharedServerId <= 0) {
-            if ($share === null) {
-                return false;
-            }
-            $sharedServerId = (int) $share['id'];
+        $share = $plex->findSharedServerFor(
+            $user->email,
+            $user->username,
+            trim((string) ($user->external_id ?? ''))
+        );
+
+        // Fallback: meta cacheado (puede estar desfasado).
+        $cachedId = (int) ($user->metaGet('plex_shared_server_id') ?? 0);
+        if ($share === null && $cachedId > 0) {
+            $share = ['id' => $cachedId, 'library_section_ids' => []];
         }
 
-        $currentSections = $share['library_section_ids'] ?? $user->metaGet('plex_library_section_ids');
+        if ($share === null) {
+            // Sin share visible: igual intentamos matar sesiones (p. ej. Home user).
+            $plex->terminateSessionsForUser(
+                (string) $user->username,
+                (string) ($user->display_name ?? ''),
+                (string) ($user->email ?? ''),
+            );
+
+            return false;
+        }
+
+        $sharedServerId = (int) $share['id'];
+        $currentSections = $share['library_section_ids'] ?? null;
+        if (!is_array($currentSections) || $currentSections === []) {
+            $currentSections = $user->metaGet('plex_library_section_ids');
+        }
         if (!is_array($currentSections) || $currentSections === []) {
             $currentSections = $plex->allLibrarySectionIds();
         }
+        $currentSections = array_values(array_map('intval', (array) $currentSections));
 
-        $ok = $plex->updateSharedServerLibraries($sharedServerId, []);
+        // Como SERVEROLD: DELETE del shared_server. Dejar bibliotecas a 0 no
+        // basta: el usuario sigue “amigo” y a menudo puede seguir reproduciendo.
+        $removed = $plex->removeSharedServer($sharedServerId);
+
+        // Fallback si el DELETE falla (p. ej. permisos): vaciar bibliotecas.
+        $zeroed = false;
+        if (!$removed) {
+            $zeroed = $plex->updateSharedServerLibraries($sharedServerId, []);
+        }
+
+        // Terminar reproducciones activas siempre.
+        $plex->terminateSessionsForUser(
+            (string) $user->username,
+            (string) ($user->display_name ?? ''),
+            (string) ($user->email ?? ''),
+            (string) ($share['username'] ?? ''),
+        );
+
+        $ok = $removed || $zeroed;
         if ($ok) {
-            $user->metaSet('plex_shared_server_id', $sharedServerId);
-            $user->metaSet('plex_library_section_ids', array_values(array_map('intval', $currentSections)));
+            $user->metaSet('plex_library_section_ids', $currentSections);
+            $user->metaSet('plex_share_removed', $removed);
+            $user->metaSet('plex_shared_server_id', $removed ? null : $sharedServerId);
             $user->save();
         }
 
         return $ok;
     }
 
-    /** Restaura el acceso de un usuario Plex a las bibliotecas que tenía antes de suspenderlo. */
+    /** Restaura el acceso Plex: PUT de bibliotecas o re-invitación si el share se eliminó. */
     private function restorePlexAccess(MediaUser $user, Server $server): bool
     {
         $plex = new PlexService($server);
-        $sharedServerId = (int) ($user->metaGet('plex_shared_server_id') ?? 0);
-
-        if ($sharedServerId <= 0) {
-            $share = $plex->findSharedServerFor($user->email, $user->username);
-            if ($share === null) {
-                return false;
-            }
-            $sharedServerId = (int) $share['id'];
-        }
-
         $sections = $user->metaGet('plex_library_section_ids');
         if (!is_array($sections) || $sections === []) {
             $sections = $plex->allLibrarySectionIds();
         }
+        $sections = array_values(array_map('intval', $sections));
 
-        $ok = $plex->updateSharedServerLibraries($sharedServerId, array_map('intval', $sections));
+        $share = $plex->findSharedServerFor(
+            $user->email,
+            $user->username,
+            trim((string) ($user->external_id ?? ''))
+        );
+
+        $shareRemoved = (bool) $user->metaGet('plex_share_removed', false);
+
+        if ($share !== null) {
+            $sharedServerId = (int) $share['id'];
+            $ok = $plex->updateSharedServerLibraries($sharedServerId, $sections);
+            if ($ok) {
+                $user->metaSet('plex_shared_server_id', $sharedServerId);
+                $user->metaSet('plex_share_removed', false);
+                $user->metaSet('plex_library_section_ids', $sections);
+                $user->save();
+            }
+
+            return $ok;
+        }
+
+        // Share eliminado en la pausa (o nunca existió): re-compartir por email.
+        $email = trim((string) ($user->email ?? ''));
+        if ($email === '' || $sections === []) {
+            return false;
+        }
+
+        $ok = $plex->inviteUserByEmail($email, $sections);
         if ($ok) {
-            $user->metaSet('plex_shared_server_id', $sharedServerId);
+            $user->metaSet('plex_share_removed', false);
+            $user->metaSet('plex_library_section_ids', $sections);
+            // Tras reinvitar, el shared_server_id se refrescará en la próxima sync.
+            $fresh = $plex->findSharedServerFor($email, $user->username);
+            if ($fresh !== null) {
+                $user->metaSet('plex_shared_server_id', (int) $fresh['id']);
+                $user->status = 'active';
+            } else {
+                $user->status = $shareRemoved ? 'invited' : 'active';
+            }
             $user->save();
         }
 

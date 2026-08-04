@@ -18,7 +18,12 @@ final class PlexService
 {
     private Client $client;
 
+    /** Base URL efectiva (scheme://host:port) usada por el client Guzzle. */
+    private string $baseUrl;
+
     private ?string $lastError = null;
+
+    private ?string $lastArtworkError = null;
 
     public function __construct(
         private Server $server,
@@ -58,8 +63,9 @@ final class PlexService
         }
 
         $scheme = $endpoint['ssl'] ? 'https' : 'http';
+        $this->baseUrl = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}";
         $this->client = new Client([
-            'base_uri' => "{$scheme}://{$endpoint['url']}:{$endpoint['port']}",
+            'base_uri' => $this->baseUrl,
             'timeout' => 30,
             'connect_timeout' => 15,
             'verify' => false,
@@ -356,7 +362,14 @@ final class PlexService
 
         $user = is_array($session['User'] ?? null) ? $session['User'] : [];
         $player = is_array($session['Player'] ?? null) ? $session['Player'] : [];
-        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? $session['grandparentThumb'] ?? $session['parentThumb'] ?? '');
+        // Igual que SERVEROLD: preferir carátula de la serie (grandparent)
+        // frente al thumb del episodio, que a menudo es landscape o vacío.
+        $thumb = $this->pickArtPath(
+            (string) ($session['grandparentThumb'] ?? ''),
+            (string) ($session['thumb'] ?? ''),
+            (string) ($session['parentThumb'] ?? ''),
+            (string) ($session['art'] ?? ''),
+        );
 
         return [
             'session_id' => (string) ($session['sessionKey'] ?? ''),
@@ -405,7 +418,12 @@ final class PlexService
         $duration = (int) ($session['duration'] ?? 0);
         $progress = $duration > 0 ? min(100, (int) round(($viewOffset / $duration) * 100)) : 0;
 
-        $thumb = (string) ($session['thumb'] ?? $session['art'] ?? $session['grandparentThumb'] ?? $session['parentThumb'] ?? '');
+        $thumb = $this->pickArtPath(
+            (string) ($session['grandparentThumb'] ?? ''),
+            (string) ($session['thumb'] ?? ''),
+            (string) ($session['parentThumb'] ?? ''),
+            (string) ($session['art'] ?? ''),
+        );
 
         return [
             'session_id' => (string) ($session['sessionKey'] ?? ''),
@@ -424,6 +442,46 @@ final class PlexService
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
+    }
+
+    private function pickArtPath(string ...$candidates): string
+    {
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeArtPath($candidate);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Plex a veces devuelve rutas relativas (/library/...) y a veces URLs
+     * absolutas (http://127.0.0.1:32400/library/...). Nos quedamos solo con
+     * el path relativo, igual que hacía SERVEROLD con getServerBaseUrl + path.
+     */
+    private function normalizeArtPath(string $path): string
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return '';
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            $parts = parse_url($path);
+            $relative = (string) ($parts['path'] ?? '');
+            if ($relative === '') {
+                return '';
+            }
+            if (!empty($parts['query'])) {
+                $relative .= '?' . $parts['query'];
+            }
+
+            return $relative;
+        }
+
+        return str_starts_with($path, '/') ? $path : '/' . $path;
     }
 
     private function resolvePlexPlayMethod(bool $hasTranscode, string $videoDecision, string $audioDecision): string
@@ -452,25 +510,135 @@ final class PlexService
         return $base . $path . ($token !== '' ? "{$sep}X-Plex-Token={$token}" : '');
     }
 
+    /**
+     * Descarga una carátula al estilo del panel antiguo (SERVEROLD/image-proxy.php):
+     * URL absoluta del PMS + X-Plex-Token en la query, Accept */*, follow redirects.
+     * No depende del lastError del resolve: aunque el sondeo haya fallado, se
+     * intenta igual con la URL configurada (que es lo que usaba el panel viejo).
+     *
+     * @return array{body: string, content_type: string}|null
+     */
     public function fetchArtwork(string $path): ?array
     {
-        if ($this->lastError !== null || $path === '' || !str_starts_with($path, '/')) {
+        $path = $this->normalizeArtPath($path);
+        if ($path === '') {
+            $this->lastArtworkError = 'Ruta de carátula vacía o no válida.';
             return null;
         }
 
-        try {
-            $response = $this->client->get($path, [
-                'headers' => $this->authHeaders(),
-            ]);
+        $token = trim((string) ($this->server->token ?? ''));
+        $bases = $this->artworkBaseUrls();
+        $errors = [];
 
-            return [
-                'body' => $response->getBody()->getContents(),
-                'content_type' => $response->getHeaderLine('Content-Type') ?: 'image/jpeg',
+        // Cliente dedicado para imágenes: NO hereda Accept: application/xml del
+        // client principal (eso hacía que algunos PMS devolvieran XML/error).
+        $http = new Client([
+            'timeout' => 10,
+            'connect_timeout' => 5,
+            'verify' => false,
+            'allow_redirects' => true,
+            'http_errors' => false,
+            'headers' => [
+                'Accept' => '*/*',
+                'User-Agent' => 'MultiPanel ERP/1.1',
+                'X-Plex-Client-Identifier' => 'multipanel-erp',
+                'X-Plex-Product' => 'MultiPanel ERP',
+            ],
+        ]);
+
+        $pathOnly = explode('?', $path, 2)[0];
+
+        foreach ($bases as $base) {
+            $candidates = [
+                $path,
+                // Fallback vía photo transcoder (como hacen muchos clientes Plex).
+                '/photo/:/transcode?width=300&height=450&minSize=1&upscale=1&url='
+                    . rawurlencode($pathOnly),
+                '/photo/:/transcode?width=300&height=450&minSize=1&upscale=1&url='
+                    . rawurlencode('http://127.0.0.1:32400' . $pathOnly),
             ];
-        } catch (GuzzleException $e) {
-            Logger::debug('Plex artwork fetch failed', ['path' => $path, 'error' => $e->getMessage()]);
-            return null;
+
+            foreach ($candidates as $candidate) {
+                $sep = str_contains($candidate, '?') ? '&' : '?';
+                $url = rtrim($base, '/') . $candidate;
+                if ($token !== '' && !str_contains($url, 'X-Plex-Token=')) {
+                    $url .= $sep . 'X-Plex-Token=' . rawurlencode($token);
+                }
+
+                try {
+                    $response = $http->get($url);
+                    $code = $response->getStatusCode();
+                    $body = $response->getBody()->getContents();
+                    $contentType = $response->getHeaderLine('Content-Type');
+
+                    if ($code >= 200 && $code < 300 && $body !== '' && $this->looksLikeImage($contentType, $body)) {
+                        $this->lastArtworkError = null;
+
+                        return [
+                            'body' => $body,
+                            'content_type' => $contentType !== '' ? $contentType : 'image/jpeg',
+                        ];
+                    }
+
+                    $errors[] = "{$url} → HTTP {$code}" . ($contentType !== '' ? " ({$contentType})" : '');
+                } catch (GuzzleException $e) {
+                    $errors[] = "{$url} → " . $e->getMessage();
+                }
+            }
         }
+
+        $this->lastArtworkError = $errors !== [] ? implode(' | ', array_slice($errors, 0, 4)) : 'Sin respuesta';
+        Logger::warning('Plex artwork fetch failed', [
+            'server_id' => $this->server->id,
+            'path' => $path,
+            'error' => $this->lastArtworkError,
+        ]);
+
+        return null;
+    }
+
+    /** @return array<int, string> bases http(s)://host:port a probar, sin barra final */
+    private function artworkBaseUrls(): array
+    {
+        $bases = [];
+        $add = static function (string $base) use (&$bases): void {
+            $base = rtrim($base, '/');
+            if ($base !== '' && !in_array($base, $bases, true)) {
+                $bases[] = $base;
+            }
+        };
+
+        // 1) Endpoint ya resuelto (el del client Guzzle principal)
+        $add($this->baseUrl);
+
+        // 2) URL configurada en BD (como public_ip del panel antiguo)
+        $add($this->server->fullUrl());
+
+        return $bases;
+    }
+
+    private function looksLikeImage(string $contentType, string $body): bool
+    {
+        $contentType = strtolower(trim(explode(';', $contentType)[0]));
+        if (str_starts_with($contentType, 'image/')) {
+            return true;
+        }
+
+        // Algunos PMS no mandan Content-Type; detectamos magic bytes básicos.
+        if ($body === '') {
+            return false;
+        }
+
+        $head = substr($body, 0, 12);
+        return str_starts_with($head, "\xFF\xD8\xFF") // jpeg
+            || str_starts_with($head, "\x89PNG") // png
+            || str_starts_with($head, 'GIF8')
+            || str_starts_with($head, 'RIFF'); // webp
+    }
+
+    public function getLastArtworkError(): ?string
+    {
+        return $this->lastArtworkError;
     }
 
     public function terminateSession(string $sessionId): bool
@@ -484,7 +652,7 @@ final class PlexService
                 'headers' => $this->authHeaders(),
                 'query' => [
                     'sessionId' => $sessionId,
-                    'reason' => 'serverStop',
+                    'reason' => 'Acceso suspendido desde MultiPanel',
                 ],
             ]);
 
@@ -493,6 +661,49 @@ final class PlexService
             Logger::error('Plex terminate session failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
             return false;
         }
+    }
+
+    /**
+     * Detiene todas las reproducciones activas cuyo usuario coincida con alguno
+     * de los nombres/emails dados (comparación case-insensitive).
+     *
+     * @return int Número de sesiones terminadas
+     */
+    public function terminateSessionsForUser(string ...$names): int
+    {
+        $needles = [];
+        foreach ($names as $name) {
+            $normalized = mb_strtolower(trim($name));
+            if ($normalized !== '') {
+                $needles[$normalized] = true;
+            }
+        }
+        if ($needles === []) {
+            return 0;
+        }
+
+        // Aunque el sondeo inicial haya fallado, intentamos listar sesiones
+        // contra la URL configurada para poder cortar streams al suspender.
+        $savedError = $this->lastError;
+        $this->lastError = null;
+        $sessions = $this->getActiveSessions();
+        if ($this->lastError !== null && $sessions === []) {
+            $this->lastError = $savedError;
+        }
+
+        $killed = 0;
+        foreach ($sessions as $session) {
+            $sessionUser = mb_strtolower(trim((string) ($session['user'] ?? '')));
+            if ($sessionUser === '' || !isset($needles[$sessionUser])) {
+                continue;
+            }
+            $sessionId = (string) ($session['session_id'] ?? '');
+            if ($sessionId !== '' && $this->terminateSession($sessionId)) {
+                $killed++;
+            }
+        }
+
+        return $killed;
     }
 
     public function createUser(string $username, string $password, ?string $email = null): ?array
@@ -567,20 +778,41 @@ final class PlexService
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 30,
                 'verify' => true,
+                'http_errors' => false,
             ]);
 
-            $response = $client->post("/api/v2/servers/{$machineId}/shared_servers", [
+            // Mismo endpoint que SERVEROLD/inviteUser: POST /api/v2/shared_servers
+            $response = $client->post('/api/v2/shared_servers', [
                 'headers' => array_merge($this->authHeaders(), [
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
+                    'X-Plex-Client-Identifier' => 'multipanel-erp',
                 ]),
                 'json' => [
+                    'machineIdentifier' => $machineId,
                     'invitedEmail' => $email,
-                    'librarySectionIds' => $sectionIds,
+                    'librarySectionIDs' => $sectionIds,
+                    'settings' => [
+                        'allowSync' => false,
+                        'allowCameraUpload' => false,
+                        'allowChannels' => false,
+                    ],
                 ],
             ]);
 
-            return $response->getStatusCode() >= 200 && $response->getStatusCode() < 300;
+            $code = $response->getStatusCode();
+            // 200/201 = enviado; 422 = ya invitado/compartido → también OK para restaurar
+            if (($code >= 200 && $code < 300) || $code === 422) {
+                return true;
+            }
+
+            Logger::error('Plex invite user HTTP error', [
+                'server_id' => $this->server->id,
+                'email' => $email,
+                'http' => $code,
+                'body' => substr($response->getBody()->getContents(), 0, 300),
+            ]);
+            return false;
         } catch (GuzzleException $e) {
             Logger::error('Plex invite user failed', [
                 'server_id' => $this->server->id,
@@ -593,6 +825,7 @@ final class PlexService
 
     /**
      * Lista los "friends" con acceso compartido a este servidor (shared_servers de Plex.tv).
+     * Igual que SERVEROLD: GET /api/servers/{machineId}/shared_servers (XML).
      *
      * @return array<int, array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}>
      */
@@ -613,11 +846,18 @@ final class PlexService
             ]);
 
             $response = $client->get("/api/servers/{$machineId}/shared_servers", [
-                'headers' => $this->authHeaders(),
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/xml',
+                ]),
             ]);
 
-            $xml = simplexml_load_string($response->getBody()->getContents());
+            $body = $response->getBody()->getContents();
+            $xml = simplexml_load_string($body);
             if ($xml === false) {
+                Logger::debug('Plex shared_servers XML parse failed', [
+                    'server_id' => $this->server->id,
+                    'body_preview' => substr($body, 0, 200),
+                ]);
                 return [];
             }
 
@@ -639,17 +879,20 @@ final class PlexService
 
             return $shares;
         } catch (GuzzleException $e) {
-            Logger::debug('Plex get shared_servers failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
+            Logger::error('Plex get shared_servers failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
             return [];
         }
     }
 
-    /** @return array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}|null */
-    public function findSharedServerFor(?string $email, ?string $username = null): ?array
+    /**
+     * @return array{id: int, user_id: string, username: string, email: string, library_section_ids: array<int, int>}|null
+     */
+    public function findSharedServerFor(?string $email, ?string $username = null, ?string $userId = null): ?array
     {
         $email = trim((string) $email);
         $username = trim((string) $username);
-        if ($email === '' && $username === '') {
+        $userId = trim((string) $userId);
+        if ($email === '' && $username === '' && $userId === '') {
             return null;
         }
 
@@ -658,6 +901,13 @@ final class PlexService
                 return $share;
             }
             if ($username !== '' && strcasecmp($share['username'], $username) === 0) {
+                return $share;
+            }
+            if ($userId !== '' && (string) $share['user_id'] === $userId) {
+                return $share;
+            }
+            // A veces external_id guarda el id del SharedServer, no el userID.
+            if ($userId !== '' && (string) $share['id'] === $userId) {
                 return $share;
             }
         }
@@ -680,10 +930,14 @@ final class PlexService
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 20,
                 'verify' => true,
+                'http_errors' => false,
             ]);
 
-            $client->put("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
-                'headers' => array_merge($this->authHeaders(), ['Content-Type' => 'application/json']),
+            $response = $client->put("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ]),
                 'json' => [
                     'server_id' => $machineId,
                     'shared_server' => [
@@ -692,7 +946,18 @@ final class PlexService
                 ],
             ]);
 
-            return true;
+            $code = $response->getStatusCode();
+            if ($code >= 200 && $code < 300) {
+                return true;
+            }
+
+            Logger::error('Plex update shared_server libraries HTTP error', [
+                'server_id' => $this->server->id,
+                'shared_server_id' => $sharedServerId,
+                'http' => $code,
+                'body' => substr($response->getBody()->getContents(), 0, 300),
+            ]);
+            return false;
         } catch (GuzzleException $e) {
             Logger::error('Plex update shared_server libraries failed', [
                 'server_id' => $this->server->id,
@@ -703,6 +968,10 @@ final class PlexService
         }
     }
 
+    /**
+     * Revoca el acceso como hacía SERVEROLD: DELETE del shared_server en plex.tv.
+     * Eso corta bibliotecas y suele forzar la desconexión del cliente.
+     */
     public function removeSharedServer(int $sharedServerId): bool
     {
         $machineId = trim((string) ($this->server->machine_id ?? ''));
@@ -717,13 +986,32 @@ final class PlexService
                 'base_uri' => 'https://plex.tv',
                 'timeout' => 20,
                 'verify' => true,
+                'http_errors' => false,
             ]);
 
-            $client->delete("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
-                'headers' => $this->authHeaders(),
+            // Igual que SERVEROLD: token en query + cabecera (algunos entornos
+            // de plex.tv son más fiables con el query param).
+            $response = $client->delete("/api/servers/{$machineId}/shared_servers/{$sharedServerId}", [
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/json',
+                    'X-Plex-Product' => 'MultiPanel ERP',
+                ]),
+                'query' => ['X-Plex-Token' => $token],
             ]);
 
-            return true;
+            $code = $response->getStatusCode();
+            // 404 = ya no existe el share → acceso ya cortado
+            if (($code >= 200 && $code < 300) || $code === 404) {
+                return true;
+            }
+
+            Logger::error('Plex remove shared_server HTTP error', [
+                'server_id' => $this->server->id,
+                'shared_server_id' => $sharedServerId,
+                'http' => $code,
+                'body' => substr($response->getBody()->getContents(), 0, 300),
+            ]);
+            return false;
         } catch (GuzzleException $e) {
             Logger::error('Plex remove shared_server failed', [
                 'server_id' => $this->server->id,

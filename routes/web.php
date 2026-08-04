@@ -89,6 +89,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/activity', [ActivityController::class, 'index'], 'activity.index');
     $router->get('/activity/api', [ActivityController::class, 'api'], 'activity.api');
     $router->get('/activity/thumb/{uuid}', [ActivityController::class, 'thumb'], 'activity.thumb');
+    $router->get('/activity/thumbs-debug', [ActivityController::class, 'thumbsDebug'], 'activity.thumbs_debug');
     $router->post('/activity/kill', [ActivityController::class, 'kill'], 'activity.kill', [CsrfMiddleware::class]);
 
     // Servers

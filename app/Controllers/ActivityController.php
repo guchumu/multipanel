@@ -7,6 +7,9 @@ namespace App\Controllers;
 use App\Models\Server;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
+use App\Services\Media\JellyfinService;
+use App\Services\Media\MediaServerFactory;
+use App\Services\Media\PlexService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Request;
@@ -86,6 +89,93 @@ class ActivityController extends Controller
             'Content-Type' => $artwork['content_type'],
             'Cache-Control' => 'private, max-age=300',
         ]);
+    }
+
+    /**
+     * Diagnóstico de carátulas: para cada servidor con sesiones activas,
+     * intenta descargar la carátula de cada sesión desde el propio panel y
+     * reporta en qué paso falla (resolución, ruta, HTTP...). Pensado para
+     * depurar en producción sin acceso a logs.
+     */
+    public function thumbsDebug(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        \Core\Session::getInstance()->close();
+
+        $report = [];
+
+        foreach ($this->servers->allByTenant($tenantId) as $server) {
+            $entry = [
+                'server' => (string) $server->name,
+                'type' => (string) $server->type,
+                'configured_url' => ((bool) $server->ssl ? 'https' : 'http') . '://' . $server->url . ':' . (int) $server->port,
+            ];
+
+            try {
+                $media = MediaServerFactory::make($server);
+
+                if ($media instanceof PlexService) {
+                    $entry['connection_error'] = $media->getLastError();
+                    $sessions = $media->getActiveSessions();
+                    $entry['active_sessions'] = count($sessions);
+                    $entry['thumbs'] = [];
+
+                    foreach ($sessions as $session) {
+                        $artPath = (string) ($session['art_path'] ?? '');
+                        $item = [
+                            'title' => (string) ($session['title'] ?? ''),
+                            'art_path' => $artPath,
+                        ];
+
+                        if ($artPath === '') {
+                            $item['result'] = 'La sesión no trae ruta de carátula (art_path vacío).';
+                        } else {
+                            $start = microtime(true);
+                            $artwork = $media->fetchArtwork($artPath);
+                            $item['ms'] = (int) round((microtime(true) - $start) * 1000);
+                            $item['result'] = $artwork !== null
+                                ? 'OK — ' . strlen($artwork['body']) . ' bytes (' . $artwork['content_type'] . ')'
+                                : 'FALLO — ' . ($media->getLastArtworkError() ?? 'motivo desconocido');
+                        }
+
+                        $entry['thumbs'][] = $item;
+                    }
+                } elseif ($media instanceof JellyfinService) {
+                    $sessions = $media->getActiveSessions();
+                    $entry['active_sessions'] = count($sessions);
+                    $entry['thumbs'] = [];
+
+                    foreach ($sessions as $session) {
+                        $itemId = (string) ($session['item_id'] ?? '');
+                        $item = [
+                            'title' => (string) ($session['title'] ?? ''),
+                            'item_id' => $itemId,
+                        ];
+
+                        if ($itemId === '') {
+                            $item['result'] = 'La sesión no trae item_id.';
+                        } else {
+                            $start = microtime(true);
+                            $artwork = $media->fetchItemImage($itemId);
+                            $item['ms'] = (int) round((microtime(true) - $start) * 1000);
+                            $item['result'] = $artwork !== null
+                                ? 'OK — ' . strlen($artwork['body']) . ' bytes (' . $artwork['content_type'] . ')'
+                                : 'FALLO — no se pudo descargar la imagen del ítem.';
+                        }
+
+                        $entry['thumbs'][] = $item;
+                    }
+                } else {
+                    $entry['result'] = 'Tipo de servidor sin soporte de carátulas.';
+                }
+            } catch (\Throwable $e) {
+                $entry['exception'] = $e->getMessage();
+            }
+
+            $report[] = $entry;
+        }
+
+        return $this->json(['report' => $report], 200);
     }
 
     public function kill(Request $request): Response

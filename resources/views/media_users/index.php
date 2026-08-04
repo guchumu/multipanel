@@ -167,13 +167,9 @@ async function toggleUserStatus(uuid, action, confirmMsg) {
             },
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.success === false) {
-            alert(data.error || data.message || 'No se pudo completar la acción.');
-            return;
-        }
-        if (data.message) {
-            alert(data.message);
-        }
+        const msg = data.error || data.message || (res.ok ? 'Hecho.' : 'No se pudo completar la acción.');
+        alert(msg);
+        // Recargar siempre: el estado en BD puede haber cambiado aunque falle la sync del servidor.
         location.reload();
     } catch (err) {
         alert('Error de red: ' + err.message);

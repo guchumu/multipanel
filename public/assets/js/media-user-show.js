@@ -20,9 +20,8 @@
             body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.success === false) {
-            throw new Error(data.error || data.message || 'Error');
-        }
+        data.__httpOk = res.ok;
+        data.__status = res.status;
         return data;
     }
 
@@ -32,7 +31,8 @@
 
     document.getElementById('telegramChatId')?.addEventListener('change', async (e) => {
         try {
-            await post(`/media-users/${uuid}/telegram`, { telegram_chat_id: e.target.value });
+            const data = await post(`/media-users/${uuid}/telegram`, { telegram_chat_id: e.target.value });
+            if (data.success === false) throw new Error(data.message || 'Error');
             toast('Telegram guardado');
         } catch (err) {
             toast(err.message);
@@ -42,6 +42,7 @@
     document.getElementById('whatsappPhone')?.addEventListener('change', async (e) => {
         try {
             const data = await post(`/media-users/${uuid}/whatsapp`, { whatsapp_phone: e.target.value });
+            if (data.success === false) throw new Error(data.message || 'Error');
             whatsappPhone = data.whatsapp_phone || '';
             e.target.value = whatsappPhone;
             toast('WhatsApp guardado');
@@ -52,7 +53,8 @@
 
     document.getElementById('expiresAt')?.addEventListener('change', async (e) => {
         try {
-            await post(`/media-users/${uuid}/expires`, { expires_at: e.target.value });
+            const data = await post(`/media-users/${uuid}/expires`, { expires_at: e.target.value });
+            if (data.success === false) throw new Error(data.message || 'Error');
             toast('Fecha guardada');
         } catch (err) {
             toast(err.message);
@@ -61,7 +63,8 @@
 
     document.getElementById('userNotes')?.addEventListener('change', async (e) => {
         try {
-            await post(`/media-users/${uuid}/notes`, { notes: e.target.value });
+            const data = await post(`/media-users/${uuid}/notes`, { notes: e.target.value });
+            if (data.success === false) throw new Error(data.message || 'Error');
             toast('Notas guardadas');
         } catch (err) {
             toast(err.message);
@@ -72,6 +75,7 @@
         btn.addEventListener('click', async () => {
             try {
                 const data = await post(`/media-users/${uuid}/add-days`, { days: Number(btn.dataset.days) });
+                if (data.success === false) throw new Error(data.message || 'Error');
                 if (data.expires_at) {
                     document.getElementById('expiresAt').value = data.expires_at.substring(0, 10);
                 }
@@ -92,6 +96,7 @@
                 max_streams: Number(document.getElementById('editMaxStreams')?.value || 1),
                 max_devices: Number(document.getElementById('editMaxDevices')?.value || 5),
             });
+            if (data.success === false) throw new Error(data.message || 'Error');
             toast(data.message || 'Datos guardados');
         } catch (err) {
             toast(err.message);
@@ -101,7 +106,7 @@
     document.getElementById('btnActivate')?.addEventListener('click', async () => {
         try {
             const data = await post(`/media-users/${uuid}/activate`);
-            toast(data.message || 'Usuario activado');
+            toast(data.message || (data.success === false ? 'No se pudo activar del todo' : 'Usuario activado'));
             location.reload();
         } catch (err) {
             toast(err.message);
@@ -109,10 +114,10 @@
     });
 
     document.getElementById('btnSuspend')?.addEventListener('click', async () => {
-        if (!confirm('¿Suspender este usuario? Se cortará el acceso a la biblioteca.')) return;
+        if (!confirm('¿Suspender este usuario? Se cortará el acceso a la biblioteca y se terminarán las sesiones activas.')) return;
         try {
             const data = await post(`/media-users/${uuid}/suspend`);
-            toast(data.message || 'Usuario suspendido');
+            toast(data.message || (data.success === false ? 'No se pudo cortar el acceso en el servidor' : 'Usuario suspendido'));
             location.reload();
         } catch (err) {
             toast(err.message);
@@ -123,6 +128,7 @@
         if (!confirm('¿Eliminar al usuario del servidor Plex/Jellyfin? Esta acción no se puede deshacer fácilmente.')) return;
         try {
             const data = await post(`/media-users/${uuid}/remove-server`);
+            if (data.success === false) throw new Error(data.message || 'Error');
             toast(data.message);
             location.reload();
         } catch (err) {
@@ -152,6 +158,7 @@
 
         try {
             const data = await post(`/media-users/${uuid}/stripe-checkout`, { amount, days, currency: 'EUR' });
+            if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
             document.getElementById('stripeLink').value = data.checkout_url || '';
             document.getElementById('stripeLinkBox').classList.remove('d-none');
             toast(data.message || 'Enlace generado');
@@ -184,6 +191,7 @@
                 title: 'Pago pendiente',
                 body: `Para renovar tu acceso, completa el pago aquí:\n${link}`,
             });
+            if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
             toast(data.message || 'Enviado');
         } catch (err) {
             toast(err.message);
@@ -205,6 +213,7 @@
                 title: document.getElementById('msgTitle')?.value || 'Aviso',
                 body: document.getElementById('msgBody')?.value || '',
             });
+            if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
             toast(data.message || 'Enviado');
             location.reload();
         } catch (err) {
@@ -231,6 +240,7 @@
                 server_id: Number(btn.dataset.serverId),
                 session_id: btn.dataset.sessionId,
             });
+            if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
             toast(data.message || 'Reproducción detenida');
             btn.closest('.session-card')?.closest('.col-sm-6')?.remove();
         } catch (err) {

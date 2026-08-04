@@ -231,6 +231,39 @@ final class JellyfinService
         }
     }
 
+    /**
+     * Detiene reproducciones activas del usuario (por nombre).
+     *
+     * @return int Número de sesiones detenidas
+     */
+    public function terminateSessionsForUser(string ...$names): int
+    {
+        $needles = [];
+        foreach ($names as $name) {
+            $normalized = mb_strtolower(trim($name));
+            if ($normalized !== '') {
+                $needles[$normalized] = true;
+            }
+        }
+        if ($needles === []) {
+            return 0;
+        }
+
+        $killed = 0;
+        foreach ($this->getActiveSessions() as $session) {
+            $sessionUser = mb_strtolower(trim((string) ($session['user'] ?? '')));
+            if ($sessionUser === '' || !isset($needles[$sessionUser])) {
+                continue;
+            }
+            $sessionId = (string) ($session['session_id'] ?? '');
+            if ($sessionId !== '' && $this->terminateSession($sessionId)) {
+                $killed++;
+            }
+        }
+
+        return $killed;
+    }
+
     public function createUser(string $username, string $password): ?array
     {
         try {
