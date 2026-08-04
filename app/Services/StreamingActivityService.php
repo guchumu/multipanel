@@ -197,12 +197,17 @@ final class StreamingActivityService
     /** @param array<string, mixed> $session */
     private function enrichSessionForPanel(array $session, Server $server): array
     {
+        // Siempre proxificar: nunca devolver URL directa http://Plex al navegador
+        // (mixed content en HTTPS + token expuesto). Usamos ?p= base64url para
+        // evitar que WAFs/Apache alteren %2F en ?path=/library/...
         if (!empty($session['art_path'])) {
             $session['thumb_url'] = '/activity/thumb/' . (string) $server->uuid
-                . '?path=' . rawurlencode((string) $session['art_path']);
+                . '?p=' . self::encodeThumbParam((string) $session['art_path']);
         } elseif (!empty($session['item_id'])) {
             $session['thumb_url'] = '/activity/thumb/' . (string) $server->uuid
                 . '?item=' . rawurlencode((string) $session['item_id']);
+        } else {
+            $session['thumb_url'] = '';
         }
 
         $session['video_label'] = $this->decisionLabel((string) ($session['video_decision'] ?? ''));
@@ -210,6 +215,33 @@ final class StreamingActivityService
         $session['can_kill'] = !empty($session['session_id']);
 
         return $session;
+    }
+
+    /** Codifica un path de carátula en base64url (sin padding). */
+    public static function encodeThumbParam(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
+    }
+
+    /** Decodifica ?p= base64url; null si no es válido. */
+    public static function decodeThumbParam(string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $pad = strlen($value) % 4;
+        if ($pad > 0) {
+            $value .= str_repeat('=', 4 - $pad);
+        }
+
+        $decoded = base64_decode(strtr($value, '-_', '+/'), true);
+        if (!is_string($decoded) || $decoded === '') {
+            return null;
+        }
+
+        return $decoded;
     }
 
     private function decisionLabel(string $decision): string

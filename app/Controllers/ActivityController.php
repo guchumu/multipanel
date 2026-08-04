@@ -70,24 +70,49 @@ class ActivityController extends Controller
         $server = $this->servers->findByUuid($uuid);
 
         if ($server === null || (int) $server->tenant_id !== $tenantId) {
-            return new Response('', 404);
+            return $this->thumbPlaceholder('Servidor no encontrado', 404);
         }
 
         // El navegador pide varias carátulas en paralelo; sin esto cada una
         // retendría el lock de sesión y se servirían en serie.
         \Core\Session::getInstance()->close();
 
-        $artPath = (string) $request->input('path', '');
+        // Preferir ?p= (base64url). Mantener ?path= por compatibilidad.
+        $artPath = StreamingActivityService::decodeThumbParam((string) $request->input('p', '')) ?? '';
+        if ($artPath === '') {
+            $artPath = (string) $request->input('path', '');
+        }
         $itemId = (string) $request->input('item', '');
         $artwork = $this->activity->fetchArtwork($server, $artPath !== '' ? $artPath : null, $itemId !== '' ? $itemId : null);
 
         if ($artwork === null) {
-            return new Response('', 404);
+            // Como SERVEROLD: SVG para que el <img> no quede roto en silencio.
+            $hint = $artPath !== '' ? $artPath : ($itemId !== '' ? 'item:' . $itemId : 'sin ruta');
+            return $this->thumbPlaceholder('Sin carátula', 200, $hint);
         }
 
         return new Response($artwork['body'], 200, [
             'Content-Type' => $artwork['content_type'],
             'Cache-Control' => 'private, max-age=300',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function thumbPlaceholder(string $label, int $status = 200, string $detail = ''): Response
+    {
+        $label = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+        $detail = htmlspecialchars(strlen($detail) > 80 ? substr($detail, 0, 77) . '...' : $detail, ENT_QUOTES, 'UTF-8');
+        $svg = <<<SVG
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
+  <rect width="200" height="300" fill="#2b2f36"/>
+  <text x="100" y="145" fill="#9aa0a6" text-anchor="middle" font-family="Arial,sans-serif" font-size="14">{$label}</text>
+  <text x="100" y="170" fill="#6c757d" text-anchor="middle" font-family="Arial,sans-serif" font-size="10">{$detail}</text>
+</svg>
+SVG;
+
+        return new Response($svg, $status, [
+            'Content-Type' => 'image/svg+xml; charset=utf-8',
+            'Cache-Control' => 'no-store',
         ]);
     }
 
@@ -130,6 +155,8 @@ class ActivityController extends Controller
                         if ($artPath === '') {
                             $item['result'] = 'La sesión no trae ruta de carátula (art_path vacío).';
                         } else {
+                            $item['proxy_url'] = '/activity/thumb/' . (string) $server->uuid
+                                . '?p=' . StreamingActivityService::encodeThumbParam($artPath);
                             $start = microtime(true);
                             $artwork = $media->fetchArtwork($artPath);
                             $item['ms'] = (int) round((microtime(true) - $start) * 1000);

@@ -24,6 +24,8 @@ final class JellyfinService
         $this->client = new Client([
             'base_uri' => $this->server->fullUrl(),
             'timeout' => 30,
+            'connect_timeout' => 10,
+            'verify' => false,
             'headers' => [
                 'Accept' => 'application/json',
                 'Content-Type' => 'application/json',
@@ -196,16 +198,47 @@ final class JellyfinService
         }
 
         $apiKey = trim((string) ($this->server->api_key ?? ''));
-        $url = "/Items/{$itemId}/Images/Primary?maxHeight=600" . ($apiKey !== '' ? '&api_key=' . rawurlencode($apiKey) : '');
+        $query = ['maxHeight' => 600, 'quality' => 90];
+        if ($apiKey !== '') {
+            $query['api_key'] = $apiKey;
+        }
 
         try {
-            $response = $this->client->get($url, [
-                'headers' => $this->authHeaders(),
+            $response = $this->client->get("/Items/{$itemId}/Images/Primary", [
+                'http_errors' => false,
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => '*' . '/' . '*',
+                ]),
+                'query' => $query,
             ]);
 
+            $code = $response->getStatusCode();
+            $body = $response->getBody()->getContents();
+            $contentType = $response->getHeaderLine('Content-Type');
+
+            if ($code < 200 || $code >= 300 || $body === '') {
+                Logger::debug('Jellyfin image fetch failed', [
+                    'item_id' => $itemId,
+                    'http' => $code,
+                    'content_type' => $contentType,
+                ]);
+                return null;
+            }
+
+            // Rechazar JSON/HTML de error.
+            $trim = ltrim($body);
+            if ($trim !== '' && ($trim[0] === '<' || $trim[0] === '{')) {
+                return null;
+            }
+
+            $ct = trim(explode(';', $contentType)[0]);
+            if ($ct === '' || !str_starts_with(strtolower($ct), 'image/')) {
+                $ct = 'image/jpeg';
+            }
+
             return [
-                'body' => $response->getBody()->getContents(),
-                'content_type' => $response->getHeaderLine('Content-Type') ?: 'image/jpeg',
+                'body' => $body,
+                'content_type' => $ct,
             ];
         } catch (GuzzleException $e) {
             Logger::debug('Jellyfin image fetch failed', ['item_id' => $itemId, 'error' => $e->getMessage()]);

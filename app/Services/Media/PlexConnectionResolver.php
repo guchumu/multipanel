@@ -254,10 +254,9 @@ final class PlexConnectionResolver
             }
         }
 
-        usort($list, static function (array $a, array $b) {
-            $score = static fn (array $e) => (str_contains($e['url'], '192.168.') ? 100 : 0)
-                + (str_contains($e['url'], '10.') ? 100 : 0);
-            return $score($a) <=> $score($b);
+        usort($list, function (array $a, array $b) {
+            // Públicos primero; LAN al final (el sondeo rápido ya salta LAN).
+            return ((int) $this->isLocalEndpoint($a)) <=> ((int) $this->isLocalEndpoint($b));
         });
 
         return $list;
@@ -449,9 +448,25 @@ final class PlexConnectionResolver
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
     private function isLocalEndpoint(array $endpoint): bool
     {
-        $host = strtolower($endpoint['url']);
-        return str_contains($host, '192.168.')
-            || str_contains($host, '10.')
-            || str_starts_with($host, '172.');
+        $host = strtolower(trim($endpoint['url']));
+        if ($host === '' || $host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+            return true;
+        }
+
+        // IMPORTANTE: no usar str_contains('10.') — haría "local" IPs como 210.x / 110.x
+        // y el sondeo rápido saltaría la URL pública real del PMS.
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $parts = array_map('intval', explode('.', $host));
+            if (count($parts) !== 4) {
+                return false;
+            }
+
+            return $parts[0] === 10
+                || ($parts[0] === 192 && $parts[1] === 168)
+                || ($parts[0] === 172 && $parts[1] >= 16 && $parts[1] <= 31)
+                || ($parts[0] === 127);
+        }
+
+        return false;
     }
 }

@@ -364,11 +364,13 @@ final class PlexService
         $player = is_array($session['Player'] ?? null) ? $session['Player'] : [];
         // Igual que SERVEROLD: preferir carátula de la serie (grandparent)
         // frente al thumb del episodio, que a menudo es landscape o vacío.
-        $thumb = $this->pickArtPath(
+        $thumb = $this->resolveSessionArtPath(
             (string) ($session['grandparentThumb'] ?? ''),
             (string) ($session['thumb'] ?? ''),
             (string) ($session['parentThumb'] ?? ''),
             (string) ($session['art'] ?? ''),
+            (string) ($session['grandparentRatingKey'] ?? ''),
+            (string) ($session['ratingKey'] ?? ''),
         );
 
         return [
@@ -418,11 +420,13 @@ final class PlexService
         $duration = (int) ($session['duration'] ?? 0);
         $progress = $duration > 0 ? min(100, (int) round(($viewOffset / $duration) * 100)) : 0;
 
-        $thumb = $this->pickArtPath(
+        $thumb = $this->resolveSessionArtPath(
             (string) ($session['grandparentThumb'] ?? ''),
             (string) ($session['thumb'] ?? ''),
             (string) ($session['parentThumb'] ?? ''),
             (string) ($session['art'] ?? ''),
+            (string) ($session['grandparentRatingKey'] ?? ''),
+            (string) ($session['ratingKey'] ?? ''),
         );
 
         return [
@@ -442,6 +446,33 @@ final class PlexService
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
+    }
+
+    private function resolveSessionArtPath(
+        string $grandparentThumb,
+        string $thumb,
+        string $parentThumb,
+        string $art,
+        string $grandparentRatingKey,
+        string $ratingKey,
+    ): string {
+        $picked = $this->pickArtPath($grandparentThumb, $thumb, $parentThumb, $art);
+        if ($picked !== '') {
+            return $picked;
+        }
+
+        // Fallback: construir thumb desde ratingKey (a veces Plex omite *Thumb en JSON).
+        $grandparentRatingKey = trim($grandparentRatingKey);
+        if ($grandparentRatingKey !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $grandparentRatingKey)) {
+            return '/library/metadata/' . $grandparentRatingKey . '/thumb';
+        }
+
+        $ratingKey = trim($ratingKey);
+        if ($ratingKey !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $ratingKey)) {
+            return '/library/metadata/' . $ratingKey . '/thumb';
+        }
+
+        return '';
     }
 
     private function pickArtPath(string ...$candidates): string
@@ -468,6 +499,11 @@ final class PlexService
             return '';
         }
 
+        // Ignorar thumbs de avatar/plex.tv que no son carátulas de media.
+        if (str_contains($path, 'plex.tv/') || str_contains($path, '/users/') || str_contains($path, 'photo.plex.tv')) {
+            return '';
+        }
+
         if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
             $parts = parse_url($path);
             $relative = (string) ($parts['path'] ?? '');
@@ -475,7 +511,12 @@ final class PlexService
                 return '';
             }
             if (!empty($parts['query'])) {
-                $relative .= '?' . $parts['query'];
+                // Quitar tokens de la query residual; los añadimos nosotros.
+                parse_str((string) $parts['query'], $qs);
+                unset($qs['X-Plex-Token'], $qs['X-Plex-Token ']);
+                if ($qs !== []) {
+                    $relative .= '?' . http_build_query($qs);
+                }
             }
 
             return $relative;
@@ -512,9 +553,9 @@ final class PlexService
 
     /**
      * Descarga una carátula al estilo del panel antiguo (SERVEROLD/image-proxy.php):
-     * URL absoluta del PMS + X-Plex-Token en la query, Accept any (asterisco/asterisco),
-     * follow redirects. No depende del lastError del resolve: aunque el sondeo
-     * haya fallado, se intenta igual con la URL configurada (panel viejo).
+     * 1) cURL simple a URL absoluta + X-Plex-Token en query (lo que funcionaba).
+     * 2) Mismo client Guzzle que ya alcanza el PMS para las sesiones.
+     * 3) Fallbacks photo/:/transcode.
      *
      * @return array{body: string, content_type: string}|null
      */
@@ -526,34 +567,50 @@ final class PlexService
             return null;
         }
 
+        $cacheKey = 'plex_art_' . (int) $this->server->id . '_' . sha1($path);
+        $cached = \Core\Cache::get($cacheKey);
+        if (is_array($cached) && isset($cached['body'], $cached['content_type']) && is_string($cached['body']) && $cached['body'] !== '') {
+            $this->lastArtworkError = null;
+            return $cached;
+        }
+
         $token = trim((string) ($this->server->token ?? ''));
+        $pathOnly = explode('?', $path, 2)[0];
         $bases = $this->artworkBaseUrls();
         $errors = [];
 
-        // Cliente dedicado para imágenes: NO hereda Accept: application/xml del
-        // client principal (eso hacía que algunos PMS devolvieran XML/error).
-        $http = new Client([
-            'timeout' => 10,
-            'connect_timeout' => 5,
-            'verify' => false,
-            'allow_redirects' => true,
-            'http_errors' => false,
-            'headers' => [
-                'Accept' => '*/*',
-                'User-Agent' => 'MultiPanel ERP/1.1',
-                'X-Plex-Client-Identifier' => 'multipanel-erp',
-                'X-Plex-Product' => 'MultiPanel ERP',
-            ],
-        ]);
+        // --- Paso A: client Guzzle principal (misma base que /status/sessions) ---
+        if ($this->lastError === null && $pathOnly !== '') {
+            try {
+                $response = $this->client->get($pathOnly, [
+                    'http_errors' => false,
+                    'allow_redirects' => true,
+                    'headers' => array_merge($this->authHeaders(), [
+                        'Accept' => '*' . '/' . '*',
+                    ]),
+                    'query' => $token !== '' ? ['X-Plex-Token' => $token] : [],
+                ]);
+                $got = $this->artworkFromResponse(
+                    $response->getStatusCode(),
+                    $response->getBody()->getContents(),
+                    $response->getHeaderLine('Content-Type'),
+                    'client:' . $this->baseUrl . $pathOnly,
+                    $errors
+                );
+                if ($got !== null) {
+                    \Core\Cache::set($cacheKey, $got, 300);
+                    return $got;
+                }
+            } catch (GuzzleException $e) {
+                $errors[] = 'client → ' . $e->getMessage();
+            }
+        }
 
-        $pathOnly = explode('?', $path, 2)[0];
-
+        // --- Paso B/C: URL absoluta por cada base (cURL como SERVEROLD, luego Guzzle) ---
         foreach ($bases as $base) {
             $candidates = [
-                $path,
-                // Fallback vía photo transcoder (como hacen muchos clientes Plex).
-                '/photo/:/transcode?width=300&height=450&minSize=1&upscale=1&url='
-                    . rawurlencode($pathOnly),
+                $pathOnly,
+                '/photo/:/transcode?width=300&height=450&minSize=1&upscale=1&url=' . rawurlencode($pathOnly),
                 '/photo/:/transcode?width=300&height=450&minSize=1&upscale=1&url='
                     . rawurlencode('http://127.0.0.1:32400' . $pathOnly),
             ];
@@ -565,35 +622,118 @@ final class PlexService
                     $url .= $sep . 'X-Plex-Token=' . rawurlencode($token);
                 }
 
-                try {
-                    $response = $http->get($url);
-                    $code = $response->getStatusCode();
-                    $body = $response->getBody()->getContents();
-                    $contentType = $response->getHeaderLine('Content-Type');
-
-                    if ($code >= 200 && $code < 300 && $body !== '' && $this->looksLikeImage($contentType, $body)) {
-                        $this->lastArtworkError = null;
-
-                        return [
-                            'body' => $body,
-                            'content_type' => $contentType !== '' ? $contentType : 'image/jpeg',
-                        ];
-                    }
-
-                    $errors[] = "{$url} → HTTP {$code}" . ($contentType !== '' ? " ({$contentType})" : '');
-                } catch (GuzzleException $e) {
-                    $errors[] = "{$url} → " . $e->getMessage();
+                $got = $this->downloadArtworkUrl($url, $token, $errors);
+                if ($got !== null) {
+                    \Core\Cache::set($cacheKey, $got, 300);
+                    return $got;
                 }
             }
         }
 
-        $this->lastArtworkError = $errors !== [] ? implode(' | ', array_slice($errors, 0, 4)) : 'Sin respuesta';
+        $this->lastArtworkError = $errors !== [] ? implode(' | ', array_slice($errors, 0, 6)) : 'Sin respuesta';
         Logger::warning('Plex artwork fetch failed', [
             'server_id' => $this->server->id,
             'path' => $path,
             'error' => $this->lastArtworkError,
         ]);
 
+        return null;
+    }
+
+    /**
+     * @param array<int, string> $errors
+     * @return array{body: string, content_type: string}|null
+     */
+    private function downloadArtworkUrl(string $url, string $token, array &$errors): ?array
+    {
+        // 1) cURL nativo — idéntico en espíritu a SERVEROLD/image-proxy.php
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            if ($ch !== false) {
+                $headers = ['Accept: ' . '*' . '/' . '*', 'User-Agent: MultiPanel ERP/1.1'];
+                if ($token !== '') {
+                    $headers[] = 'X-Plex-Token: ' . $token;
+                }
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_SSL_VERIFYHOST => 0,
+                    CURLOPT_TIMEOUT => 10,
+                    CURLOPT_CONNECTTIMEOUT => 5,
+                    CURLOPT_HTTPHEADER => $headers,
+                ]);
+                $body = curl_exec($ch);
+                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+                $curlError = curl_error($ch);
+                curl_close($ch);
+
+                if ($body === false) {
+                    $errors[] = "curl {$url} → {$curlError}";
+                } else {
+                    $got = $this->artworkFromResponse($code, (string) $body, $contentType, 'curl:' . $url, $errors);
+                    if ($got !== null) {
+                        return $got;
+                    }
+                }
+            }
+        }
+
+        // 2) Guzzle de respaldo
+        try {
+            $http = new Client([
+                'timeout' => 10,
+                'connect_timeout' => 5,
+                'verify' => false,
+                'allow_redirects' => true,
+                'http_errors' => false,
+                'headers' => [
+                    'Accept' => '*' . '/' . '*',
+                    'User-Agent' => 'MultiPanel ERP/1.1',
+                    'X-Plex-Client-Identifier' => 'multipanel-erp',
+                    'X-Plex-Product' => 'MultiPanel ERP',
+                ],
+            ]);
+            $headers = [];
+            if ($token !== '') {
+                $headers['X-Plex-Token'] = $token;
+            }
+            $response = $http->get($url, ['headers' => $headers]);
+            return $this->artworkFromResponse(
+                $response->getStatusCode(),
+                $response->getBody()->getContents(),
+                $response->getHeaderLine('Content-Type'),
+                'guzzle:' . $url,
+                $errors
+            );
+        } catch (GuzzleException $e) {
+            $errors[] = "guzzle {$url} → " . $e->getMessage();
+            return null;
+        }
+    }
+
+    /**
+     * @param array<int, string> $errors
+     * @return array{body: string, content_type: string}|null
+     */
+    private function artworkFromResponse(int $code, string $body, string $contentType, string $label, array &$errors): ?array
+    {
+        if ($code >= 200 && $code < 300 && $body !== '' && $this->looksLikeImage($contentType, $body)) {
+            $this->lastArtworkError = null;
+            $ct = trim(explode(';', $contentType)[0]);
+            if ($ct === '' || !str_starts_with(strtolower($ct), 'image/')) {
+                $ct = $this->guessImageContentType($body);
+            }
+
+            return [
+                'body' => $body,
+                'content_type' => $ct,
+            ];
+        }
+
+        $errors[] = "{$label} → HTTP {$code}" . ($contentType !== '' ? " ({$contentType})" : '')
+            . ($body !== '' ? ' bytes=' . strlen($body) : '');
         return null;
     }
 
@@ -614,6 +754,19 @@ final class PlexService
         // 2) URL configurada en BD (como public_ip del panel antiguo)
         $add($this->server->fullUrl());
 
+        // 3) Sin puerto explícito en 80/443 por si el reverse-proxy lo espera así
+        $configured = ServerEndpoint::normalize(
+            (string) $this->server->url,
+            (int) ($this->server->port ?: 32400),
+            (bool) $this->server->ssl
+        );
+        if ($configured['ssl'] && (int) $configured['port'] === 443) {
+            $add('https://' . $configured['url']);
+        }
+        if (!$configured['ssl'] && (int) $configured['port'] === 80) {
+            $add('http://' . $configured['url']);
+        }
+
         return $bases;
     }
 
@@ -624,16 +777,51 @@ final class PlexService
             return true;
         }
 
-        // Algunos PMS no mandan Content-Type; detectamos magic bytes básicos.
         if ($body === '') {
             return false;
         }
 
+        // Rechazar XML/HTML de error aunque venga con 200.
+        $trim = ltrim($body);
+        if ($trim !== '' && ($trim[0] === '<' || str_starts_with($trim, '{'))) {
+            return false;
+        }
+
         $head = substr($body, 0, 12);
-        return str_starts_with($head, "\xFF\xD8\xFF") // jpeg
+        if (str_starts_with($head, "\xFF\xD8\xFF") // jpeg
             || str_starts_with($head, "\x89PNG") // png
             || str_starts_with($head, 'GIF8')
-            || str_starts_with($head, 'RIFF'); // webp
+            || str_starts_with($head, 'RIFF') // webp
+            || str_starts_with($head, "\x00\x00\x00")) { // heic/isom-ish
+            return true;
+        }
+
+        // Algunos PMS mandan application/octet-stream sin magic bytes claros.
+        if (($contentType === 'application/octet-stream' || $contentType === 'binary/octet-stream' || $contentType === '')
+            && strlen($body) > 256) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function guessImageContentType(string $body): string
+    {
+        $head = substr($body, 0, 12);
+        if (str_starts_with($head, "\xFF\xD8\xFF")) {
+            return 'image/jpeg';
+        }
+        if (str_starts_with($head, "\x89PNG")) {
+            return 'image/png';
+        }
+        if (str_starts_with($head, 'GIF8')) {
+            return 'image/gif';
+        }
+        if (str_starts_with($head, 'RIFF')) {
+            return 'image/webp';
+        }
+
+        return 'image/jpeg';
     }
 
     public function getLastArtworkError(): ?string
