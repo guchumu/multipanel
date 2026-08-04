@@ -16,6 +16,7 @@ final class MediaUserActivityService
     {
         $db = Database::getInstance();
         $events = [];
+        MediaUserMessageService::ensureMediaUserMessagesTable();
 
         foreach ($db->fetchAll(
             'SELECT action, entity_type, entity_id, old_values, new_values, created_at, user_id
@@ -35,14 +36,20 @@ final class MediaUserActivityService
             ];
         }
 
-        foreach ($db->fetchAll(
-            'SELECT message_type, title, body, status, sent_at, channel
-             FROM media_user_messages
-             WHERE media_user_id = ?
-             ORDER BY sent_at DESC
-             LIMIT ?',
-            [$mediaUserId, $limit]
-        ) as $row) {
+        try {
+            $messageRows = $db->fetchAll(
+                'SELECT message_type, title, body, status, sent_at, channel
+                 FROM media_user_messages
+                 WHERE media_user_id = ?
+                 ORDER BY sent_at DESC
+                 LIMIT ?',
+                [$mediaUserId, $limit]
+            );
+        } catch (\Throwable) {
+            $messageRows = [];
+        }
+
+        foreach ($messageRows as $row) {
             $events[] = [
                 'type' => 'message',
                 'at' => (string) $row['sent_at'],
