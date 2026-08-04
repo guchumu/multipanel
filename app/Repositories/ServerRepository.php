@@ -15,6 +15,8 @@ class ServerRepository
     /** @return array<int, Server> */
     public function allByTenant(int $tenantId): array
     {
+        $this->ensureIsDefaultColumn();
+
         $rows = Database::getInstance()->fetchAll(
             'SELECT * FROM `servers` WHERE `tenant_id` = ? AND `deleted_at` IS NULL ORDER BY `sort_order`, `name`',
             [$tenantId]
@@ -35,6 +37,7 @@ class ServerRepository
 
     public function findDefaultByTenant(int $tenantId, string $type = 'plex'): ?Server
     {
+        $this->ensureIsDefaultColumn();
         $type = in_array($type, ['plex', 'jellyfin'], true) ? $type : 'plex';
 
         $row = Database::getInstance()->fetchOne(
@@ -56,6 +59,51 @@ class ServerRepository
         );
 
         return $row ? new Server($row) : null;
+    }
+
+    /**
+     * Marca un servidor como predeterminado de su tipo (plex o jellyfin).
+     * Solo puede haber uno por tipo dentro del tenant.
+     */
+    public function setDefault(int $tenantId, int $serverId, string $type): void
+    {
+        $this->ensureIsDefaultColumn();
+        $type = in_array($type, ['plex', 'jellyfin'], true) ? $type : 'plex';
+        $db = Database::getInstance();
+
+        $db->query(
+            'UPDATE `servers` SET `is_default` = 0 WHERE `tenant_id` = ? AND `type` = ? AND `deleted_at` IS NULL',
+            [$tenantId, $type]
+        );
+        $db->query(
+            'UPDATE `servers` SET `is_default` = 1 WHERE `id` = ? AND `tenant_id` = ? AND `type` = ? AND `deleted_at` IS NULL',
+            [$serverId, $tenantId, $type]
+        );
+    }
+
+    /** ¿Hay ya algún servidor de este tipo marcado como predeterminado? */
+    public function hasDefaultOfType(int $tenantId, string $type): bool
+    {
+        $this->ensureIsDefaultColumn();
+        $type = in_array($type, ['plex', 'jellyfin'], true) ? $type : 'plex';
+        $row = Database::getInstance()->fetchOne(
+            'SELECT `id` FROM `servers`
+             WHERE `tenant_id` = ? AND `type` = ? AND `is_default` = 1 AND `deleted_at` IS NULL
+             LIMIT 1',
+            [$tenantId, $type]
+        );
+
+        return $row !== null;
+    }
+
+    /**
+     * Servidor a preseleccionar en formularios de alta: Plex predeterminado,
+     * si no Jellyfin predeterminado, si no el primero de la lista.
+     */
+    public function preferredDefaultForForms(int $tenantId): ?Server
+    {
+        return $this->findDefaultByTenant($tenantId, 'plex')
+            ?? $this->findDefaultByTenant($tenantId, 'jellyfin');
     }
 
     public function countByStatus(int $tenantId, string $status): int

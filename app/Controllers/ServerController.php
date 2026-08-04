@@ -99,6 +99,12 @@ class ServerController extends Controller
         ]);
 
         $server->save();
+
+        // Primer servidor de ese tipo → predeterminado automáticamente.
+        if (!$this->servers->hasDefaultOfType($tenantId, (string) $data['type'])) {
+            $this->servers->setDefault($tenantId, (int) $server->id, (string) $data['type']);
+        }
+
         $this->audit->log('server.created', 'server', (int) $server->id, null, $server->toArray());
 
         $synced = $this->sync->sync($server);
@@ -361,7 +367,7 @@ class ServerController extends Controller
                 return $this->json(['error' => 'Servidor no encontrado'], 404);
             }
 
-            $this->setDefaultServer((int) $server->tenant_id, (int) $server->id, (string) $server->type);
+            $this->servers->setDefault((int) $server->tenant_id, (int) $server->id, (string) $server->type);
 
             try {
                 AuditService::log('server.set_default', 'server', (int) $server->id);
@@ -371,8 +377,13 @@ class ServerController extends Controller
 
             return $this->json([
                 'success' => true,
-                'message' => sprintf('"%s" es ahora el servidor %s por defecto.', $server->name, strtoupper($server->type)),
+                'message' => sprintf(
+                    '"%s" es ahora el servidor %s predeterminado. Puedes tener uno de Plex y uno de Jellyfin.',
+                    $server->name,
+                    strtoupper((string) $server->type)
+                ),
                 'type' => $server->type,
+                'server_id' => (int) $server->id,
             ]);
         } catch (\Throwable $e) {
             \Core\Logger::error('server.set_default failed', ['uuid' => $uuid, 'error' => $e->getMessage()]);
@@ -382,19 +393,5 @@ class ServerController extends Controller
                 'message' => 'No se pudo marcar como predeterminado: ' . $e->getMessage(),
             ], 500);
         }
-    }
-
-    private function setDefaultServer(int $tenantId, int $serverId, string $type): void
-    {
-        $this->servers->ensureIsDefaultColumn();
-        $db = \Core\Database::getInstance();
-        $db->query(
-            'UPDATE `servers` SET `is_default` = 0 WHERE `tenant_id` = ? AND `type` = ? AND `deleted_at` IS NULL',
-            [$tenantId, $type]
-        );
-        $db->query(
-            'UPDATE `servers` SET `is_default` = 1 WHERE `id` = ? AND `tenant_id` = ?',
-            [$serverId, $tenantId]
-        );
     }
 }

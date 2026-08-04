@@ -1,5 +1,5 @@
 /**
- * Loading states and feedback for server sync / test / debug buttons.
+ * Loading states and feedback for server sync / test / debug / default-star buttons.
  */
 (function () {
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
@@ -31,20 +31,57 @@
         box.classList.remove('d-none');
     }
 
-    async function postAction(url) {
+    function csrfToken() {
+        return document.querySelector('meta[name=csrf-token]')?.content || csrf || '';
+    }
+
+    async function postJson(url, body = {}) {
+        const token = csrfToken();
+        if (!token) {
+            return {
+                success: false,
+                message: 'No hay token CSRF. Recarga la página (F5).',
+                __httpOk: false,
+                __status: 0,
+            };
+        }
+        const payload = { ...body, _token: token };
         const res = await fetch(url, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
-                'X-CSRF-TOKEN': csrf,
+                'Content-Type': 'application/json',
                 'Accept': 'application/json',
+                'X-CSRF-TOKEN': token,
+                'X-Csrf-Token': token,
             },
+            body: JSON.stringify(payload),
         });
-        return res.json();
+        const data = await res.json().catch(() => ({}));
+        data.__httpOk = res.ok;
+        data.__status = res.status;
+        return data;
     }
 
     async function getAction(url) {
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        return res.json();
+        const res = await fetch(url, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => ({}));
+        data.__httpOk = res.ok;
+        data.__status = res.status;
+        return data;
+    }
+
+    function responseMessage(data, fallbackOk, fallbackFail) {
+        if (typeof data?.message === 'string' && data.message.trim() !== '') {
+            return data.message;
+        }
+        if (typeof data?.error === 'string' && data.error.trim() !== '') {
+            return data.error;
+        }
+        return data?.success === false || data?.__httpOk === false ? fallbackFail : fallbackOk;
     }
 
     document.querySelectorAll('.btn-sync').forEach(btn => {
@@ -53,8 +90,13 @@
             setBusy(this, true, 'Sincronizando…');
             showStatus('Sincronizando servidor (usuarios, bibliotecas, sesiones)…', 'info');
             try {
-                const data = await postAction(`/servers/${uuid}/sync`);
-                showStatus(data.message || 'Sync completado.', data.success ? 'success' : 'danger');
+                const data = await postJson(`/servers/${uuid}/sync`);
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al sincronizar.'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(responseMessage(data, 'Sync completado.', 'Error al sincronizar.'), 'success');
                 setTimeout(() => location.reload(), 800);
             } catch (e) {
                 showStatus('Error de red al sincronizar.', 'danger');
@@ -69,8 +111,16 @@
             setBusy(this, true, 'Probando…');
             showStatus('Comprobando conexión y streams activos…', 'info');
             try {
-                const data = await postAction(`/servers/${uuid}/test`);
-                showStatus(data.message || 'Test completado.', data.connected ? 'success' : 'warning');
+                const data = await postJson(`/servers/${uuid}/test`);
+                if (!data.__httpOk) {
+                    showStatus(responseMessage(data, '', 'Error en el test.'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Test completado.', 'Test fallido.'),
+                    data.connected ? 'success' : 'warning'
+                );
                 setTimeout(() => location.reload(), 800);
             } catch (e) {
                 showStatus('Error de red en el test.', 'danger');
@@ -86,7 +136,12 @@
             showStatus('Ejecutando debug completo (URLs, plex.tv, conexión)…', 'info');
             try {
                 const data = await getAction(`/servers/${uuid}/debug`);
-                showStatus(data.message || (data.success ? 'Debug OK' : 'Debug fallido'), data.success ? 'success' : 'danger');
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Debug fallido'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(responseMessage(data, 'Debug OK', 'Debug fallido'), 'success');
                 setTimeout(() => location.reload(), 1200);
             } catch (e) {
                 showStatus('Error de red en debug.', 'danger');
@@ -99,13 +154,26 @@
         btn.addEventListener('click', async function () {
             const uuid = this.dataset.uuid;
             const type = (this.dataset.type || 'plex').toUpperCase();
+            this.disabled = true;
             showStatus(`Marcando servidor ${type} por defecto…`, 'info');
             try {
-                const data = await postAction(`/servers/${uuid}/default`);
-                showStatus(data.message || 'Actualizado.', data.success ? 'success' : 'danger');
+                const data = await postJson(`/servers/${uuid}/default`);
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(
+                        responseMessage(data, '', 'No se pudo marcar como predeterminado.'),
+                        'danger'
+                    );
+                    this.disabled = false;
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Servidor marcado como predeterminado.', ''),
+                    'success'
+                );
                 setTimeout(() => location.reload(), 600);
             } catch (e) {
-                showStatus('Error al marcar predeterminado.', 'danger');
+                showStatus('Error de red al marcar predeterminado.', 'danger');
+                this.disabled = false;
             }
         });
     });

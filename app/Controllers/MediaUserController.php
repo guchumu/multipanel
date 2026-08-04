@@ -215,10 +215,10 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
-        return $this->view('media_users.create', [
-            'title' => 'Nuevo usuario',
-            'servers' => $this->servers->allByTenant($tenantId),
-        ]);
+        return $this->view('media_users.create', array_merge(
+            ['title' => 'Nuevo usuario'],
+            $this->serverFormDefaults($tenantId)
+        ));
     }
 
     public function store(Request $request): Response
@@ -474,11 +474,32 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
-        return $this->view('media_users.bulk', [
-            'title' => 'Añadir usuarios por email',
+        return $this->view('media_users.bulk', array_merge(
+            [
+                'title' => 'Añadir usuarios por email',
+                'periods' => SubscriptionPeriod::options(),
+            ],
+            $this->serverFormDefaults($tenantId)
+        ));
+    }
+
+    /**
+     * Servidores + IDs predeterminados para formularios de alta (uno Plex + uno Jellyfin).
+     *
+     * @return array{servers: array<int, Server>, preferredServerId: ?int, defaultPlexServerId: ?int, defaultJellyfinServerId: ?int}
+     */
+    private function serverFormDefaults(int $tenantId): array
+    {
+        $plex = $this->servers->findDefaultByTenant($tenantId, 'plex');
+        $jelly = $this->servers->findDefaultByTenant($tenantId, 'jellyfin');
+        $preferred = $this->servers->preferredDefaultForForms($tenantId);
+
+        return [
             'servers' => $this->servers->allByTenant($tenantId),
-            'periods' => SubscriptionPeriod::options(),
-        ]);
+            'preferredServerId' => $preferred?->id ? (int) $preferred->id : null,
+            'defaultPlexServerId' => $plex?->id ? (int) $plex->id : null,
+            'defaultJellyfinServerId' => $jelly?->id ? (int) $jelly->id : null,
+        ];
     }
 
     public function bulkStore(Request $request): Response
