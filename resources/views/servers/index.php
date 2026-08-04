@@ -37,12 +37,13 @@
                 <?php foreach ($servers as $server): ?>
                 <tr>
                     <td>
+                        <?php $isDefault = $server->isDefault(); ?>
                         <button type="button"
-                                class="btn btn-link btn-sm p-0 me-1 align-middle btn-default-star <?= !empty($server->is_default) ? 'is-default' : '' ?>"
+                                class="btn btn-link btn-sm p-0 me-1 align-middle btn-default-star <?= $isDefault ? 'is-default' : '' ?>"
                                 data-uuid="<?= e($server->uuid) ?>"
                                 data-type="<?= e($server->type) ?>"
-                                title="<?= !empty($server->is_default) ? 'Servidor ' . strtoupper($server->type) . ' por defecto' : 'Marcar como predeterminado ' . strtoupper($server->type) ?>">
-                            <i class="bi bi-star<?= !empty($server->is_default) ? '-fill text-warning' : ' text-muted' ?>"></i>
+                                title="<?= $isDefault ? 'Servidor ' . strtoupper($server->type) . ' por defecto' : 'Marcar como predeterminado ' . strtoupper($server->type) ?>">
+                            <i class="bi bi-star<?= $isDefault ? '-fill text-warning' : ' text-muted' ?>"></i>
                         </button>
                         <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium align-middle"><?= e($server->name) ?></a>
                         <div class="small text-muted d-md-none"><?= e($server->displayHost()) ?>:<?= (int) $server->port ?></div>

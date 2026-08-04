@@ -43,6 +43,21 @@ abstract class Model
         $this->attributes[$name] = $value;
     }
 
+    /**
+     * Required so empty()/isset()/?? work on magic attributes.
+     * Without this, empty($model->is_default) is always true even when the
+     * DB value is 1, because PHP never calls __get for empty()/isset().
+     */
+    public function __isset(string $name): bool
+    {
+        return array_key_exists($name, $this->attributes);
+    }
+
+    public function __unset(string $name): void
+    {
+        unset($this->attributes[$name]);
+    }
+
     public function toArray(): array
     {
         return $this->attributes;

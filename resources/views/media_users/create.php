@@ -32,7 +32,7 @@ ob_start();
                         <option value="<?= (int) $server->id ?>"
                                 data-type="<?= e($server->type) ?>"
                                 <?= ($preferredServerId > 0 && (int) $server->id === $preferredServerId) ? 'selected' : '' ?>>
-                            <?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)<?= !empty($server->is_default) ? ' ★ predeterminado' : '' ?>
+                            <?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)<?= $server->isDefault() ? ' ★ predeterminado' : '' ?>
                         </option>
                         <?php endforeach; ?>
                     </select>

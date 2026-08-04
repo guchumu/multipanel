@@ -59,4 +59,9 @@ class Server extends Model
     {
         return $this->type === 'jellyfin';
     }
+
+    public function isDefault(): bool
+    {
+        return (int) $this->is_default === 1;
+    }
 }
