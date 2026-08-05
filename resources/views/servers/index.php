@@ -97,6 +97,91 @@
 </div>
 
 <?php
+/** @var array{groups?: array, linked_count?: int, total_libraries?: int} $linkedLibraries */
+$linkedLibraries = $linkedLibraries ?? ['groups' => [], 'linked_count' => 0, 'total_libraries' => 0];
+$linkedGroups = $linkedLibraries['groups'] ?? [];
+$linkedCount = (int) ($linkedLibraries['linked_count'] ?? 0);
+?>
+<div class="card border-0 shadow-sm mt-4" id="linked-libraries">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+            <div>
+                <h6 class="mb-1"><i class="bi bi-link-45deg me-1"></i>Bibliotecas vinculadas</h6>
+                <p class="text-muted small mb-0">
+                    Se agrupan automáticamente por el mismo nombre (p. ej. «Películas», «Series») en distintos servidores.
+                    El escaneo pide a Plex/Jellyfin refrescar disco/metadatos; no cambia usuarios ni permisos.
+                </p>
+            </div>
+            <button type="button"
+                    class="btn btn-sm btn-primary btn-scan-linked-all"
+                    <?= $linkedCount < 1 ? 'disabled' : '' ?>
+                    title="Escanear todas las categorías que existen en 2+ servidores">
+                <i class="bi bi-disc me-1"></i>Escanear todas las categorías vinculadas
+            </button>
+        </div>
+
+        <?php if (empty($linkedGroups)): ?>
+        <p class="text-muted small mb-0">
+            No hay bibliotecas en el panel. Usa <strong>Forzar sincronización</strong> en cada servidor para importarlas.
+        </p>
+        <?php else: ?>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Categoría</th>
+                        <th>Tipo</th>
+                        <th>Servidores</th>
+                        <th class="text-center">Vinculada</th>
+                        <th class="text-end">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($linkedGroups as $group): ?>
+                    <tr>
+                        <td class="fw-medium"><?= e($group['name'] ?? '') ?></td>
+                        <td><span class="badge bg-secondary"><?= e($group['type'] ?? '-') ?></span></td>
+                        <td class="small">
+                            <?php
+                            $names = array_map(
+                                static fn (array $lib): string => (string) ($lib['server_name'] ?? ''),
+                                $group['libraries'] ?? []
+                            );
+                            echo e(implode(' · ', array_filter($names)));
+                            ?>
+                            <span class="text-muted">(<?= (int) ($group['server_count'] ?? 0) ?>)</span>
+                        </td>
+                        <td class="text-center">
+                            <?php if (!empty($group['linked'])): ?>
+                            <i class="bi bi-check-circle-fill text-success" title="Mismo nombre en varios servidores"></i>
+                            <?php else: ?>
+                            <i class="bi bi-dash-circle text-muted" title="Solo en un servidor"></i>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-info btn-scan-linked-group"
+                                    data-group-key="<?= e($group['key'] ?? '') ?>"
+                                    data-group-name="<?= e($group['name'] ?? '') ?>"
+                                    title="Escanear «<?= e($group['name'] ?? '') ?>» en todos los servidores donde exista">
+                                <i class="bi bi-disc me-1"></i>Escanear en todos
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php if ($linkedCount < 1): ?>
+        <p class="small text-muted mt-3 mb-0">
+            Ninguna categoría aparece en más de un servidor todavía. Cuando el nombre coincida (sin distinguir mayúsculas), se marcará como vinculada.
+        </p>
+        <?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php
 $content = ob_get_clean();
 $scripts = <<<'JS'
 <script src="/assets/js/server-actions.js"></script>

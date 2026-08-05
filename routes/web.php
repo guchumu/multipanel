@@ -108,6 +108,9 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/servers/discover/plex', [ServerController::class, 'discoverPlex'], 'servers.discover.plex', [CsrfMiddleware::class]);
     $router->post('/servers/discover/jellyfin', [ServerController::class, 'discoverJellyfin'], 'servers.discover.jellyfin', [CsrfMiddleware::class]);
     $router->post('/servers', [ServerController::class, 'store'], 'servers.store', [CsrfMiddleware::class]);
+    // Bibliotecas vinculadas (mismo nombre entre servidores) — antes de {uuid}
+    $router->post('/servers/libraries/linked/scan', [ServerController::class, 'scanLinkedLibraries'], 'servers.libraries.linked_scan', [CsrfMiddleware::class]);
+    $router->post('/servers/libraries/linked/scan/{groupKey}', [ServerController::class, 'scanLinkedLibraryGroup'], 'servers.libraries.linked_scan_group', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}/edit', [ServerController::class, 'edit'], 'servers.edit');
     $router->put('/servers/{uuid}', [ServerController::class, 'update'], 'servers.update', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');

@@ -165,6 +165,61 @@
         });
     });
 
+    document.querySelectorAll('.btn-scan-linked-all').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const buttons = document.querySelectorAll('.btn-scan-linked-all, .btn-scan-linked-group');
+            buttons.forEach(b => setBusy(b, true, 'Escaneando…'));
+            showStatus('Iniciando escaneo de todas las categorías vinculadas en todos los servidores…', 'info');
+            try {
+                const data = await postJson('/servers/libraries/linked/scan');
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al escanear categorías vinculadas.'), 'danger');
+                    buttons.forEach(b => setBusy(b, false));
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Escaneo iniciado en las categorías vinculadas.', 'Error al escanear.'),
+                    'success'
+                );
+                buttons.forEach(b => setBusy(b, false));
+            } catch (e) {
+                showStatus('Error de red al escanear categorías vinculadas.', 'danger');
+                buttons.forEach(b => setBusy(b, false));
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-scan-linked-group').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const groupKey = this.dataset.groupKey;
+            const groupName = this.dataset.groupName || 'categoría';
+            if (!groupKey) {
+                showStatus('Categoría no válida.', 'danger');
+                return;
+            }
+            setBusy(this, true, 'Escaneando…');
+            showStatus(`Iniciando escaneo de «${groupName}» en todos los servidores…`, 'info');
+            try {
+                const data = await postJson(
+                    `/servers/libraries/linked/scan/${encodeURIComponent(groupKey)}`
+                );
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al iniciar el escaneo.'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Escaneo iniciado en todos los servidores.', 'Error al escanear.'),
+                    'success'
+                );
+                setBusy(this, false);
+            } catch (e) {
+                showStatus('Error de red al iniciar el escaneo vinculado.', 'danger');
+                setBusy(this, false);
+            }
+        });
+    });
+
     document.querySelectorAll('.btn-test').forEach(btn => {
         btn.addEventListener('click', async function () {
             const uuid = this.dataset.uuid;

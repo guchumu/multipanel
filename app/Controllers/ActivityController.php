@@ -11,6 +11,7 @@ use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
 use App\Services\PlaybackStopMessageService;
+use App\Services\ServerLoadService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Request;
@@ -26,6 +27,7 @@ class ActivityController extends Controller
         private StreamingActivityService $activity = new StreamingActivityService(),
         private ServerRepository $servers = new ServerRepository(),
         private PlaybackStopMessageService $stopMessages = new PlaybackStopMessageService(),
+        private ServerLoadService $load = new ServerLoadService(),
     ) {
     }
 
@@ -57,6 +59,8 @@ class ActivityController extends Controller
         \Core\Session::getInstance()->close();
 
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
+        // Overview reutiliza el mismo snapshot cacheado (TTL 15s).
+        $overview = $this->load->getActivityOverview($tenantId);
 
         return $this->json([
             'sessions' => $snapshot['sessions'],
@@ -64,6 +68,13 @@ class ActivityController extends Controller
             'server_stats' => $snapshot['server_stats'],
             'count' => $snapshot['filtered_count'],
             'total_count' => $snapshot['total_count'],
+            'summary' => [
+                'total_streams' => $overview['total_streams'],
+                'total_transcodes' => $overview['total_transcodes'],
+                'total_direct_play' => $overview['total_direct_play'],
+                'total_direct_stream' => $overview['total_direct_stream'],
+                'by_server' => $overview['by_server'],
+            ],
         ]);
     }
 

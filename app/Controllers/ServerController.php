@@ -11,6 +11,7 @@ use App\Services\AuditService;
 use App\Services\Media\MediaDiscoveryService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\ServerEndpoint;
+use App\Services\LinkedLibraryService;
 use App\Services\ServerConnectionDebugService;
 use App\Services\ServerLoadService;
 use App\Services\ServerSyncService;
@@ -33,6 +34,7 @@ class ServerController extends Controller
         private MediaDiscoveryService $discovery = new MediaDiscoveryService(),
         private ServerConnectionDebugService $connectionDebug = new ServerConnectionDebugService(),
         private ServerLoadService $load = new ServerLoadService(),
+        private LinkedLibraryService $linkedLibraries = new LinkedLibraryService(),
     ) {
     }
 
@@ -44,6 +46,7 @@ class ServerController extends Controller
             'title' => 'Servidores',
             'servers' => $this->servers->allByTenant($tenantId),
             'load' => $this->load->getTenantLoad($tenantId),
+            'linkedLibraries' => $this->linkedLibraries->getGroupedLibraries($tenantId),
         ]);
     }
 
@@ -480,6 +483,32 @@ class ServerController extends Controller
                 'message' => 'Error al iniciar el escaneo: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Escanea todas las categorías vinculadas (mismo nombre en ≥2 servidores).
+     */
+    public function scanLinkedLibraries(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        \Core\Session::getInstance()->close();
+
+        $result = $this->linkedLibraries->scanGroup($tenantId, 'all');
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    /**
+     * Escanea una categoría vinculada en todos los servidores donde exista.
+     */
+    public function scanLinkedLibraryGroup(Request $request, string $groupKey): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        \Core\Session::getInstance()->close();
+
+        $result = $this->linkedLibraries->scanGroup($tenantId, $groupKey);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
     public function syncAll(Request $request): Response

@@ -65,6 +65,123 @@ ob_start();
     </div>
 </div>
 
+<?php
+$initialStreams = 0;
+foreach ($servers as $s) {
+    $initialStreams += (int) ($s->active_sessions ?? 0);
+}
+?>
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <button type="button"
+                class="card border-0 shadow-sm w-100 text-start btn p-0 overflow-hidden"
+                id="live-activity-card"
+                data-bs-toggle="modal"
+                data-bs-target="#liveActivityModal"
+                title="Ver reproducciones en curso">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="bg-danger bg-opacity-10 rounded p-2">
+                            <i class="bi bi-broadcast-pin text-danger fs-3"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small">Actividad en directo</p>
+                            <div class="d-flex flex-wrap align-items-baseline gap-3">
+                                <h3 class="mb-0">
+                                    <span id="dash-live-streams"><?= (int) $initialStreams ?></span>
+                                    <span class="fs-6 fw-normal text-muted">streams</span>
+                                </h3>
+                                <h3 class="mb-0">
+                                    <span id="dash-live-transcodes">—</span>
+                                    <span class="fs-6 fw-normal text-muted">transcodes</span>
+                                </h3>
+                            </div>
+                            <small class="text-muted" id="dash-live-hint">Clic para ver detalle por servidor · actualiza cada 20s</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary" id="dash-live-refresh">…</span>
+                        <span class="text-primary small fw-medium">Ver en vivo <i class="bi bi-chevron-right"></i></span>
+                    </div>
+                </div>
+            </div>
+        </button>
+    </div>
+</div>
+
+<div class="modal fade" id="liveActivityModal" tabindex="-1" aria-labelledby="liveActivityModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="liveActivityModalLabel">
+                        <i class="bi bi-broadcast-pin me-1 text-danger"></i>Reproducciones en curso
+                    </h5>
+                    <small class="text-muted" id="live-modal-updated">Actualizando…</small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3" id="live-modal-summary">
+                    <div class="col-6 col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="small text-muted">Streams online</div>
+                            <div class="fs-4 fw-semibold" id="live-modal-streams">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="small text-muted">Transcodes</div>
+                            <div class="fs-4 fw-semibold text-warning" id="live-modal-transcodes">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="small text-muted">Direct Play</div>
+                            <div class="fs-4 fw-semibold text-success" id="live-modal-direct">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="border rounded p-3 h-100">
+                            <div class="small text-muted">Direct Stream</div>
+                            <div class="fs-4 fw-semibold text-info" id="live-modal-dstream">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="mb-2">Por servidor</h6>
+                <div class="table-responsive mb-4">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Servidor</th>
+                                <th>Tipo</th>
+                                <th class="text-end">Streams</th>
+                                <th class="text-end">Transcodes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="live-modal-servers">
+                            <tr><td colspan="4" class="text-muted text-center py-3">Cargando…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h6 class="mb-2">Reproducciones actuales</h6>
+                <div id="live-modal-sessions" class="list-group list-group-flush border rounded">
+                    <div class="list-group-item text-muted text-center py-3">Cargando…</div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <small class="text-muted">Datos del snapshot en vivo (mismo que En directo)</small>
+                <a href="/activity" class="btn btn-primary btn-sm">
+                    <i class="bi bi-broadcast-pin me-1"></i>Ir a En directo
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row g-4">
     <div class="col-lg-8">
         <div class="card border-0 shadow-sm">
@@ -245,6 +362,134 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (err) {
         console.error('Error al conectar realtime:', err);
     }
+
+    // Tarjeta / modal de actividad en directo (reutiliza /activity/api + summary)
+    (function initLiveActivityCard() {
+        const playLabels = { direct_play: 'Direct Play', direct_stream: 'Direct Stream', transcode: 'Transcode' };
+        const playBadges = { direct_play: 'success', direct_stream: 'info', transcode: 'warning' };
+        const REFRESH_MS = 20000;
+        let timer = null;
+        let lastPayload = null;
+
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function renderSummary(summary, sessions) {
+            const streams = summary?.total_streams ?? sessions?.length ?? 0;
+            const transcodes = summary?.total_transcodes ?? 0;
+            setText('dash-live-streams', String(streams));
+            setText('dash-live-transcodes', String(transcodes));
+            setText('live-modal-streams', String(streams));
+            setText('live-modal-transcodes', String(transcodes));
+            setText('live-modal-direct', String(summary?.total_direct_play ?? 0));
+            setText('live-modal-dstream', String(summary?.total_direct_stream ?? 0));
+
+            const tbody = document.getElementById('live-modal-servers');
+            const byServer = Array.isArray(summary?.by_server) ? summary.by_server : [];
+            if (tbody) {
+                if (byServer.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">Sin servidores</td></tr>';
+                } else {
+                    tbody.innerHTML = byServer.map(s => `
+                        <tr>
+                            <td class="fw-medium">${esc(s.server_name)}</td>
+                            <td><span class="badge bg-secondary">${esc(String(s.server_type || '').toUpperCase())}</span></td>
+                            <td class="text-end">${Number(s.sessions) || 0}</td>
+                            <td class="text-end">
+                                ${Number(s.transcode) > 0
+                                    ? `<span class="badge bg-warning text-dark">${Number(s.transcode)}</span>`
+                                    : '0'}
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            }
+
+            const list = document.getElementById('live-modal-sessions');
+            if (list) {
+                const rows = Array.isArray(sessions) ? sessions : [];
+                if (rows.length === 0) {
+                    list.innerHTML = '<div class="list-group-item text-muted text-center py-3">No hay reproducciones activas</div>';
+                } else {
+                    list.innerHTML = rows.slice(0, 40).map(s => {
+                        const method = s.play_method || 'direct_play';
+                        const badge = playBadges[method] || 'secondary';
+                        const label = playLabels[method] || method;
+                        const title = s.title || 'Sin título';
+                        const sub = s.subtitle || '';
+                        const user = s.user || '—';
+                        const server = s.server_name || '—';
+                        const thumb = s.thumb_url
+                            ? `<img src="${esc(s.thumb_url)}" alt="" class="rounded me-2" width="40" height="60" style="object-fit:cover" loading="lazy">`
+                            : `<div class="bg-secondary bg-opacity-25 rounded me-2 d-inline-flex align-items-center justify-content-center" style="width:40px;height:60px"><i class="bi bi-film text-muted"></i></div>`;
+                        return `
+                            <div class="list-group-item d-flex align-items-start gap-2 py-2">
+                                ${thumb}
+                                <div class="flex-grow-1 min-w-0">
+                                    <div class="fw-medium text-truncate">${esc(title)}</div>
+                                    ${sub ? `<div class="small text-muted text-truncate">${esc(sub)}</div>` : ''}
+                                    <div class="small text-muted text-truncate">
+                                        ${esc(user)} · ${esc(server)}
+                                        <span class="badge bg-${badge} ms-1">${esc(label)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            const now = new Date();
+            const stamp = now.toLocaleTimeString();
+            setText('dash-live-refresh', stamp);
+            setText('live-modal-updated', 'Actualizado a las ' + stamp);
+            setText('dash-live-hint', streams === 1
+                ? '1 reproducción activa · clic para detalle'
+                : `${streams} reproducciones activas · clic para detalle`);
+        }
+
+        async function refresh() {
+            try {
+                const res = await fetch('/activity/api', {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' },
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                lastPayload = data;
+                renderSummary(data.summary || null, data.sessions || []);
+            } catch (err) {
+                console.warn('No se pudo actualizar actividad en directo:', err);
+                setText('dash-live-refresh', 'error');
+                setText('live-modal-updated', 'Error al actualizar');
+            }
+        }
+
+        refresh();
+        timer = setInterval(refresh, REFRESH_MS);
+
+        const modal = document.getElementById('liveActivityModal');
+        if (modal) {
+            modal.addEventListener('shown.bs.modal', () => {
+                if (lastPayload) {
+                    renderSummary(lastPayload.summary || null, lastPayload.sessions || []);
+                }
+                refresh();
+            });
+        }
+
+        window.addEventListener('beforeunload', () => {
+            if (timer) clearInterval(timer);
+        });
+    })();
 });
 </script>
 JS;
