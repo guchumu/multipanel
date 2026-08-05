@@ -16,6 +16,7 @@ use App\Services\StreamingActivityService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserDedupeService;
 use App\Services\IptvCleanupService;
+use App\Services\MediaUserWipeService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
@@ -52,8 +53,53 @@ class MediaUserController extends Controller
         private StreamingActivityService $streaming = new StreamingActivityService(),
         private MediaUserDedupeService $dedupe = new MediaUserDedupeService(),
         private IptvCleanupService $iptvCleanup = new IptvCleanupService(),
+        private MediaUserWipeService $wipe = new MediaUserWipeService(),
         private ServerSyncService $serverSync = new ServerSyncService(),
     ) {
+    }
+
+    /** Hub: borrar todos → sync servidores → importar fechas (servicio 1/5). */
+    public function cleanupHub(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $activeCount = 0;
+        try {
+            $row = \Core\Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS c FROM media_users WHERE tenant_id = ? AND deleted_at IS NULL',
+                [$tenantId]
+            );
+            $activeCount = (int) ($row['c'] ?? 0);
+        } catch (\Throwable) {
+            $activeCount = 0;
+        }
+
+        return $this->view('media_users.limpieza', [
+            'title' => 'Limpieza / reinicio usuarios',
+            'servers' => $this->servers->allByTenant($tenantId),
+            'activeCount' => $activeCount,
+            'confirmPhrase' => MediaUserWipeService::CONFIRM_PHRASE,
+            'servicioLabels' => config('import_servicio.labels', [1 => 'Servitron', 5 => 'NucBox']),
+            'servicioMap' => config('import_servicio.map', []),
+        ]);
+    }
+
+    public function wipeAll(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $confirm = trim((string) $request->input('confirm', ''));
+        $result = $this->wipe->softDeleteAll($tenantId, $confirm);
+
+        if (!$result['ok']) {
+            Session::getInstance()->flash('error', implode(' ', $result['errors']));
+            return $this->redirect('/media-users/limpieza');
+        }
+
+        Session::getInstance()->flash('success', sprintf(
+            'Soft-delete de %d usuarios media en el panel. No se borró nadie en Plex/Jellyfin. Siguiente paso: Forzar sincronización.',
+            $result['deleted']
+        ));
+
+        return $this->redirect('/media-users/limpieza');
     }
 
     public function activity(Request $request): Response

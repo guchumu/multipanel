@@ -125,6 +125,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
+    $router->get('/media-users/limpieza', [MediaUserController::class, 'cleanupHub'], 'media_users.limpieza');
+    $router->post('/media-users/limpieza/wipe', [MediaUserController::class, 'wipeAll'], 'media_users.wipe_all', [CsrfMiddleware::class]);
     $router->get('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptv'], 'media_users.cleanup_iptv');
     $router->post('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptvApply'], 'media_users.cleanup_iptv.apply', [CsrfMiddleware::class]);
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');

@@ -10,16 +10,32 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
 <div class="alert alert-danger"><pre class="mb-0 small"><?= e($importErrors) ?></pre></div>
 <?php endif; ?>
 
+<div class="alert alert-secondary small">
+    <strong>Filtro servicio:</strong> del SQL/CSV solo se aplican filas con
+    <code>servicio</code> / <code>service</code> <strong>1</strong> (Servitron) o <strong>5</strong> (NucBox).
+    El resto (IPTV u otros packs) se ignora. Si la fila no trae esa columna, se infiere por
+    <code>payments_history.service</code> o por el nombre del servidor legacy (Servitron/Nucbox).
+    Flujo limpio: <a href="/media-users/limpieza">Usuarios → Limpieza / reinicio</a>
+    (borrar todos → sync → importar fechas).
+</div>
+
 <div class="row g-4">
     <div class="col-md-6">
         <div class="card border-0 shadow-sm border-primary mb-3">
             <div class="card-body">
                 <h6><i class="bi bi-database-down me-1"></i>Migrar desde plex_manager</h6>
-                <p class="text-muted small mb-2">Sube tu exportación <code>plex_manager.sql</code> (phpMyAdmin). Importa servidores, usuarios, fechas, Telegram y clientes CRM.</p>
+                <p class="text-muted small mb-2">Sube tu exportación <code>plex_manager.sql</code> (phpMyAdmin). Importa servidores, usuarios (solo servicio 1/5), fechas, Telegram y clientes CRM.</p>
                 <div class="alert alert-warning py-2 small">El SQL puede contener tokens/contraseñas en texto claro. No lo subas a repositorios públicos. Tras migrar, rota credenciales si el archivo estuvo expuesto.</div>
                 <form method="POST" action="/import" enctype="multipart/form-data">
                     <?= csrf_field() ?>
                     <input type="hidden" name="type" value="plex_manager">
+                    <div class="mb-3">
+                        <label class="form-label small">Modo</label>
+                        <select name="mode" class="form-select form-select-sm">
+                            <option value="full">Completo (servidores + usuarios filtrados)</option>
+                            <option value="overlay" selected>Solo fechas/datos sobre usuarios ya sincronizados (recomendado tras wipe+sync)</option>
+                        </select>
+                    </div>
                     <div class="mb-3"><input type="file" name="file" class="form-control" accept=".sql,.txt" required></div>
                     <button class="btn btn-primary">Importar plex_manager.sql</button>
                 </form>
@@ -29,7 +45,7 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6>Importar CSV / JSON</h6>
-                <p class="text-muted small">Columnas CSV: username, email, telegram_chat_id, expires_at, status, notes...</p>
+                <p class="text-muted small">Columnas CSV: username, email, telegram_chat_id, expires_at, status, notes, servicio (opcional: solo 1 o 5)…</p>
                 <form method="POST" action="/import" enctype="multipart/form-data">
                     <?= csrf_field() ?>
                     <div class="mb-3">
@@ -50,12 +66,12 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
             <div class="card-body">
                 <h6>Qué se importa del SQL</h6>
                 <ul class="small text-muted mb-3">
-                    <li><strong>servers</strong> → Servidores Plex (URL, token, machine_id)</li>
-                    <li><strong>users</strong> → Usuarios media + clientes CRM</li>
+                    <li><strong>servers</strong> → Servidores Plex (URL, token, machine_id) — solo modo completo</li>
+                    <li><strong>users</strong> → Usuarios media + clientes CRM (filtrados por servicio 1/5)</li>
+                    <li><strong>servicio / service / payments_history</strong> → 1=Servitron, 5=NucBox</li>
                     <li><strong>end_date</strong> → Fecha expiración</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
                     <li><strong>telegram_chat_id / telegram_id</strong> → Chat ID Telegram del usuario media (<code>media_users.telegram_chat_id</code>)</li>
-                    <li><strong>telegram_id</strong> → Fallback si no hay chat ID (también en metadata CRM)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>
                 <h6>Exportar</h6>

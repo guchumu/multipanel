@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\MediaUser;
+use App\Services\Import\ServicioServerMapper;
 use App\Services\PasswordService;
 use Core\Database;
 use Core\Logger;
@@ -51,6 +52,10 @@ final class ImportService
             $data = array_combine($headers, $row);
             if (!$data || empty($data['username'])) {
                 $errors[] = "Línea {$line}: username requerido";
+                continue;
+            }
+
+            if (!$this->passesServicioFilter($data)) {
                 continue;
             }
 
@@ -113,8 +118,12 @@ final class ImportService
         $errors = [];
 
         foreach ($rows as $i => $data) {
-            if (empty($data['username'])) {
+            if (!is_array($data) || empty($data['username'])) {
                 $errors[] = "Registro {$i}: username requerido";
+                continue;
+            }
+
+            if (!$this->passesServicioFilter($data)) {
                 continue;
             }
 
@@ -141,5 +150,24 @@ final class ImportService
         }
 
         return ['imported' => $imported, 'errors' => $errors];
+    }
+
+    /**
+     * Si la fila trae columna servicio/service, solo se aceptan códigos 1 y 5.
+     * Sin esa columna se importa (CSV genérico).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function passesServicioFilter(array $data): bool
+    {
+        $raw = $data['servicio'] ?? $data['service'] ?? null;
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+        if (!is_numeric($raw)) {
+            return false;
+        }
+
+        return ServicioServerMapper::isAllowed((int) $raw);
     }
 }

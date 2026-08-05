@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\Server;
+use App\Services\Import\ServicioServerMapper;
 use App\Services\Import\SqlInsertParser;
 use Core\Database;
 use Core\Logger;
@@ -12,24 +13,44 @@ use Ramsey\Uuid\Uuid;
 
 /**
  * One-time migration from legacy plex_manager SQL dumps (phpMyAdmin).
+ *
+ * Solo se aplican filas con servicio IN (1, 5) — ver config/import_servicio.php.
+ * 1 = Servitron, 5 = NucBox. El resto (IPTV u otros packs) se ignora.
  */
 final class PlexManagerImportService
 {
+    /** Importa/crea usuarios + CRM (filtrado por servicio 1/5). */
+    public const MODE_FULL = 'full';
+
+    /** Solo actualiza fechas/Telegram/email sobre media_users ya existentes (tras wipe+sync). */
+    public const MODE_OVERLAY = 'overlay';
+
     public function __construct(
         private AuditService $audit = new AuditService(),
         private ServerSyncService $sync = new ServerSyncService(),
+        private ServicioServerMapper $servicioMapper = new ServicioServerMapper(),
     ) {
     }
 
-    /** @return array{servers: int, users: int, customers: int, subscriptions: int, libraries: int, skipped: int, parsed: array{servers: int, users: int}, sync: array<int, array{name: string, ok: bool, error: ?string}>, errors: array<int, string>, telegram_backfilled?: int} */
-    public function importFromSqlFile(string $filePath, int $tenantId): array
+    /**
+     * @return array{
+     *   servers: int, users: int, customers: int, subscriptions: int, libraries: int, skipped: int,
+     *   skipped_servicio: int, matched: int, updated: int, mode: string,
+     *   parsed: array{servers: int, users: int},
+     *   sync: array<int, array{name: string, ok: bool, error: ?string}>,
+     *   errors: array<int, string>, telegram_backfilled?: int, probe?: array<string, mixed>
+     * }
+     */
+    public function importFromSqlFile(string $filePath, int $tenantId, string $mode = self::MODE_FULL): array
     {
         @ini_set('memory_limit', '512M');
         @set_time_limit(300);
 
+        $mode = $mode === self::MODE_OVERLAY ? self::MODE_OVERLAY : self::MODE_FULL;
+
         $sql = file_get_contents($filePath);
         if ($sql === false || $sql === '') {
-            return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.'], SqlInsertParser::probe(''));
+            return $this->result(0, 0, 0, 0, 0, ['servers' => 0, 'users' => 0], ['No se pudo leer el archivo SQL.'], SqlInsertParser::probe(''), 0, [], 0, 0, 0, 0, $mode);
         }
 
         $probe = SqlInsertParser::probe($sql);
@@ -37,17 +58,30 @@ final class PlexManagerImportService
         $this->ensureImportSchema();
         $errors = [];
         $serverMap = [];
+        $legacyServerNames = [];
 
         $legacyServers = SqlInsertParser::extractTable($sql, 'servers');
         $legacyUsers = SqlInsertParser::extractTable($sql, 'users');
         $parseStats = ['servers' => count($legacyServers), 'users' => count($legacyUsers)];
         $serversImported = 0;
+        $paymentByEmail = ServicioServerMapper::paymentServicioByEmail($sql);
 
         foreach ($legacyServers as $legacy) {
+            $legacyId = (int) ($legacy['id'] ?? 0);
+            $legacyName = (string) ($legacy['server_name'] ?? 'Plex');
+            if ($legacyId > 0) {
+                $legacyServerNames[$legacyId] = $legacyName;
+            }
+
+            // En modo overlay no creamos/actualizamos servidores: solo metadata sobre usuarios sync.
+            if ($mode === self::MODE_OVERLAY) {
+                continue;
+            }
+
             try {
                 $parsed = $this->parseServerEndpoint((string) ($legacy['public_ip'] ?? ''));
                 if ($parsed === null) {
-                    $errors[] = 'Servidor ' . ($legacy['server_name'] ?? '?') . ': URL pública inválida (' . ($legacy['public_ip'] ?? 'vacía') . ')';
+                    $errors[] = 'Servidor ' . $legacyName . ': URL pública inválida (' . ($legacy['public_ip'] ?? 'vacía') . ')';
                     continue;
                 }
 
@@ -60,9 +94,9 @@ final class PlexManagerImportService
 
                 if ($existing) {
                     $serverId = (int) $existing['id'];
-                    $serverMap[(int) $legacy['id']] = $serverId;
+                    $serverMap[$legacyId] = $serverId;
                     $db->update('servers', [
-                        'name' => (string) ($legacy['server_name'] ?? 'Plex'),
+                        'name' => $legacyName,
                         'url' => $parsed['host'],
                         'port' => $parsed['port'],
                         'ssl' => $parsed['ssl'] ? 1 : 0,
@@ -75,8 +109,8 @@ final class PlexManagerImportService
                 $server = new Server([
                     'tenant_id' => $tenantId,
                     'uuid' => Uuid::uuid4()->toString(),
-                    'name' => (string) ($legacy['server_name'] ?? 'Plex'),
-                    'description' => 'Importado desde plex_manager (ID ' . $legacy['id'] . ')',
+                    'name' => $legacyName,
+                    'description' => 'Importado desde plex_manager (ID ' . ($legacy['id'] ?? '?') . ')',
                     'type' => 'plex',
                     'url' => $parsed['host'],
                     'port' => $parsed['port'],
@@ -87,20 +121,26 @@ final class PlexManagerImportService
                 ]);
                 $server->save();
 
-                $serverMap[(int) $legacy['id']] = (int) $server->id;
+                $serverMap[$legacyId] = (int) $server->id;
                 $serversImported++;
             } catch (\Throwable $e) {
                 $errors[] = 'Servidor: ' . $e->getMessage();
             }
         }
 
-        $librariesImported = $this->importLibraries($sql, $serverMap);
+        $librariesImported = $mode === self::MODE_FULL ? $this->importLibraries($sql, $serverMap) : 0;
 
-        $planId = $this->ensureLegacyPlan($tenantId);
+        $planId = $mode === self::MODE_FULL ? $this->ensureLegacyPlan($tenantId) : 0;
         $usersImported = 0;
         $customersImported = 0;
         $subscriptionsImported = 0;
         $skipped = 0;
+        $skippedServicio = 0;
+        $matched = 0;
+        $updated = 0;
+
+        /** @var array<int, array{server_id: ?int, server_name: ?string}> */
+        $servicioServerCache = [];
 
         foreach ($legacyUsers as $legacy) {
             try {
@@ -110,8 +150,35 @@ final class PlexManagerImportService
                     continue;
                 }
 
+                $servicio = ServicioServerMapper::resolveRowServicio($legacy, $paymentByEmail, $legacyServerNames);
+                if (!ServicioServerMapper::isAllowed($servicio)) {
+                    $skippedServicio++;
+                    continue;
+                }
+
+                if (!isset($servicioServerCache[$servicio])) {
+                    $servicioServerCache[$servicio] = $this->servicioMapper->resolveTenantServer($tenantId, $servicio);
+                }
+                $mapped = $servicioServerCache[$servicio];
+                $mappedServerId = $mapped['server_id'] ?? null;
+
                 $legacyServerId = (int) ($legacy['server_id'] ?? 0);
-                $serverId = $serverMap[$legacyServerId] ?? null;
+                $fallbackServerId = $serverMap[$legacyServerId] ?? null;
+                $serverId = $mappedServerId ?? $fallbackServerId;
+
+                if ($serverId === null) {
+                    $errors[] = sprintf(
+                        'Usuario %s: no hay servidor MultiPanel para servicio %d (%s). Revisa el nombre (needles: %s) o IMPORT_SERVICIO_%d_SERVERS.',
+                        $email,
+                        $servicio,
+                        ServicioServerMapper::label($servicio),
+                        implode(', ', ServicioServerMapper::nameNeedlesByServicio()[$servicio] ?? []),
+                        $servicio
+                    );
+                    $skipped++;
+                    continue;
+                }
+
                 $username = trim((string) ($legacy['plex_username'] ?? ''));
                 if ($username === '') {
                     $username = strstr($email, '@', true) ?: $email;
@@ -123,10 +190,27 @@ final class PlexManagerImportService
                 $startsAt = $this->dateToDatetime($legacy['start_date'] ?? null, '00:00:00');
                 $telegramChatId = $this->resolveTelegramChatId($legacy);
 
-                $existing = $db->fetchOne(
-                    'SELECT id FROM media_users WHERE tenant_id = ? AND email = ? AND (server_id = ? OR server_id IS NULL) AND deleted_at IS NULL LIMIT 1',
-                    [$tenantId, $email, $serverId]
-                );
+                $existing = $this->findMediaUserForImport($tenantId, $email, $username, (int) $serverId);
+
+                if ($mode === self::MODE_OVERLAY) {
+                    if ($existing === null) {
+                        $skipped++;
+                        continue;
+                    }
+                    $matched++;
+                    $payload = array_filter([
+                        'expires_at' => $expiresAt,
+                        'telegram_chat_id' => $telegramChatId,
+                        'notes' => $legacy['private_notes'] ?? null,
+                        'email' => $email !== '' ? $email : null,
+                    ], static fn ($v) => $v !== null && $v !== '');
+                    if ($payload !== []) {
+                        $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
+                        $updated++;
+                    }
+                    $this->touchCustomerMetadata($tenantId, (int) $existing['id'], $email, $username, $legacy, $status);
+                    continue;
+                }
 
                 if ($existing) {
                     $db->update('media_users', array_filter([
@@ -139,6 +223,8 @@ final class PlexManagerImportService
                         'notes' => $legacy['private_notes'] ?? null,
                     ], fn ($v) => $v !== null), 'id = ?', [$existing['id']]);
                     $mediaUserId = (int) $existing['id'];
+                    $matched++;
+                    $updated++;
                     $skipped++;
                 } else {
                     $mediaUserId = (int) $db->insert('media_users', [
@@ -156,47 +242,20 @@ final class PlexManagerImportService
                         'metadata' => json_encode([
                             'legacy_id' => $legacy['id'] ?? null,
                             'email_type' => $legacy['email_type'] ?? null,
+                            'imported_from' => 'plex_manager',
+                            'servicio' => $servicio,
                         ], JSON_UNESCAPED_UNICODE),
                     ]);
                     $usersImported++;
                 }
 
-                $customer = $db->fetchOne(
-                    'SELECT id FROM customers WHERE tenant_id = ? AND email = ? LIMIT 1',
-                    [$tenantId, $email]
-                );
-
-                $metadata = [
-                    'telegram_id' => $legacy['telegram_id'] ?? null,
-                    'telegram_chat_id' => $legacy['telegram_chat_id'] ?? null,
-                    'legacy_plex_manager_id' => $legacy['id'] ?? null,
-                    'plex_user_id' => $legacy['plex_user_id'] ?? null,
-                    'email_type' => $legacy['email_type'] ?? null,
-                ];
-
-                if ($customer) {
-                    $db->update('customers', [
-                        'media_user_id' => $mediaUserId,
-                        'status' => $status === 'active' ? 'active' : 'inactive',
-                        'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
-                        'notes' => $legacy['private_notes'] ?? null,
-                    ], 'id = ?', [$customer['id']]);
-                    $customerId = (int) $customer['id'];
-                } else {
-                    $customerId = (int) $db->insert('customers', [
-                        'tenant_id' => $tenantId,
-                        'uuid' => Uuid::uuid4()->toString(),
-                        'media_user_id' => $mediaUserId,
-                        'email' => $email,
-                        'first_name' => $username,
-                        'status' => $status === 'active' ? 'active' : 'inactive',
-                        'notes' => $legacy['private_notes'] ?? null,
-                        'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
-                    ]);
+                $customerId = $this->upsertCustomer($tenantId, $mediaUserId, $email, $username, $legacy, $status);
+                if ($customerId < 0) {
                     $customersImported++;
+                    $customerId = abs($customerId);
                 }
 
-                if ($startsAt !== null) {
+                if ($startsAt !== null && $planId > 0) {
                     $sub = $db->fetchOne(
                         'SELECT id FROM subscriptions WHERE customer_id = ? AND media_user_id = ? LIMIT 1',
                         [$customerId, $mediaUserId]
@@ -213,7 +272,10 @@ final class PlexManagerImportService
                         'amount' => 0,
                         'starts_at' => $startsAt,
                         'ends_at' => $expiresAt,
-                        'metadata' => json_encode(['imported_from' => 'plex_manager'], JSON_UNESCAPED_UNICODE),
+                        'metadata' => json_encode([
+                            'imported_from' => 'plex_manager',
+                            'servicio' => $servicio,
+                        ], JSON_UNESCAPED_UNICODE),
                     ];
 
                     if ($sub) {
@@ -229,33 +291,153 @@ final class PlexManagerImportService
         }
 
         $syncResults = [];
-        foreach (array_unique(array_values($serverMap)) as $serverId) {
-            $this->sync->refreshDbCounts((int) $serverId);
-            $server = Server::find((int) $serverId);
-            if ($server === null) {
-                continue;
-            }
+        if ($mode === self::MODE_FULL) {
+            foreach (array_unique(array_values($serverMap)) as $serverId) {
+                $this->sync->refreshDbCounts((int) $serverId);
+                $server = Server::find((int) $serverId);
+                if ($server === null) {
+                    continue;
+                }
 
-            $ok = $this->sync->sync($server);
-            $syncResults[] = [
-                'name' => (string) $server->name,
-                'ok' => $ok,
-                'error' => $server->last_error,
-            ];
+                $ok = $this->sync->sync($server);
+                $syncResults[] = [
+                    'name' => (string) $server->name,
+                    'ok' => $ok,
+                    'error' => $server->last_error,
+                ];
+            }
         }
 
         $telegramBackfilled = $this->backfillTelegramChatIds($tenantId);
 
-        Logger::info('plex_manager SQL import', compact('serversImported', 'usersImported', 'customersImported', 'librariesImported', 'telegramBackfilled'));
+        Logger::info('plex_manager SQL import', compact(
+            'serversImported',
+            'usersImported',
+            'customersImported',
+            'librariesImported',
+            'telegramBackfilled',
+            'skippedServicio',
+            'matched',
+            'updated',
+            'mode'
+        ));
         $this->audit->log('import.plex_manager', 'import', null, null, [
             'servers' => $serversImported,
             'users' => $usersImported,
             'customers' => $customersImported,
             'libraries' => $librariesImported,
+            'skipped_servicio' => $skippedServicio,
+            'matched' => $matched,
+            'updated' => $updated,
+            'mode' => $mode,
             'sync' => $syncResults,
         ]);
 
-        return $this->result($serversImported, $usersImported, $customersImported, $subscriptionsImported, $skipped, $parseStats, $errors, $probe, $librariesImported, $syncResults, $telegramBackfilled);
+        return $this->result(
+            $serversImported,
+            $usersImported,
+            $customersImported,
+            $subscriptionsImported,
+            $skipped,
+            $parseStats,
+            $errors,
+            $probe,
+            $librariesImported,
+            $syncResults,
+            $telegramBackfilled,
+            $skippedServicio,
+            $matched,
+            $updated,
+            $mode
+        );
+    }
+
+    /**
+     * Importa solo fechas/Telegram/email sobre usuarios ya sincronizados (servicio 1 y 5).
+     *
+     * @return array<string, mixed>
+     */
+    public function applyMetadataFromSqlFile(string $filePath, int $tenantId): array
+    {
+        return $this->importFromSqlFile($filePath, $tenantId, self::MODE_OVERLAY);
+    }
+
+    /** @return array{id: int}|null */
+    private function findMediaUserForImport(int $tenantId, string $email, string $username, int $serverId): ?array
+    {
+        $db = Database::getInstance();
+
+        $byEmail = $db->fetchOne(
+            'SELECT id FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL AND server_id = ? AND LOWER(email) = LOWER(?)
+             ORDER BY id DESC LIMIT 1',
+            [$tenantId, $serverId, $email]
+        );
+        if ($byEmail) {
+            return $byEmail;
+        }
+
+        $byUsername = $db->fetchOne(
+            'SELECT id FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL AND server_id = ?
+               AND LOWER(username) = LOWER(?)
+             ORDER BY id DESC LIMIT 1',
+            [$tenantId, $serverId, $username]
+        );
+
+        return $byUsername ?: null;
+    }
+
+    /** @param array<string, mixed> $legacy */
+    private function touchCustomerMetadata(int $tenantId, int $mediaUserId, string $email, string $username, array $legacy, string $status): void
+    {
+        $this->upsertCustomer($tenantId, $mediaUserId, $email, $username, $legacy, $status);
+    }
+
+    /**
+     * @param array<string, mixed> $legacy
+     * @return int customer id; negative if newly created (abs = id)
+     */
+    private function upsertCustomer(int $tenantId, int $mediaUserId, string $email, string $username, array $legacy, string $status): int
+    {
+        $db = Database::getInstance();
+        $customer = $db->fetchOne(
+            'SELECT id FROM customers WHERE tenant_id = ? AND email = ? LIMIT 1',
+            [$tenantId, $email]
+        );
+
+        $metadata = [
+            'telegram_id' => $legacy['telegram_id'] ?? null,
+            'telegram_chat_id' => $legacy['telegram_chat_id'] ?? null,
+            'legacy_plex_manager_id' => $legacy['id'] ?? null,
+            'plex_user_id' => $legacy['plex_user_id'] ?? null,
+            'email_type' => $legacy['email_type'] ?? null,
+            'servicio' => $legacy['servicio'] ?? $legacy['service'] ?? null,
+        ];
+
+        if ($customer) {
+            $db->update('customers', [
+                'media_user_id' => $mediaUserId,
+                'status' => $status === 'active' ? 'active' : 'inactive',
+                'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
+                'notes' => $legacy['private_notes'] ?? null,
+            ], 'id = ?', [$customer['id']]);
+
+            return (int) $customer['id'];
+        }
+
+        $id = (int) $db->insert('customers', [
+            'tenant_id' => $tenantId,
+            'uuid' => Uuid::uuid4()->toString(),
+            'media_user_id' => $mediaUserId,
+            'email' => $email,
+            'first_name' => $username,
+            'status' => $status === 'active' ? 'active' : 'inactive',
+            'notes' => $legacy['private_notes'] ?? null,
+            'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
+        ]);
+
+        return -$id;
     }
 
     /** @param array<int, int> $serverMap */
@@ -456,9 +638,30 @@ final class PlexManagerImportService
         ]);
     }
 
-    /** @param array{servers: int, users: int} $parsed @param array<int, string> $errors @param array<string, mixed> $probe @param array<int, array{name: string, ok: bool, error: ?string}> $sync */
-    private function result(int $servers, int $users, int $customers, int $subscriptions, int $skipped, array $parsed, array $errors, array $probe = [], int $libraries = 0, array $sync = [], int $telegramBackfilled = 0): array
-    {
+    /**
+     * @param array{servers: int, users: int} $parsed
+     * @param array<int, string> $errors
+     * @param array<string, mixed> $probe
+     * @param array<int, array{name: string, ok: bool, error: ?string}> $sync
+     * @return array<string, mixed>
+     */
+    private function result(
+        int $servers,
+        int $users,
+        int $customers,
+        int $subscriptions,
+        int $skipped,
+        array $parsed,
+        array $errors,
+        array $probe = [],
+        int $libraries = 0,
+        array $sync = [],
+        int $telegramBackfilled = 0,
+        int $skippedServicio = 0,
+        int $matched = 0,
+        int $updated = 0,
+        string $mode = self::MODE_FULL,
+    ): array {
         return [
             'servers' => $servers,
             'users' => $users,
@@ -466,6 +669,10 @@ final class PlexManagerImportService
             'subscriptions' => $subscriptions,
             'libraries' => $libraries,
             'skipped' => $skipped,
+            'skipped_servicio' => $skippedServicio,
+            'matched' => $matched,
+            'updated' => $updated,
+            'mode' => $mode,
             'parsed' => $parsed,
             'probe' => $probe,
             'sync' => $sync,

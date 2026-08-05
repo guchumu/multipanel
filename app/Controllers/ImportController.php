@@ -68,7 +68,12 @@ class ImportController extends Controller
         $tmpPath = (string) $file['tmp_name'];
 
         if ($type === 'plex_manager') {
-            $result = $this->plexManager->importFromSqlFile($tmpPath, $tenantId);
+            $modeInput = (string) $request->input('mode', PlexManagerImportService::MODE_FULL);
+            $mode = $modeInput === PlexManagerImportService::MODE_OVERLAY
+                ? PlexManagerImportService::MODE_OVERLAY
+                : PlexManagerImportService::MODE_FULL;
+
+            $result = $this->plexManager->importFromSqlFile($tmpPath, $tenantId, $mode);
             $parsed = $result['parsed'] ?? ['servers' => 0, 'users' => 0];
             $probe = $result['probe'] ?? [];
 
@@ -97,17 +102,30 @@ class ImportController extends Controller
                 return $this->redirect('/import');
             }
 
-            $msg = sprintf(
-                'Migración plex_manager: leídas %d filas servers / %d users → importados %d servidores, %d usuarios, %d clientes, %d bibliotecas. Omitidos/actualizados: %d. Telegram rellenados: %d.',
-                $parsed['servers'],
-                $parsed['users'],
-                $result['servers'],
-                $result['users'],
-                $result['customers'],
-                $result['libraries'] ?? 0,
-                $result['skipped'],
-                $result['telegram_backfilled'] ?? 0
-            );
+            if ($mode === PlexManagerImportService::MODE_OVERLAY) {
+                $msg = sprintf(
+                    'Importar fechas/datos (solo servicio 1=Servitron, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d.',
+                    $parsed['users'],
+                    (int) ($result['matched'] ?? 0),
+                    (int) ($result['updated'] ?? 0),
+                    (int) ($result['skipped_servicio'] ?? 0),
+                    (int) ($result['skipped'] ?? 0),
+                    (int) ($result['telegram_backfilled'] ?? 0)
+                );
+            } else {
+                $msg = sprintf(
+                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Telegram rellenados: %d.',
+                    $parsed['servers'],
+                    $parsed['users'],
+                    $result['servers'],
+                    $result['users'],
+                    $result['customers'],
+                    $result['libraries'] ?? 0,
+                    (int) ($result['skipped_servicio'] ?? 0),
+                    $result['skipped'],
+                    $result['telegram_backfilled'] ?? 0
+                );
+            }
 
             foreach ($result['sync'] ?? [] as $sync) {
                 $msg .= sprintf(
@@ -117,7 +135,11 @@ class ImportController extends Controller
                 );
             }
 
-            if ($result['servers'] === 0 && $result['users'] === 0 && $result['skipped'] === 0) {
+            $noWork = $mode === PlexManagerImportService::MODE_OVERLAY
+                ? ((int) ($result['updated'] ?? 0) === 0 && (int) ($result['matched'] ?? 0) === 0)
+                : ($result['servers'] === 0 && $result['users'] === 0 && $result['skipped'] === 0 && (int) ($result['updated'] ?? 0) === 0);
+
+            if ($noWork && (int) ($result['skipped_servicio'] ?? 0) === 0) {
                 Session::getInstance()->flash('error', $msg . ' Revisa errores abajo.');
             } else {
                 Session::getInstance()->flash('success', $msg);
@@ -149,8 +171,8 @@ class ImportController extends Controller
     {
         header('Content-Type: text/csv');
         header('Content-Disposition: attachment; filename="media_users_template.csv"');
-        echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,telegram_chat_id,notes\n";
-        echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,2023182976,\n";
+        echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,telegram_chat_id,notes,servicio\n";
+        echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,2023182976,,1\n";
         exit;
     }
 

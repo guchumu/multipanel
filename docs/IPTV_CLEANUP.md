@@ -8,6 +8,8 @@ identificarlos y retirarlos de forma segura.
 
 - UI: **Usuarios Media → Limpieza IPTV** (`/media-users/cleanup-iptv`)
 - Servicio: `App\Services\IptvCleanupService`
+- Reinicio limpio (wipe → sync → import servicio 1/5): ver `docs/MEDIA_USERS_RESET.md`
+  (`/media-users/limpieza`)
 
 ## Heurística (score)
 

@@ -60,6 +60,7 @@ ob_start();
                 <i class="bi bi-arrow-repeat me-1"></i><span class="d-none d-xl-inline">Forzar sincronización</span><span class="d-xl-none">Sync</span>
             </button>
         </form>
+        <a href="/media-users/limpieza" class="btn btn-outline-danger btn-sm"><i class="bi bi-recycle me-1"></i><span class="d-none d-lg-inline">Limpieza</span></a>
         <a href="/media-users/cleanup-iptv" class="btn btn-outline-danger btn-sm"><i class="bi bi-funnel me-1"></i><span class="d-none d-lg-inline">Limpieza IPTV</span><span class="d-lg-none">IPTV</span></a>
         <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
         <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
