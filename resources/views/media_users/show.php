@@ -237,7 +237,14 @@ ob_start();
             <div class="card-body">
                 <div class="row g-3">
                     <?php foreach ($nowPlaying as $session): ?>
-                    <?php include base_path('resources/views/activity/_session_card.php'); ?>
+                    <?php
+                    // getSessionsForUser no pasa por ConcurrentStreamLimitService;
+                    // en la ficha ya conocemos el uuid del usuario.
+                    if (empty($session['media_user_uuid']) && !empty($mediaUser->uuid)) {
+                        $session['media_user_uuid'] = (string) $mediaUser->uuid;
+                    }
+                    include base_path('resources/views/activity/_session_card.php');
+                    ?>
                     <?php endforeach; ?>
                 </div>
             </div>

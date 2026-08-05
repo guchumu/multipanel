@@ -70,7 +70,7 @@
     });
 
     /**
-     * En directo: Quality/Stream/... compacto con ellipsis;
+     * En directo: Q/S/C/V/A/Sub compacto con ellipsis;
      * clic en el bloque (también tras polling) expande el texto completo.
      */
     function toggleSessionStreamInfo(info) {
@@ -87,7 +87,56 @@
         }
     }
 
+    function toggleSessionTitle(titleEl) {
+        if (!titleEl) return;
+        const expanded = titleEl.classList.toggle('expanded');
+        titleEl.classList.toggle('text-truncate', !expanded);
+        titleEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        const full = (titleEl.textContent || '').trim();
+        titleEl.setAttribute(
+            'title',
+            expanded
+                ? (full + ' — clic para compactar')
+                : (full + ' — clic para ver completo')
+        );
+    }
+
+    function focusKillMessageBox(card) {
+        if (!card) return;
+        const box = card.querySelector('.kill-message-box');
+        if (!box) return;
+        box.classList.remove('kill-message-box-focus');
+        // Re-trigger CSS animation
+        void box.offsetWidth;
+        box.classList.add('kill-message-box-focus');
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const textarea = box.querySelector('.kill-message-input');
+        if (textarea) {
+            textarea.focus({ preventScroll: true });
+            const len = textarea.value.length;
+            try {
+                textarea.setSelectionRange(len, len);
+            } catch (_) { /* ignore */ }
+        }
+        window.setTimeout(() => box.classList.remove('kill-message-box-focus'), 1600);
+    }
+
     document.addEventListener('click', function (e) {
+        const smsBtn = e.target.closest('.session-poster-sms');
+        if (smsBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            focusKillMessageBox(smsBtn.closest('.session-card'));
+            return;
+        }
+
+        const titleEl = e.target.closest('.session-title');
+        if (titleEl && !e.target.closest('a, button, input, select, textarea')) {
+            e.preventDefault();
+            toggleSessionTitle(titleEl);
+            return;
+        }
+
         const info = e.target.closest('.session-stream-info');
         if (!info) return;
         // No interferir con controles de detener/mensaje
@@ -99,6 +148,14 @@
 
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter' && e.key !== ' ') return;
+
+        const titleEl = e.target.closest('.session-title');
+        if (titleEl && e.target === titleEl) {
+            e.preventDefault();
+            toggleSessionTitle(titleEl);
+            return;
+        }
+
         const info = e.target.closest('.session-stream-info');
         if (!info || e.target !== info) return;
         e.preventDefault();

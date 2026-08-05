@@ -259,12 +259,18 @@ function onSessionThumbError(img) {
     img.src = thumbFallbackSrc;
 }
 
+function posterSmsBtnHtml(s) {
+    if (!s.can_kill || !s.session_id) return '';
+    return `<button type="button" class="session-poster-sms" title="Enviar mensaje / detener reproducción" aria-label="Enviar mensaje o detener reproducción"><i class="bi bi-x-lg" aria-hidden="true"></i></button>`;
+}
+
 function thumbHtml(s) {
     const url = sessionThumbUrl(s);
+    const sms = posterSmsBtnHtml(s);
     if (!url) {
-        return '<div class="session-poster-fallback"><i class="bi bi-film fs-1"></i></div>';
+        return `<div class="session-poster-fallback"><i class="bi bi-film fs-1"></i></div>\${sms}`;
     }
-    return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">`;
+    return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">\${sms}`;
 }
 
 function defaultStopBody() {
@@ -293,17 +299,18 @@ function killControlsHtml(s) {
 
 function streamInfoHtml(s) {
     const info = s.stream_info || {};
+    // Iniciales cortas; el title del <dt> conserva el nombre completo.
     const rows = [
-        ['Quality', info.quality],
-        ['Stream', info.stream],
-        ['Container', info.container],
-        ['Video', info.video || s.video_label || s.video_decision],
-        ['Audio', info.audio || s.audio_label || s.audio_decision],
-        ['Subtitle', info.subtitle || 'None'],
+        ['Q', 'Quality', info.quality],
+        ['S', 'Stream', info.stream],
+        ['C', 'Container', info.container],
+        ['V', 'Video', info.video || s.video_label || s.video_decision],
+        ['A', 'Audio', info.audio || s.audio_label || s.audio_decision],
+        ['Sub', 'Subtitle', info.subtitle || 'None'],
     ];
     const body = rows
-        .filter(([, v]) => String(v ?? '').trim() !== '')
-        .map(([k, v]) => `<div class="session-stream-row"><dt>\${escapeHtml(k)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
+        .filter(([, , v]) => String(v ?? '').trim() !== '')
+        .map(([short, full, v]) => `<div class="session-stream-row"><dt title="\${escapeHtml(full)}">\${escapeHtml(short)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
         .join('');
     return body
         ? `<dl class="session-stream-info small mb-2" role="button" tabindex="0" aria-expanded="false" title="Clic para ver el detalle completo">\${body}<span class="stream-info-toggle" aria-hidden="true">Ver más</span></dl>`
@@ -317,6 +324,15 @@ function overLimitBadgeHtml(s) {
     return `<div class="mb-2"><span class="badge bg-danger" title="Supera el límite (IPs/sesiones: \${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite \${count}/\${limit}</span></div>`;
 }
 
+function sessionUserHtml(s) {
+    const name = escapeHtml(s.user || '-');
+    const uuid = String(s.media_user_uuid || '').trim();
+    if (!uuid) {
+        return `<p class="small mb-1"><i class="bi bi-person me-1"></i>\${name}</p>`;
+    }
+    return `<p class="small mb-1"><i class="bi bi-person me-1"></i><a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a></p>`;
+}
+
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
@@ -326,9 +342,10 @@ function sessionCardHtml(s) {
     const killBtn = killControlsHtml(s);
     const streamBlock = streamInfoHtml(s);
     const overLimit = overLimitBadgeHtml(s);
+    const title = escapeHtml(s.title || 'Sin título');
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
-        <div class="card border-0 shadow-sm h-100 session-card\${s.over_limit ? ' border border-danger' : ''}">
+        <div class="card border-0 shadow-sm h-100 session-card\${s.over_limit ? ' border border-danger' : ''}" data-session-id="\${escapeHtml(String(s.session_id || ''))}" data-server-id="\${Number(s.server_id || 0)}">
             <div class="session-poster rounded-top">\${thumb}</div>
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
@@ -336,9 +353,9 @@ function sessionCardHtml(s) {
                     <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
                 </div>
                 \${overLimit}
-                <h6 class="card-title mb-1 text-truncate" title="\${escapeHtml(s.title)}">\${escapeHtml(s.title || 'Sin título')}</h6>
+                <h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
                 \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
-                <p class="small mb-1"><i class="bi bi-person me-1"></i>\${escapeHtml(s.user || '-')}</p>
+                \${sessionUserHtml(s)}
                 \${s.client_ip ? `<p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>` : ''}
                 <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
                 <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>

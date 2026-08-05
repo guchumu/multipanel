@@ -32,6 +32,10 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
     . '<text x="100" y="150" fill="#9aa0a6" text-anchor="middle" font-family="sans-serif" font-size="14">Sin carátula</text>'
     . '</svg>'
 );
+
+$mediaUserUuid = trim((string) ($session['media_user_uuid'] ?? ''));
+$sessionTitle = (string) ($session['title'] ?? 'Sin título');
+$canKill = !empty($session['can_kill']);
 ?>
 <div class="col-sm-6 col-lg-4 col-xl-3">
     <div class="card border-0 shadow-sm h-100 session-card" data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>" data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>">
@@ -41,6 +45,14 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                  onerror="this.onerror=null;this.src='<?= e($thumbFallback) ?>';">
             <?php else: ?>
             <div class="session-poster-fallback"><i class="bi bi-film fs-1"></i></div>
+            <?php endif; ?>
+            <?php if ($canKill): ?>
+            <button type="button"
+                    class="session-poster-sms"
+                    title="Enviar mensaje / detener reproducción"
+                    aria-label="Enviar mensaje o detener reproducción">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
             <?php endif; ?>
         </div>
         <div class="card-body">
@@ -57,13 +69,19 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 </span>
             </div>
             <?php endif; ?>
-            <h6 class="card-title mb-1 text-truncate" title="<?= e($session['title'] ?? '') ?>">
-                <?= e($session['title'] ?? 'Sin título') ?>
+            <h6 class="card-title session-title mb-1 text-truncate"
+                role="button"
+                tabindex="0"
+                aria-expanded="false"
+                title="<?= e($sessionTitle) ?> — clic para ver completo">
+                <?= e($sessionTitle !== '' ? $sessionTitle : 'Sin título') ?>
             </h6>
             <?php if (!empty($session['subtitle'])): ?>
             <p class="small text-muted mb-2 text-truncate"><?= e($session['subtitle']) ?></p>
             <?php endif; ?>
-            <p class="small mb-1"><i class="bi bi-person me-1"></i><?= e($session['user'] ?? '-') ?></p>
+            <p class="small mb-1">
+                <i class="bi bi-person me-1"></i><?php if ($mediaUserUuid !== ''): ?><a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($session['user'] ?? '-') ?></a><?php else: ?><?= e($session['user'] ?? '-') ?><?php endif; ?>
+            </p>
             <?php if (!empty($session['client_ip'])): ?>
             <p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code><?= e((string) $session['client_ip']) ?></code></p>
             <?php endif; ?>
@@ -76,12 +94,12 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
             <?php
             $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
             $streamRows = [
-                'Quality' => (string) ($streamInfo['quality'] ?? ''),
-                'Stream' => (string) ($streamInfo['stream'] ?? ''),
-                'Container' => (string) ($streamInfo['container'] ?? ''),
-                'Video' => (string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? ''),
-                'Audio' => (string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? ''),
-                'Subtitle' => (string) ($streamInfo['subtitle'] ?? 'None'),
+                ['Q', 'Quality', (string) ($streamInfo['quality'] ?? '')],
+                ['S', 'Stream', (string) ($streamInfo['stream'] ?? '')],
+                ['C', 'Container', (string) ($streamInfo['container'] ?? '')],
+                ['V', 'Video', (string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? '')],
+                ['A', 'Audio', (string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? '')],
+                ['Sub', 'Subtitle', (string) ($streamInfo['subtitle'] ?? 'None')],
             ];
             ?>
             <dl class="session-stream-info small mb-2"
@@ -89,10 +107,10 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 tabindex="0"
                 aria-expanded="false"
                 title="Clic para ver el detalle completo">
-                <?php foreach ($streamRows as $label => $value): ?>
+                <?php foreach ($streamRows as [$short, $full, $value]): ?>
                 <?php if (trim($value) === '') { continue; } ?>
                 <div class="session-stream-row">
-                    <dt><?= e($label) ?></dt>
+                    <dt title="<?= e($full) ?>"><?= e($short) ?></dt>
                     <dd title="<?= e($value) ?>"><?= e($value) ?></dd>
                 </div>
                 <?php endforeach; ?>
@@ -106,7 +124,7 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 <span><?= e($session['state'] ?? '') ?></span>
                 <span><?= $progress ?>%</span>
             </div>
-            <?php if (!empty($session['can_kill'])): ?>
+            <?php if ($canKill): ?>
             <?php
             /** @var array<int, array{id:int,title:string,body:string,is_default:int}> $stopMessages */
             $stopMessages = $stopMessages ?? [];

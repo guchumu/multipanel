@@ -83,10 +83,12 @@ body {
 }
 
 /* Carátulas de sesión: aspect-ratio nativo (sin .ratio + position:absolute).
-   Evita el bug de Chrome donde loading=lazy + absolute no pinta la imagen. */
+   Evita el bug de Chrome donde loading=lazy + absolute no pinta la imagen.
+   Más baja que 2:3 para compactar tarjetas En directo. */
 .session-poster {
-    aspect-ratio: 2 / 3;
+    aspect-ratio: 16 / 9;
     width: 100%;
+    max-height: 140px;
     background-color: #212529;
     overflow: hidden;
     position: relative;
@@ -97,6 +99,7 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center top;
 }
 
 .session-poster-fallback {
@@ -106,6 +109,69 @@ body {
     width: 100%;
     height: 100%;
     color: rgba(255, 255, 255, 0.5);
+}
+
+/* X sobre la carátula → enfoca controles de mensaje / detener */
+.session-poster-sms {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.35rem;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.session-poster-sms:hover,
+.session-poster-sms:focus-visible {
+    background: rgba(220, 53, 69, 0.9);
+    outline: none;
+    transform: scale(1.05);
+}
+
+.session-poster-sms .bi {
+    font-size: 0.95rem;
+}
+
+.kill-message-box.kill-message-box-focus {
+    outline: 2px solid var(--bs-danger, #dc3545);
+    outline-offset: 2px;
+    border-radius: 0.35rem;
+    animation: kill-box-pulse 0.9s ease 1;
+}
+
+@keyframes kill-box-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.45); }
+    70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+/* Título truncado; clic muestra el texto completo */
+.session-title {
+    cursor: pointer;
+    user-select: none;
+}
+
+.session-title.expanded {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.session-user-link:hover {
+    text-decoration: underline !important;
 }
 
 /* Detalle de calidad / transcode estilo Plex en tarjetas En directo */
@@ -127,8 +193,8 @@ body {
 
 .session-stream-row {
     display: grid;
-    grid-template-columns: 4.6rem 1fr;
-    gap: 0.35rem 0.5rem;
+    grid-template-columns: 2.1rem 1fr;
+    gap: 0.35rem 0.45rem;
     align-items: baseline;
 }
 
