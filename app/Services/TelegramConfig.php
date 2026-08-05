@@ -37,16 +37,19 @@ final class TelegramConfig
             $adminChatId = trim((string) config('telegram.chat_id', env('TELEGRAM_CHAT_ID', '')));
         }
 
-        $sandboxEnabled = in_array(
-            strtolower(trim((string) ($stored['telegram_sandbox_enabled'] ?? '0'))),
-            ['1', 'true', 'yes', 'on'],
-            true
+        $sandboxEnabled = self::truthy(
+            $stored['telegram_sandbox_enabled'] ?? null,
+            env('TELEGRAM_SANDBOX', env('TELEGRAM_SANDBOX_ENABLED', false))
         );
+
         $sandboxChatId = trim((string) ($stored['telegram_sandbox_chat_id'] ?? ''));
-        $sandboxCopyReal = in_array(
-            strtolower(trim((string) ($stored['telegram_sandbox_copy_real'] ?? '0'))),
-            ['1', 'true', 'yes', 'on'],
-            true
+        if ($sandboxChatId === '') {
+            $sandboxChatId = trim((string) config('telegram.sandbox_chat_id', env('TELEGRAM_SANDBOX_CHAT_ID', '')));
+        }
+
+        $sandboxCopyReal = self::truthy(
+            $stored['telegram_sandbox_copy_real'] ?? null,
+            env('TELEGRAM_SANDBOX_COPY_REAL', false)
         );
 
         return [
@@ -66,12 +69,29 @@ final class TelegramConfig
      */
     public static function resolveOutboundChatIds(string $intendedChatId, ?int $tenantId = null): array
     {
-        $cfg = self::forTenant($tenantId);
-        $intended = trim($intendedChatId);
+        return self::resolveTargets($intendedChatId, self::forTenant($tenantId));
+    }
 
-        if ($cfg['sandbox_enabled'] && $cfg['sandbox_chat_id'] !== '') {
-            $targets = [$cfg['sandbox_chat_id']];
-            if ($cfg['sandbox_copy_real'] && $intended !== '' && $intended !== $cfg['sandbox_chat_id']) {
+    /**
+     * Resolución pura (útil en tests) a partir de una config ya resuelta.
+     *
+     * @param array{
+     *   sandbox_enabled?: bool,
+     *   sandbox_chat_id?: string,
+     *   sandbox_copy_real?: bool
+     * } $cfg
+     * @return array<int, string>
+     */
+    public static function resolveTargets(string $intendedChatId, array $cfg): array
+    {
+        $intended = trim($intendedChatId);
+        $sandboxEnabled = (bool) ($cfg['sandbox_enabled'] ?? false);
+        $sandboxChatId = trim((string) ($cfg['sandbox_chat_id'] ?? ''));
+        $sandboxCopyReal = (bool) ($cfg['sandbox_copy_real'] ?? false);
+
+        if ($sandboxEnabled && $sandboxChatId !== '') {
+            $targets = [$sandboxChatId];
+            if ($sandboxCopyReal && $intended !== '' && $intended !== $sandboxChatId) {
                 $targets[] = $intended;
             }
 
@@ -79,6 +99,19 @@ final class TelegramConfig
         }
 
         return $intended !== '' ? [$intended] : [];
+    }
+
+    private static function truthy(mixed $stored, mixed $fallback): bool
+    {
+        if ($stored !== null && trim((string) $stored) !== '') {
+            return in_array(strtolower(trim((string) $stored)), ['1', 'true', 'yes', 'on'], true);
+        }
+
+        if (is_bool($fallback)) {
+            return $fallback;
+        }
+
+        return in_array(strtolower(trim((string) $fallback)), ['1', 'true', 'yes', 'on'], true);
     }
 
     /** @return array<string, string> */

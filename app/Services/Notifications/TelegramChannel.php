@@ -53,7 +53,9 @@ final class TelegramChannel implements NotificationChannelInterface
         $cfg = TelegramConfig::forTenant($tenantId);
         $text = "*{$title}*\n\n{$message}";
         if ($isUserMessage && $cfg['sandbox_enabled'] && $cfg['sandbox_chat_id'] !== '') {
-            $text .= "\n\n_🧪 Sandbox → destino real: " . ($intended !== '' ? $intended : '—') . '_';
+            $userHint = !empty($data['media_user_id']) ? 'user ' . (int) $data['media_user_id'] : 'user';
+            $destHint = $intended !== '' ? $intended : '—';
+            $text .= "\n\n_[SANDBOX → {$userHint} / chat {$destHint}]_";
         }
 
         $anySent = false;

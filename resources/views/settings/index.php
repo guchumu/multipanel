@@ -100,6 +100,7 @@
                         <label class="form-label">Sandbox Chat ID</label>
                         <input name="telegram_sandbox_chat_id" class="form-control" value="<?= e($settings['telegram_sandbox_chat_id'] ?? '') ?>"
                                placeholder="Tu Chat ID de Telegram para pruebas">
+                        <div class="form-text">También se puede definir en <code>.env</code> como <code>TELEGRAM_SANDBOX_CHAT_ID</code>. Activa sandbox con el switch o <code>TELEGRAM_SANDBOX=true</code>.</div>
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="telegram_sandbox_copy_real" value="1" id="tgSandboxCopy"
