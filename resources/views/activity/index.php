@@ -342,14 +342,26 @@ function overLimitBadgeHtml(s) {
     return `<div class="mb-2"><span class="badge bg-danger" title="Supera el límite (IPs/sesiones: \${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite \${count}/\${limit}</span></div>`;
 }
 
-function sessionUserHtml(s) {
+function sessionUserDeviceHtml(s) {
     const name = escapeHtml(s.user || '-');
     const uuid = String(s.media_user_uuid || '').trim();
-    if (!uuid) {
-        return `<p class="small mb-1"><i class="bi bi-person me-1"></i>\${name}</p>`;
-    }
-    return `<p class="small mb-1"><i class="bi bi-person me-1"></i><a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a></p>`;
+    const player = escapeHtml(s.player || '-');
+    const platform = s.platform ? ` <span class="text-muted">(\${escapeHtml(s.platform)})</span>` : '';
+    const userPart = uuid
+        ? `<a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a>`
+        : name;
+    return `<p class="small mb-1 session-meta-line"><i class="bi bi-person me-1"></i>\${userPart}<span class="text-muted"> · </span><span class="session-meta-device">\${player}\${platform}</span></p>`;
 }
+
+function sessionMetaHtml(s) {
+    const server = escapeHtml(s.server_name || '-');
+    const serverMb = s.client_ip ? '1' : '2';
+    const ip = s.client_ip
+        ? `<p class="small mb-2"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>`
+        : '';
+    return `\${sessionUserDeviceHtml(s)}<p class="small mb-\${serverMb}"><i class="bi bi-hdd-network me-1"></i>\${server}</p>\${ip}`;
+}
+
 
 function sessionCardHtml(s) {
     const method = s.play_method || '';
@@ -370,16 +382,13 @@ function sessionCardHtml(s) {
                     <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
                         <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
                         <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
-                    </div>
-                    \${overLimit}
-                    <h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
-                    \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
-                    \${sessionUserHtml(s)}
-                    \${s.client_ip ? `<p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>` : ''}
-                    <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
-                    <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
-                    \${streamBlock}
-                    <div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
+</div>
+\${overLimit}
+\${sessionMetaHtml(s)}
+<h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
+\${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
+\${streamBlock}
+<div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
                     <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
                 </div>
             </div>

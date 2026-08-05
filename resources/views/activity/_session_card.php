@@ -77,29 +77,24 @@ $sessionKey = (string) ($session['session_id'] ?? '');
                         <i class="bi bi-exclamation-octagon me-1"></i>Límite <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>
                     </span>
                 </div>
-                <?php endif; ?>
-                <h6 class="card-title session-title mb-1 text-truncate"
-                    role="button"
-                    tabindex="0"
-                    aria-expanded="false"
-                    title="<?= e($sessionTitle) ?> — clic para ver completo">
-                    <?= e($sessionTitle !== '' ? $sessionTitle : 'Sin título') ?>
-                </h6>
-                <?php if (!empty($session['subtitle'])): ?>
-                <p class="small text-muted mb-2 text-truncate"><?= e($session['subtitle']) ?></p>
-                <?php endif; ?>
-                <p class="small mb-1">
-                    <i class="bi bi-person me-1"></i><?php if ($mediaUserUuid !== ''): ?><a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($session['user'] ?? '-') ?></a><?php else: ?><?= e($session['user'] ?? '-') ?><?php endif; ?>
-                </p>
-                <?php if (!empty($session['client_ip'])): ?>
-                <p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code><?= e((string) $session['client_ip']) ?></code></p>
-                <?php endif; ?>
-                <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i><?= e($session['server_name'] ?? '-') ?></p>
-                <p class="small mb-2"><i class="bi bi-display me-1"></i><?= e($session['player'] ?? '-') ?>
-                    <?php if (!empty($session['platform'])): ?>
-                    <span class="text-muted">(<?= e($session['platform']) ?>)</span>
-                    <?php endif; ?>
-                </p>
+<?php endif; ?>
+<p class="small mb-1 session-meta-line">
+    <i class="bi bi-person me-1"></i><?php if ($mediaUserUuid !== ''): ?><a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($session['user'] ?? '-') ?></a><?php else: ?><?= e($session['user'] ?? '-') ?><?php endif; ?><span class="text-muted"> · </span><span class="session-meta-device"><?= e($session['player'] ?? '-') ?><?php if (!empty($session['platform'])): ?> <span class="text-muted">(<?= e($session['platform']) ?>)</span><?php endif; ?></span>
+</p>
+<p class="small mb-<?= !empty($session['client_ip']) ? '1' : '2' ?>"><i class="bi bi-hdd-network me-1"></i><?= e($session['server_name'] ?? '-') ?></p>
+<?php if (!empty($session['client_ip'])): ?>
+<p class="small mb-2"><i class="bi bi-geo-alt me-1"></i><code><?= e((string) $session['client_ip']) ?></code></p>
+<?php endif; ?>
+<h6 class="card-title session-title mb-1 text-truncate"
+    role="button"
+    tabindex="0"
+    aria-expanded="false"
+    title="<?= e($sessionTitle) ?> — clic para ver completo">
+    <?= e($sessionTitle !== '' ? $sessionTitle : 'Sin título') ?>
+</h6>
+<?php if (!empty($session['subtitle'])): ?>
+<p class="small text-muted mb-2 text-truncate"><?= e($session['subtitle']) ?></p>
+<?php endif; ?>
                 <?php
                 $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
                 $streamRows = [
