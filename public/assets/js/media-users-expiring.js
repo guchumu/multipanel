@@ -44,7 +44,6 @@
         });
     });
 
-    const selectAll = document.getElementById('selectAllExpiring');
     const bulkBar = document.getElementById('bulkMessageBar');
     const bulkCount = document.getElementById('bulkSelectedCount');
     const bulkInputs = document.getElementById('bulkUuidInputs');
@@ -52,6 +51,17 @@
 
     function selectedBoxes() {
         return Array.from(document.querySelectorAll('.expiring-select:checked'));
+    }
+
+    function syncSectionSelectAll() {
+        document.querySelectorAll('[data-expiring-section]').forEach((section) => {
+            const master = section.querySelector('.expiring-select-all');
+            if (!master) return;
+            const boxes = section.querySelectorAll('.expiring-select');
+            const checked = section.querySelectorAll('.expiring-select:checked');
+            master.checked = boxes.length > 0 && checked.length === boxes.length;
+            master.indeterminate = checked.length > 0 && checked.length < boxes.length;
+        });
     }
 
     function syncBulkBar() {
@@ -63,25 +73,23 @@
                 .map((el) => `<input type="hidden" name="uuids[]" value="${el.value}">`)
                 .join('');
         }
-        if (selectAll) {
-            const all = document.querySelectorAll('.expiring-select');
-            selectAll.checked = all.length > 0 && selected.length === all.length;
-            selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
-        }
+        syncSectionSelectAll();
     }
 
     document.querySelectorAll('.expiring-select').forEach((box) => {
         box.addEventListener('change', syncBulkBar);
     });
 
-    if (selectAll) {
-        selectAll.addEventListener('change', () => {
-            document.querySelectorAll('.expiring-select').forEach((box) => {
-                box.checked = selectAll.checked;
+    document.querySelectorAll('.expiring-select-all').forEach((master) => {
+        master.addEventListener('change', () => {
+            const section = master.closest('[data-expiring-section]');
+            if (!section) return;
+            section.querySelectorAll('.expiring-select').forEach((box) => {
+                box.checked = master.checked;
             });
             syncBulkBar();
         });
-    }
+    });
 
     if (clearBtn) {
         clearBtn.addEventListener('click', () => {

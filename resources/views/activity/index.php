@@ -201,7 +201,45 @@ const viewMode = '{$viewMode}';
 const playLabels = { direct_play: 'Direct Play', direct_stream: 'Direct Stream', transcode: 'Transcode' };
 const playBadges = { direct_play: 'success', direct_stream: 'info', transcode: 'warning' };
 const apiUrl = '/activity/api{$serverFilter}';
-const stopMessages = {$stopMessagesJson};
+window.MP_STOP_MESSAGES = {$stopMessagesJson};
+const stopMessages = window.MP_STOP_MESSAGES;
+
+/** Estado UI por session_id: sobrevive al rebuild del polling */
+const sessionUiState = new Map();
+
+function captureSessionUiState() {
+    document.querySelectorAll('.session-card[data-session-id]').forEach(card => {
+        const id = String(card.dataset.sessionId || '');
+        if (!id) return;
+        const titleEl = card.querySelector('.session-title');
+        const infoEl = card.querySelector('.session-stream-info');
+        sessionUiState.set(id, {
+            titleExpanded: !!(titleEl && titleEl.classList.contains('expanded')),
+            streamExpanded: !!(infoEl && infoEl.classList.contains('expanded')),
+        });
+    });
+}
+
+function restoreSessionUiState() {
+    document.querySelectorAll('.session-card[data-session-id]').forEach(card => {
+        const id = String(card.dataset.sessionId || '');
+        const state = sessionUiState.get(id);
+        if (!state) return;
+        const titleEl = card.querySelector('.session-title');
+        if (titleEl && state.titleExpanded) {
+            titleEl.classList.add('expanded');
+            titleEl.classList.remove('text-truncate');
+            titleEl.setAttribute('aria-expanded', 'true');
+        }
+        const infoEl = card.querySelector('.session-stream-info');
+        if (infoEl && state.streamExpanded) {
+            infoEl.classList.add('expanded');
+            infoEl.setAttribute('aria-expanded', 'true');
+            const toggle = infoEl.querySelector('.stream-info-toggle');
+            if (toggle) toggle.textContent = 'Ver menos';
+        }
+    });
+}
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -261,7 +299,7 @@ function onSessionThumbError(img) {
 
 function posterSmsBtnHtml(s) {
     if (!s.can_kill || !s.session_id) return '';
-    return `<button type="button" class="session-poster-sms" title="Enviar mensaje / detener reproducción" aria-label="Enviar mensaje o detener reproducción"><i class="bi bi-x-lg" aria-hidden="true"></i></button>`;
+    return `<button type="button" class="session-poster-sms" title="Enviar mensaje / detener reproducción" aria-label="Enviar mensaje o detener reproducción" data-server-id="\${Number(s.server_id || 0)}" data-session-id="\${escapeHtml(String(s.session_id))}"><i class="bi bi-x-lg" aria-hidden="true"></i></button>`;
 }
 
 function thumbHtml(s) {
@@ -273,32 +311,9 @@ function thumbHtml(s) {
     return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">\${sms}`;
 }
 
-function defaultStopBody() {
-    const def = (stopMessages || []).find(m => Number(m.is_default) === 1);
-    if (def) return String(def.body || '');
-    return stopMessages.length ? String(stopMessages[0].body || '') : '';
-}
-
-function killPresetOptionsHtml() {
-    let html = '<option value="">Personalizado / sin mensaje</option>';
-    (stopMessages || []).forEach(m => {
-        html += `<option value="\${m.id}" \${Number(m.is_default) === 1 ? 'selected' : ''}>\${escapeHtml(m.title)}\${Number(m.is_default) === 1 ? ' ★' : ''}</option>`;
-    });
-    return html;
-}
-
-function killControlsHtml(s) {
-    if (!s.can_kill || !s.session_id) return '';
-    const body = escapeHtml(defaultStopBody());
-    return `<div class="mt-2 kill-message-box">
-        <select class="form-select form-select-sm mb-1 kill-preset-select" aria-label="Mensaje predefinido">\${killPresetOptionsHtml()}</select>
-        <textarea class="form-control form-control-sm mb-1 kill-message-input" rows="2" placeholder="Mensaje al usuario (opcional)" maxlength="500">\${body}</textarea>
-        <button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Pausar / detener</button>
-    </div>`;
-}
-
 function streamInfoHtml(s) {
     const info = s.stream_info || {};
+    const isTranscode = (s.play_method || '') === 'transcode';
     // Iniciales cortas; el title del <dt> conserva el nombre completo.
     const rows = [
         ['Q', 'Quality', info.quality],
@@ -312,9 +327,12 @@ function streamInfoHtml(s) {
         .filter(([, , v]) => String(v ?? '').trim() !== '')
         .map(([short, full, v]) => `<div class="session-stream-row"><dt title="\${escapeHtml(full)}">\${escapeHtml(short)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
         .join('');
-    return body
-        ? `<dl class="session-stream-info small mb-2" role="button" tabindex="0" aria-expanded="false" title="Clic para ver el detalle completo">\${body}<span class="stream-info-toggle" aria-hidden="true">Ver más</span></dl>`
-        : '';
+    if (!body) return '';
+    const cls = 'session-stream-info small mb-2' + (isTranscode ? ' session-stream-info--transcode expanded' : '');
+    const aria = isTranscode ? 'true' : 'false';
+    const title = isTranscode ? 'Detalle de Transcode' : 'Clic para ver el detalle completo';
+    const toggle = isTranscode ? '' : '<span class="stream-info-toggle" aria-hidden="true">Ver más</span>';
+    return `<dl class="\${cls}" role="button" tabindex="0" aria-expanded="\${aria}" title="\${title}">\${body}\${toggle}</dl>`;
 }
 
 function overLimitBadgeHtml(s) {
@@ -339,30 +357,31 @@ function sessionCardHtml(s) {
     const label = playLabels[method] || method;
     const progress = Number(s.progress || 0);
     const thumb = thumbHtml(s);
-    const killBtn = killControlsHtml(s);
     const streamBlock = streamInfoHtml(s);
     const overLimit = overLimitBadgeHtml(s);
     const title = escapeHtml(s.title || 'Sin título');
+    const sid = escapeHtml(String(s.session_id || ''));
 
-    return `<div class="col-sm-6 col-lg-4 col-xl-3">
-        <div class="card border-0 shadow-sm h-100 session-card\${s.over_limit ? ' border border-danger' : ''}" data-session-id="\${escapeHtml(String(s.session_id || ''))}" data-server-id="\${Number(s.server_id || 0)}">
-            <div class="session-poster rounded-top">\${thumb}</div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
-                    <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
-                    <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
+    return `<div class="col-12 col-md-6 col-xxl-4">
+        <div class="card border-0 shadow-sm h-100 session-card session-card-horizontal\${s.over_limit ? ' border border-danger' : ''}" data-session-id="\${sid}" data-server-id="\${Number(s.server_id || 0)}" data-play-method="\${escapeHtml(method)}">
+            <div class="session-card-inner">
+                <div class="session-poster">\${thumb}</div>
+                <div class="card-body session-card-body">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
+                        <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
+                        <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
+                    </div>
+                    \${overLimit}
+                    <h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
+                    \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
+                    \${sessionUserHtml(s)}
+                    \${s.client_ip ? `<p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>` : ''}
+                    <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
+                    <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
+                    \${streamBlock}
+                    <div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
+                    <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
                 </div>
-                \${overLimit}
-                <h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
-                \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
-                \${sessionUserHtml(s)}
-                \${s.client_ip ? `<p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>` : ''}
-                <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
-                <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
-                \${streamBlock}
-                <div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
-                <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
-                \${killBtn}
             </div>
         </div>
     </div>`;
@@ -390,15 +409,18 @@ function updateStats(data) {
 
 function renderFlat(sessions) {
     const container = document.getElementById('sessions-container');
+    captureSessionUiState();
     if (!sessions.length) {
         container.innerHTML = `<div class="row g-3" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
         return;
     }
     container.innerHTML = `<div class="row g-3" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
+    restoreSessionUiState();
 }
 
 function renderGrouped(grouped) {
     const container = document.getElementById('sessions-container');
+    captureSessionUiState();
     if (!grouped.length) {
         container.innerHTML = `<div id="sessions-grouped">\${emptyHtml('No hay reproducciones activas')}</div>`;
         return;
@@ -414,6 +436,7 @@ function renderGrouped(grouped) {
             </div>
             <div class="row g-3">\${group.sessions.map(sessionCardHtml).join('')}</div>
         </div>`).join('')}</div>`;
+    restoreSessionUiState();
 }
 
 async function refreshSessions() {
@@ -434,68 +457,7 @@ async function refreshSessions() {
 document.getElementById('refresh-btn').addEventListener('click', refreshSessions);
 setInterval(refreshSessions, 10000);
 
-document.addEventListener('change', function (e) {
-    const select = e.target.closest('.kill-preset-select');
-    if (!select) return;
-    const box = select.closest('.kill-message-box');
-    const textarea = box?.querySelector('.kill-message-input');
-    if (!textarea) return;
-    if (!select.value) {
-        textarea.value = '';
-        return;
-    }
-    const preset = (stopMessages || []).find(m => String(m.id) === String(select.value));
-    textarea.value = preset ? String(preset.body || '') : '';
-});
-
-document.addEventListener('click', async function (e) {
-    const btn = e.target.closest('.btn-kill-session');
-    if (!btn) return;
-    const card = btn.closest('.session-card') || btn.parentElement;
-    const msgInput = card?.querySelector('.kill-message-input');
-    const message = (msgInput?.value || '').trim();
-    const confirmText = message
-        ? '¿Detener esta reproducción y enviar el mensaje al usuario?'
-        : '¿Detener esta reproducción?';
-    if (!confirm(confirmText)) return;
-    btn.disabled = true;
-    const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
-    if (!csrf) {
-        alert('No hay token CSRF. Recarga la página (F5).');
-        btn.disabled = false;
-        return;
-    }
-    try {
-        const body = new URLSearchParams({
-            _token: csrf,
-            server_id: btn.dataset.serverId,
-            session_id: btn.dataset.sessionId,
-            message: message,
-        });
-        const res = await fetch('/activity/kill', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrf,
-                'X-Csrf-Token': csrf,
-            },
-            body,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (data.success) {
-            btn.closest('.session-card')?.remove();
-            refreshSessions();
-        } else {
-            alert(data.message || 'No se pudo detener');
-            btn.disabled = false;
-        }
-    } catch (err) {
-        alert('Error de red');
-        btn.disabled = false;
-    }
-});
+window.MP_REFRESH_SESSIONS = refreshSessions;
 </script>
 JS;
 include base_path('resources/views/layouts/app.php');

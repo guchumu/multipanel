@@ -26,6 +26,47 @@
         }
     }
 
+    /* —— Sidebar collapse (desktop) —— */
+    const SIDEBAR_KEY = 'mp_sidebar_collapsed';
+    const sidebarToggle = document.getElementById('sidebarToggle');
+
+    function applySidebarCollapsed(collapsed) {
+        document.documentElement.classList.toggle('sidebar-collapsed', !!collapsed);
+        document.body.classList.toggle('sidebar-collapsed', !!collapsed);
+        if (sidebarToggle) {
+            sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+            sidebarToggle.title = collapsed ? 'Mostrar menú lateral' : 'Ocultar menú lateral';
+            const icon = sidebarToggle.querySelector('i');
+            if (icon) {
+                icon.className = collapsed ? 'bi bi-layout-sidebar-inset' : 'bi bi-layout-sidebar';
+            }
+        }
+        try {
+            localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
+            document.cookie = 'mp_sidebar_collapsed=' + (collapsed ? '1' : '0')
+                + '; path=/; max-age=31536000; SameSite=Lax';
+        } catch (_) { /* ignore */ }
+    }
+
+    try {
+        const savedSidebar = localStorage.getItem(SIDEBAR_KEY);
+        if (savedSidebar === '1') {
+            applySidebarCollapsed(true);
+        } else if (document.documentElement.classList.contains('sidebar-collapsed')) {
+            applySidebarCollapsed(true);
+        }
+    } catch (_) { /* ignore */ }
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', () => {
+            const collapsed = !(
+                document.body.classList.contains('sidebar-collapsed')
+                || document.documentElement.classList.contains('sidebar-collapsed')
+            );
+            applySidebarCollapsed(collapsed);
+        });
+    }
+
     const offcanvasEl = document.getElementById('sidebarOffcanvas');
     if (offcanvasEl && typeof bootstrap !== 'undefined') {
         const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl);
@@ -75,6 +116,7 @@
      */
     function toggleSessionStreamInfo(info) {
         if (!info) return;
+        // Transcode ya va a texto completo; permitir colapsar/expandir igual
         const expanded = info.classList.toggle('expanded');
         info.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         info.setAttribute(
@@ -101,24 +143,145 @@
         );
     }
 
-    function focusKillMessageBox(card) {
-        if (!card) return;
-        const box = card.querySelector('.kill-message-box');
-        if (!box) return;
-        box.classList.remove('kill-message-box-focus');
-        // Re-trigger CSS animation
-        void box.offsetWidth;
-        box.classList.add('kill-message-box-focus');
-        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        const textarea = box.querySelector('.kill-message-input');
-        if (textarea) {
-            textarea.focus({ preventScroll: true });
-            const len = textarea.value.length;
+    /* —— Modal mensaje / detener (X en carátula) —— */
+    function ensureKillModal() {
+        let modalEl = document.getElementById('sessionKillModal');
+        if (modalEl) return modalEl;
+
+        modalEl = document.createElement('div');
+        modalEl.id = 'sessionKillModal';
+        modalEl.className = 'modal fade';
+        modalEl.tabIndex = -1;
+        modalEl.setAttribute('aria-labelledby', 'sessionKillModalLabel');
+        modalEl.setAttribute('aria-hidden', 'true');
+        modalEl.innerHTML = `
+<div class="modal-dialog modal-dialog-centered">
+  <div class="modal-content">
+    <div class="modal-header py-2">
+      <h5 class="modal-title fs-6" id="sessionKillModalLabel">Mensaje / detener reproducción</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="killModalServerId" value="">
+      <input type="hidden" id="killModalSessionId" value="">
+      <label class="form-label small mb-1" for="killModalPreset">Mensaje predefinido</label>
+      <select class="form-select form-select-sm mb-2" id="killModalPreset" aria-label="Mensaje predefinido">
+        <option value="">Personalizado / sin mensaje</option>
+      </select>
+      <label class="form-label small mb-1" for="killModalMessage">Mensaje al usuario (opcional)</label>
+      <textarea class="form-control form-control-sm" id="killModalMessage" rows="3" maxlength="500" placeholder="Mensaje al usuario (opcional)"></textarea>
+    </div>
+    <div class="modal-footer py-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+      <button type="button" class="btn btn-danger btn-sm" id="killModalConfirm">
+        <i class="bi bi-stop-circle me-1"></i>Pausar / detener
+      </button>
+    </div>
+  </div>
+</div>`;
+        document.body.appendChild(modalEl);
+
+        const presetSelect = modalEl.querySelector('#killModalPreset');
+        const textarea = modalEl.querySelector('#killModalMessage');
+        presetSelect.addEventListener('change', () => {
+            if (!presetSelect.value) {
+                textarea.value = '';
+                return;
+            }
+            const messages = window.MP_STOP_MESSAGES || [];
+            const preset = messages.find(m => String(m.id) === String(presetSelect.value));
+            textarea.value = preset ? String(preset.body || '') : '';
+        });
+
+        modalEl.querySelector('#killModalConfirm').addEventListener('click', async () => {
+            const btn = modalEl.querySelector('#killModalConfirm');
+            const serverId = modalEl.querySelector('#killModalServerId').value;
+            const sessionId = modalEl.querySelector('#killModalSessionId').value;
+            const message = (textarea.value || '').trim();
+            const confirmText = message
+                ? '¿Detener esta reproducción y enviar el mensaje al usuario?'
+                : '¿Detener esta reproducción?';
+            if (!confirm(confirmText)) return;
+
+            btn.disabled = true;
+            const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+            if (!csrf) {
+                alert('No hay token CSRF. Recarga la página (F5).');
+                btn.disabled = false;
+                return;
+            }
             try {
-                textarea.setSelectionRange(len, len);
-            } catch (_) { /* ignore */ }
+                const body = new URLSearchParams({
+                    _token: csrf,
+                    server_id: serverId,
+                    session_id: sessionId,
+                    message: message,
+                });
+                const res = await fetch('/activity/kill', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                        'X-Csrf-Token': csrf,
+                    },
+                    body,
+                });
+                const data = await res.json().catch(() => ({}));
+                if (data.success) {
+                    if (typeof bootstrap !== 'undefined') {
+                        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+                    }
+                    document.querySelector(`.session-card[data-session-id="${CSS.escape(sessionId)}"]`)?.remove();
+                    if (typeof window.MP_REFRESH_SESSIONS === 'function') {
+                        window.MP_REFRESH_SESSIONS();
+                    }
+                } else {
+                    alert(data.message || 'No se pudo detener');
+                }
+            } catch (err) {
+                alert('Error de red');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        return modalEl;
+    }
+
+    function fillKillPresets(select) {
+        const messages = window.MP_STOP_MESSAGES || [];
+        let html = '<option value="">Personalizado / sin mensaje</option>';
+        let defaultBody = '';
+        messages.forEach(m => {
+            const isDef = Number(m.is_default) === 1;
+            if (isDef) defaultBody = String(m.body || '');
+            html += `<option value="${m.id}"${isDef ? ' selected' : ''}>${escapeAttr(m.title)}${isDef ? ' ★' : ''}</option>`;
+        });
+        if (!defaultBody && messages.length) {
+            defaultBody = String(messages[0].body || '');
         }
-        window.setTimeout(() => box.classList.remove('kill-message-box-focus'), 1600);
+        select.innerHTML = html;
+        return defaultBody;
+    }
+
+    function escapeAttr(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[ch]));
+    }
+
+    function openKillModal(serverId, sessionId) {
+        if (!serverId || !sessionId) return;
+        const modalEl = ensureKillModal();
+        modalEl.querySelector('#killModalServerId').value = String(serverId);
+        modalEl.querySelector('#killModalSessionId').value = String(sessionId);
+        const defaultBody = fillKillPresets(modalEl.querySelector('#killModalPreset'));
+        modalEl.querySelector('#killModalMessage').value = defaultBody;
+        if (typeof bootstrap !== 'undefined') {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
     }
 
     document.addEventListener('click', function (e) {
@@ -126,7 +289,10 @@
         if (smsBtn) {
             e.preventDefault();
             e.stopPropagation();
-            focusKillMessageBox(smsBtn.closest('.session-card'));
+            const card = smsBtn.closest('.session-card');
+            const serverId = smsBtn.dataset.serverId || card?.dataset.serverId || '';
+            const sessionId = smsBtn.dataset.sessionId || card?.dataset.sessionId || '';
+            openKillModal(serverId, sessionId);
             return;
         }
 
@@ -139,8 +305,7 @@
 
         const info = e.target.closest('.session-stream-info');
         if (!info) return;
-        // No interferir con controles de detener/mensaje
-        if (e.target.closest('.kill-message-box, .btn-kill-session, a, button, input, select, textarea')) {
+        if (e.target.closest('a, button, input, select, textarea')) {
             return;
         }
         toggleSessionStreamInfo(info);

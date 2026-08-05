@@ -32,6 +32,26 @@ body {
     position: sticky;
     top: 0;
     align-self: flex-start;
+    transition: width 0.2s ease, margin 0.2s ease, opacity 0.15s ease;
+    overflow: hidden;
+}
+
+/* Desktop: ocultar menú lateral y dar todo el ancho al contenido */
+@media (min-width: 992px) {
+    html.sidebar-collapsed body .sidebar,
+    body.sidebar-collapsed .sidebar {
+        width: 0;
+        min-width: 0;
+        opacity: 0;
+        pointer-events: none;
+        border: 0;
+    }
+
+    html.sidebar-collapsed body .app-main,
+    body.sidebar-collapsed .app-main {
+        max-width: 100%;
+        width: 100%;
+    }
 }
 
 .sidebar .nav-link.active,
@@ -82,16 +102,42 @@ body {
     font-weight: 500;
 }
 
-/* Carátulas de sesión: aspect-ratio nativo (sin .ratio + position:absolute).
-   Evita el bug de Chrome donde loading=lazy + absolute no pinta la imagen.
-   Más baja que 2:3 para compactar tarjetas En directo. */
-.session-poster {
-    aspect-ratio: 16 / 9;
-    width: 100%;
-    max-height: 140px;
+/* En directo: tarjeta horizontal — carátula izq., info der. */
+.session-card-horizontal .session-card-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    min-height: 180px;
+    height: 100%;
+}
+
+.session-card-horizontal .session-poster {
+    flex: 0 0 128px;
+    width: 128px;
+    max-width: 128px;
+    min-height: 180px;
+    aspect-ratio: auto;
+    max-height: none;
     background-color: #212529;
     overflow: hidden;
     position: relative;
+    border-radius: 0.375rem 0 0 0.375rem;
+    align-self: stretch;
+}
+
+@media (min-width: 576px) {
+    .session-card-horizontal .session-poster {
+        flex-basis: 148px;
+        width: 148px;
+        max-width: 148px;
+        min-height: 210px;
+    }
+}
+
+.session-card-horizontal .session-card-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.75rem 0.85rem;
 }
 
 .session-poster > img {
@@ -111,7 +157,7 @@ body {
     color: rgba(255, 255, 255, 0.5);
 }
 
-/* X sobre la carátula → enfoca controles de mensaje / detener */
+/* X sobre la carátula → modal mensaje / detener */
 .session-poster-sms {
     position: absolute;
     top: 0.4rem;
@@ -141,19 +187,6 @@ body {
 
 .session-poster-sms .bi {
     font-size: 0.95rem;
-}
-
-.kill-message-box.kill-message-box-focus {
-    outline: 2px solid var(--bs-danger, #dc3545);
-    outline-offset: 2px;
-    border-radius: 0.35rem;
-    animation: kill-box-pulse 0.9s ease 1;
-}
-
-@keyframes kill-box-pulse {
-    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.45); }
-    70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
 }
 
 /* Título truncado; clic muestra el texto completo */
@@ -244,6 +277,26 @@ body {
     color: var(--bs-primary, #0d6efd);
 }
 
+/* Transcode / convirtiendo: texto completo + caja naranja */
+.session-stream-info--transcode {
+    border: 1px solid rgba(253, 126, 20, 0.55);
+    background: rgba(253, 126, 20, 0.12);
+}
+
+.session-stream-info--transcode:hover,
+.session-stream-info--transcode:focus-visible {
+    background: rgba(253, 126, 20, 0.18);
+}
+
+.session-stream-info--transcode dd,
+.session-stream-info--transcode.expanded dd {
+    overflow: visible;
+    text-overflow: unset;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 [data-bs-theme="dark"] .session-stream-info {
     background: rgba(255, 255, 255, 0.06);
 }
@@ -251,6 +304,16 @@ body {
 [data-bs-theme="dark"] .session-stream-info:hover,
 [data-bs-theme="dark"] .session-stream-info:focus-visible {
     background: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .session-stream-info--transcode {
+    border-color: rgba(253, 126, 20, 0.65);
+    background: rgba(253, 126, 20, 0.16);
+}
+
+[data-bs-theme="dark"] .session-stream-info--transcode:hover,
+[data-bs-theme="dark"] .session-stream-info--transcode:focus-visible {
+    background: rgba(253, 126, 20, 0.22);
 }
 
 [data-bs-theme="dark"] .session-stream-info dd {

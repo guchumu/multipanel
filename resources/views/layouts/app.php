@@ -8,6 +8,13 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= asset('css/app.css') ?>?v=<?= @filemtime(public_path('assets/css/app.css')) ?: '2' ?>" rel="stylesheet">
+    <script>
+    try {
+        if (localStorage.getItem('mp_sidebar_collapsed') === '1') {
+            document.documentElement.classList.add('sidebar-collapsed');
+        }
+    } catch (e) { /* ignore */ }
+    </script>
 </head>
 <body>
     <?php if (isset($user)): ?>
