@@ -829,10 +829,15 @@ final class PlexService
         return $this->lastArtworkError;
     }
 
-    public function terminateSession(string $sessionId): bool
+    public function terminateSession(string $sessionId, ?string $reason = null): bool
     {
         if ($sessionId === '') {
             return false;
+        }
+
+        $reason = trim((string) $reason);
+        if ($reason === '') {
+            $reason = 'Acceso suspendido desde MultiPanel';
         }
 
         try {
@@ -840,7 +845,7 @@ final class PlexService
                 'headers' => $this->authHeaders(),
                 'query' => [
                     'sessionId' => $sessionId,
-                    'reason' => 'Acceso suspendido desde MultiPanel',
+                    'reason' => $reason,
                 ],
             ]);
 

@@ -246,10 +246,42 @@ final class JellyfinService
         }
     }
 
-    public function terminateSession(string $sessionId): bool
+    /**
+     * Envía un mensaje en pantalla al cliente Jellyfin (si el player lo soporta).
+     */
+    public function sendSessionMessage(string $sessionId, string $header, string $text, int $timeoutMs = 8000): bool
+    {
+        if ($sessionId === '' || trim($text) === '') {
+            return false;
+        }
+
+        try {
+            $this->client->post("/Sessions/{$sessionId}/Message", [
+                'headers' => $this->authHeaders(),
+                'json' => [
+                    'Header' => $header !== '' ? $header : 'MultiPanel',
+                    'Text' => $text,
+                    'TimeoutMs' => max(1000, $timeoutMs),
+                ],
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Jellyfin session message failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    public function terminateSession(string $sessionId, ?string $reason = null): bool
     {
         if ($sessionId === '') {
             return false;
+        }
+
+        $reason = trim((string) $reason);
+        if ($reason !== '') {
+            // Best-effort: mostrar aviso antes de cortar (no bloquea el stop).
+            $this->sendSessionMessage($sessionId, 'Reproducción detenida', $reason);
         }
 
         try {

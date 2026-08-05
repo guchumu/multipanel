@@ -167,12 +167,12 @@ final class StreamingActivityService
         }
     }
 
-    public function terminateSession(Server $server, string $sessionId): bool
+    public function terminateSession(Server $server, string $sessionId, ?string $reason = null): bool
     {
         $media = MediaServerFactory::make($server);
 
         if ($media instanceof PlexService || $media instanceof JellyfinService) {
-            return $media->terminateSession($sessionId);
+            return $media->terminateSession($sessionId, $reason);
         }
 
         return false;

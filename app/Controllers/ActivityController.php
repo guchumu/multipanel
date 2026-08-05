@@ -210,6 +210,7 @@ SVG;
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = (int) $request->input('server_id');
         $sessionId = trim((string) $request->input('session_id', ''));
+        $message = trim((string) ($request->input('message') ?? $request->input('reason') ?? ''));
 
         if ($serverId <= 0 || $sessionId === '') {
             return $this->json(['success' => false, 'message' => 'Datos de sesión incompletos.'], 422);
@@ -220,11 +221,14 @@ SVG;
             return $this->json(['success' => false, 'message' => 'Servidor no encontrado.'], 404);
         }
 
-        $ok = $this->activity->terminateSession($server, $sessionId);
+        $reason = $message !== '' ? $message : 'Reproducción detenida desde MultiPanel';
+        $ok = $this->activity->terminateSession($server, $sessionId, $reason);
 
         return $this->json([
             'success' => $ok,
-            'message' => $ok ? 'Reproducción detenida.' : 'No se pudo detener la reproducción.',
+            'message' => $ok
+                ? ($message !== '' ? 'Reproducción detenida y mensaje enviado.' : 'Reproducción detenida.')
+                : 'No se pudo detener la reproducción.',
         ], $ok ? 200 : 500);
     }
 }

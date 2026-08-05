@@ -252,7 +252,7 @@ function sessionCardHtml(s) {
     const progress = Number(s.progress || 0);
     const thumb = thumbHtml(s);
     const killBtn = s.can_kill && s.session_id
-        ? `<button type="button" class="btn btn-outline-danger btn-sm w-100 mt-2 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Detener reproducción</button>`
+        ? `<div class="mt-2"><input type="text" class="form-control form-control-sm mb-1 kill-message-input" placeholder="Mensaje al usuario (opcional)" maxlength="200"><button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Pausar / detener</button></div>`
         : '';
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
@@ -349,17 +349,39 @@ setInterval(refreshSessions, 10000);
 document.addEventListener('click', async function (e) {
     const btn = e.target.closest('.btn-kill-session');
     if (!btn) return;
-    if (!confirm('¿Detener esta reproducción?')) return;
+    const card = btn.closest('.session-card') || btn.parentElement;
+    const msgInput = card?.querySelector('.kill-message-input');
+    const message = (msgInput?.value || '').trim();
+    const confirmText = message
+        ? '¿Detener esta reproducción y enviar el mensaje al usuario?'
+        : '¿Detener esta reproducción?';
+    if (!confirm(confirmText)) return;
     btn.disabled = true;
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+    if (!csrf) {
+        alert('No hay token CSRF. Recarga la página (F5).');
+        btn.disabled = false;
+        return;
+    }
     try {
         const body = new URLSearchParams({
             _token: csrf,
             server_id: btn.dataset.serverId,
             session_id: btn.dataset.sessionId,
+            message: message,
         });
-        const res = await fetch('/activity/kill', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-        const data = await res.json();
+        const res = await fetch('/activity/kill', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrf,
+                'X-Csrf-Token': csrf,
+            },
+            body,
+        });
+        const data = await res.json().catch(() => ({}));
         if (data.success) {
             btn.closest('.session-card')?.remove();
             refreshSessions();

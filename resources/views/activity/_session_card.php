@@ -76,11 +76,18 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 <span><?= $progress ?>%</span>
             </div>
             <?php if (!empty($session['can_kill'])): ?>
-            <button type="button" class="btn btn-outline-danger btn-sm w-100 mt-2 btn-kill-session"
-                    data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
-                    data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>">
-                <i class="bi bi-stop-circle me-1"></i>Detener reproducción
-            </button>
+            <div class="mt-2">
+                <input type="text" class="form-control form-control-sm mb-1 kill-message-input"
+                       placeholder="Mensaje al usuario (opcional)"
+                       maxlength="200"
+                       data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
+                       data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>">
+                <button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session"
+                        data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
+                        data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>">
+                    <i class="bi bi-stop-circle me-1"></i>Pausar / detener
+                </button>
+            </div>
             <?php endif; ?>
         </div>
     </div>
