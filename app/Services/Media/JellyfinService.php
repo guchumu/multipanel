@@ -150,6 +150,30 @@ final class JellyfinService
                     $subtitle = null;
                 }
 
+                $mediaStreams = is_array($item['MediaStreams'] ?? null) ? $item['MediaStreams'] : [];
+                $transcodingArr = is_array($transcoding) ? $transcoding : null;
+                $streamInfo = SessionStreamInfo::fromJellyfin(
+                    $playMethod,
+                    $transcodingArr,
+                    is_array($playState) ? $playState : [],
+                    $mediaStreams,
+                    $item,
+                );
+
+                // Decisiones resumen (compat UI antigua): copy vs codec destino.
+                $videoDecision = $playMethod === 'direct_play'
+                    ? 'copy'
+                    : (string) ($transcodingArr['VideoCodec'] ?? (!empty($transcodingArr['IsVideoDirect']) ? 'copy' : 'transcode'));
+                $audioDecision = $playMethod === 'direct_play'
+                    ? 'copy'
+                    : (string) ($transcodingArr['AudioCodec'] ?? (!empty($transcodingArr['IsAudioDirect']) ? 'copy' : 'transcode'));
+                if (!empty($transcodingArr['IsVideoDirect'])) {
+                    $videoDecision = 'copy';
+                }
+                if (!empty($transcodingArr['IsAudioDirect'])) {
+                    $audioDecision = 'copy';
+                }
+
                 $sessions[] = [
                     'session_id' => (string) ($session['Id'] ?? ''),
                     'title' => $displayTitle,
@@ -161,12 +185,14 @@ final class JellyfinService
                     'media_type' => (string) ($item['Type'] ?? 'video'),
                     'year' => (string) ($item['ProductionYear'] ?? ''),
                     'play_method' => $playMethod,
-                    'video_decision' => (string) ($transcoding['VideoCodec'] ?? 'copy'),
-                    'audio_decision' => (string) ($transcoding['AudioCodec'] ?? 'copy'),
+                    'video_decision' => $videoDecision,
+                    'audio_decision' => $audioDecision,
+                    'stream_info' => $streamInfo,
                     'progress' => $progress,
                     'item_id' => (string) ($item['Id'] ?? ''),
                     'thumb_url' => $this->itemImageUrl($item),
                 ];
+
             }
 
             return $sessions;

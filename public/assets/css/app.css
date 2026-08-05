@@ -95,6 +95,44 @@ body {
     color: rgba(255, 255, 255, 0.5);
 }
 
+/* Detalle de calidad / transcode estilo Plex en tarjetas En directo */
+.session-stream-info {
+    margin: 0;
+    padding: 0.45rem 0.55rem;
+    border-radius: 0.35rem;
+    background: rgba(33, 37, 41, 0.04);
+}
+
+.session-stream-row {
+    display: grid;
+    grid-template-columns: 4.6rem 1fr;
+    gap: 0.35rem 0.5rem;
+    align-items: baseline;
+}
+
+.session-stream-row + .session-stream-row {
+    margin-top: 0.15rem;
+}
+
+.session-stream-info dt {
+    margin: 0;
+    font-weight: 600;
+    color: #6c757d;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.session-stream-info dd {
+    margin: 0;
+    color: #212529;
+    font-size: 0.78rem;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 @media (max-width: 991.98px) {
     .app-content {
         padding-bottom: 1.5rem !important;

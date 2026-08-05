@@ -288,6 +288,23 @@ function killControlsHtml(s) {
     </div>`;
 }
 
+function streamInfoHtml(s) {
+    const info = s.stream_info || {};
+    const rows = [
+        ['Quality', info.quality],
+        ['Stream', info.stream],
+        ['Container', info.container],
+        ['Video', info.video || s.video_label || s.video_decision],
+        ['Audio', info.audio || s.audio_label || s.audio_decision],
+        ['Subtitle', info.subtitle || 'None'],
+    ];
+    const body = rows
+        .filter(([, v]) => String(v ?? '').trim() !== '')
+        .map(([k, v]) => `<div class="session-stream-row"><dt>\${escapeHtml(k)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
+        .join('');
+    return body ? `<dl class="session-stream-info small mb-2">\${body}</dl>` : '';
+}
+
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
@@ -295,6 +312,7 @@ function sessionCardHtml(s) {
     const progress = Number(s.progress || 0);
     const thumb = thumbHtml(s);
     const killBtn = killControlsHtml(s);
+    const streamBlock = streamInfoHtml(s);
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
         <div class="card border-0 shadow-sm h-100 session-card">
@@ -309,10 +327,7 @@ function sessionCardHtml(s) {
                 <p class="small mb-1"><i class="bi bi-person me-1"></i>\${escapeHtml(s.user || '-')}</p>
                 <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
                 <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
-                <div class="small mb-2 text-muted">
-                    <span class="me-2"><i class="bi bi-camera-video me-1"></i>Vídeo: <strong>\${escapeHtml(s.video_label || s.video_decision || '-')}</strong></span>
-                    <span><i class="bi bi-music-note-beamed me-1"></i>Audio: <strong>\${escapeHtml(s.audio_label || s.audio_decision || '-')}</strong></span>
-                </div>
+                \${streamBlock}
                 <div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
                 <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
                 \${killBtn}

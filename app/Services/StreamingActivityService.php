@@ -223,7 +223,30 @@ final class StreamingActivityService
         $session['audio_label'] = $this->decisionLabel((string) ($session['audio_decision'] ?? ''));
         $session['can_kill'] = !empty($session['session_id']);
 
+        // Asegurar estructura stream_info para la tarjeta En directo (PHP + JS).
+        if (!isset($session['stream_info']) || !is_array($session['stream_info'])) {
+            $session['stream_info'] = [
+                'quality' => '—',
+                'stream' => $this->playMethodDisplay((string) ($session['play_method'] ?? '')),
+                'container' => '—',
+                'video' => (string) ($session['video_label'] ?? '—'),
+                'audio' => (string) ($session['audio_label'] ?? '—'),
+                'subtitle' => 'None',
+                'throttled' => false,
+            ];
+        }
+
         return $session;
+    }
+
+    private function playMethodDisplay(string $method): string
+    {
+        return match ($method) {
+            'direct_play' => 'Direct Play',
+            'direct_stream' => 'Direct Stream',
+            'transcode' => 'Transcode',
+            default => $method !== '' ? ucfirst(str_replace('_', ' ', $method)) : 'Direct Play',
+        };
     }
 
     /** Codifica un path de carátula en base64url (sin padding). */

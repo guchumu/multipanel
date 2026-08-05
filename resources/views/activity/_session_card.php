@@ -63,10 +63,26 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 <span class="text-muted">(<?= e($session['platform']) ?>)</span>
                 <?php endif; ?>
             </p>
-            <div class="small mb-2 text-muted">
-                <span class="me-2"><i class="bi bi-camera-video me-1"></i>Vídeo: <strong><?= e($session['video_label'] ?? $session['video_decision'] ?? '-') ?></strong></span>
-                <span><i class="bi bi-music-note-beamed me-1"></i>Audio: <strong><?= e($session['audio_label'] ?? $session['audio_decision'] ?? '-') ?></strong></span>
-            </div>
+            <?php
+            $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+            $streamRows = [
+                'Quality' => (string) ($streamInfo['quality'] ?? ''),
+                'Stream' => (string) ($streamInfo['stream'] ?? ''),
+                'Container' => (string) ($streamInfo['container'] ?? ''),
+                'Video' => (string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? ''),
+                'Audio' => (string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? ''),
+                'Subtitle' => (string) ($streamInfo['subtitle'] ?? 'None'),
+            ];
+            ?>
+            <dl class="session-stream-info small mb-2">
+                <?php foreach ($streamRows as $label => $value): ?>
+                <?php if (trim($value) === '') { continue; } ?>
+                <div class="session-stream-row">
+                    <dt><?= e($label) ?></dt>
+                    <dd title="<?= e($value) ?>"><?= e($value) ?></dd>
+                </div>
+                <?php endforeach; ?>
+            </dl>
             <?php $progress = (int) ($session['progress'] ?? 0); ?>
             <div class="progress mb-1" style="height: 4px;">
                 <div class="progress-bar" style="width: <?= $progress ?>%"></div>

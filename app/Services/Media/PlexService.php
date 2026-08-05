@@ -378,6 +378,21 @@ final class PlexService
         $sessionId = (string) ($sessionMeta['id'] ?? '');
         $sessionKey = (string) ($session['sessionKey'] ?? '');
 
+        $mediaList = $session['Media'] ?? [];
+        if (!is_array($mediaList)) {
+            $mediaList = [];
+        }
+        [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreams($mediaList);
+        $streamInfo = SessionStreamInfo::fromPlex(
+            $playMethod,
+            $transcode,
+            $media,
+            $sessionMeta,
+            $videoStream,
+            $audioStream,
+            $subtitleStream,
+        );
+
         return [
             'session_id' => $sessionId !== '' ? $sessionId : $sessionKey,
             'session_key' => $sessionKey,
@@ -392,6 +407,7 @@ final class PlexService
             'play_method' => $playMethod,
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
+            'stream_info' => $streamInfo,
             'progress' => $progress,
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
@@ -417,7 +433,10 @@ final class PlexService
             $subtitle = null;
         }
 
-        $transcode = $session->TranscodeSession ?? null;
+        $transcodeNode = $session->TranscodeSession ?? null;
+        $transcode = $transcodeNode instanceof \SimpleXMLElement
+            ? SessionStreamInfo::simpleXmlAttributes($transcodeNode)
+            : null;
         $videoDecision = $transcode ? (string) ($transcode['videoDecision'] ?? '') : 'copy';
         $audioDecision = $transcode ? (string) ($transcode['audioDecision'] ?? '') : 'copy';
         $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
@@ -438,6 +457,20 @@ final class PlexService
         // /status/sessions/terminate espera Session.id (UUID), no sessionKey.
         $sessionId = (string) ($session->Session['id'] ?? '');
         $sessionKey = (string) ($session['sessionKey'] ?? '');
+        $sessionMeta = isset($session->Session)
+            ? SessionStreamInfo::simpleXmlAttributes($session->Session)
+            : [];
+
+        [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreamsFromXml($session);
+        $streamInfo = SessionStreamInfo::fromPlex(
+            $playMethod,
+            $transcode,
+            $media,
+            $sessionMeta,
+            $videoStream,
+            $audioStream,
+            $subtitleStream,
+        );
 
         return [
             'session_id' => $sessionId !== '' ? $sessionId : $sessionKey,
@@ -453,6 +486,7 @@ final class PlexService
             'play_method' => $playMethod,
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
+            'stream_info' => $streamInfo,
             'progress' => $progress,
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
