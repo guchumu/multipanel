@@ -29,7 +29,7 @@ class NotificationSettingsController extends Controller
         $milestones = $this->templates->getMilestones($tenantId);
 
         return $this->view('settings.notifications', [
-            'title' => 'Mensajes Telegram',
+            'title' => 'Mensajes a los usuarios',
             'messages' => $messages,
             'milestones' => $milestones,
             'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}',

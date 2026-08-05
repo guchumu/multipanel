@@ -35,6 +35,7 @@ use App\Controllers\RoleController;
 use App\Controllers\ApiKeyController;
 use App\Controllers\InvoiceController;
 use App\Controllers\SecurityController;
+use App\Controllers\CronController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
 use App\Controllers\Portal\PortalPaymentController;
@@ -63,6 +64,10 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
 $router->get('/registro', [RegistroController::class, 'store'], 'registro.store');
 $router->post('/registro', [RegistroController::class, 'store'], 'registro.store.post');
+
+// Cron HTTP (público, protegido por CRON_TOKEN)
+$router->get('/cron/run', [CronController::class, 'run'], 'cron.run');
+$router->get('/cron/run/{task}', [CronController::class, 'run'], 'cron.run.task');
 
 // Portal (client self-service)
 $router->get('/portal/login', [PortalController::class, 'showLogin'], 'portal.login');

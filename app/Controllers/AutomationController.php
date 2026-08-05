@@ -82,22 +82,50 @@ class AutomationController extends Controller
         ]);
     }
 
-    public function toggle(Request $request, int $id): Response
+    public function toggle(Request $request, int|string $id): Response
     {
-        $rule = Database::getInstance()->fetchOne('SELECT * FROM automation_rules WHERE id = ?', [$id]);
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $ruleId = (int) $id;
+
+        $rule = Database::getInstance()->fetchOne(
+            'SELECT * FROM automation_rules WHERE id = ? AND tenant_id = ? LIMIT 1',
+            [$ruleId, $tenantId]
+        );
         if (!$rule) {
-            return $this->json(['error' => 'Regla no encontrada'], 404);
+            return $this->json(['success' => false, 'error' => 'Regla no encontrada'], 404);
         }
 
-        $newStatus = $rule['is_active'] ? 0 : 1;
-        Database::getInstance()->update('automation_rules', ['is_active' => $newStatus], 'id = ?', [$id]);
+        // Cast explícito: PDO puede devolver "0"/"1" como string.
+        $currentlyActive = (int) $rule['is_active'] === 1;
+        $newStatus = $currentlyActive ? 0 : 1;
 
-        return $this->json(['success' => true, 'is_active' => (bool) $newStatus]);
+        $updated = Database::getInstance()->update(
+            'automation_rules',
+            ['is_active' => $newStatus],
+            'id = ? AND tenant_id = ?',
+            [$ruleId, $tenantId]
+        );
+
+        if ($updated < 1 && (int) $rule['is_active'] === $newStatus) {
+            // Ya estaba en ese estado (carrera rara): OK.
+        }
+
+        $fresh = Database::getInstance()->fetchOne(
+            'SELECT is_active FROM automation_rules WHERE id = ? AND tenant_id = ? LIMIT 1',
+            [$ruleId, $tenantId]
+        );
+
+        return $this->json([
+            'success' => true,
+            'is_active' => (int) ($fresh['is_active'] ?? $newStatus) === 1,
+            'message' => ((int) ($fresh['is_active'] ?? $newStatus) === 1) ? 'Regla activada.' : 'Regla desactivada.',
+        ]);
     }
 
-    public function destroy(Request $request, int $id): Response
+    public function destroy(Request $request, int|string $id): Response
     {
-        Database::getInstance()->delete('automation_rules', 'id = ?', [$id]);
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        Database::getInstance()->delete('automation_rules', 'id = ? AND tenant_id = ?', [(int) $id, $tenantId]);
         Session::getInstance()->flash('success', 'Regla eliminada.');
         return $this->redirect('/automation');
     }

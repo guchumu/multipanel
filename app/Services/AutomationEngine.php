@@ -31,6 +31,21 @@ final class AutomationEngine
 
         $executed = 0;
         foreach ($rules as $rule) {
+            // Las acciones de datos (suspend/delete/activate) se evalúan contra BD.
+            // Las de tipo notify genéricas solo se disparan en built-ins con contexto real
+            // (p. ej. servidor offline), para no spamear en cada cron.
+            $actions = json_decode($rule['actions'] ?? '[]', true) ?: [];
+            $onlyGenericNotify = $actions !== [] && array_reduce(
+                $actions,
+                static fn (bool $carry, array $a): bool => $carry && (($a['type'] ?? '') === 'notify'),
+                true
+            );
+            $trigger = (string) ($rule['trigger_event'] ?? '');
+            if ($onlyGenericNotify && in_array($trigger, ['server.offline', 'server.down'], true)) {
+                // Lo gestiona runBuiltInRules si la regla sigue activa.
+                continue;
+            }
+
             if ($this->runRule($rule)) {
                 $executed++;
             }
@@ -215,25 +230,51 @@ final class AutomationEngine
 
     private function runBuiltInRules(int $tenantId): void
     {
-        // Expire users past expiration date
-        $expired = Database::getInstance()->query(
-            "UPDATE media_users SET status = 'expired'
-             WHERE tenant_id = ? AND expires_at IS NOT NULL AND expires_at < NOW() AND status = 'active'",
-            [$tenantId]
-        );
+        // Caducar usuarios solo si hay una regla activa con ese trigger
+        // (así desactivar reglas = se quedan desactivadas de verdad).
+        if ($this->hasActiveTrigger($tenantId, ['user.expired', 'media_user.expire'])) {
+            $expired = Database::getInstance()->query(
+                "UPDATE media_users SET status = 'expired'
+                 WHERE tenant_id = ? AND expires_at IS NOT NULL AND expires_at < NOW() AND status = 'active'",
+                [$tenantId]
+            );
 
-        if ($expired->rowCount() > 0) {
-            Logger::info('Built-in: expired users', ['count' => $expired->rowCount()]);
+            if ($expired->rowCount() > 0) {
+                Logger::info('Built-in: expired users', ['count' => $expired->rowCount()]);
+            }
         }
 
-        // Notify servers that went offline
-        $offlineServers = Database::getInstance()->fetchAll(
-            "SELECT name FROM servers WHERE tenant_id = ? AND status = 'offline' AND last_check_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)",
-            [$tenantId]
+        // Aviso servidor caído: solo si la regla "server.offline" está activa.
+        if ($this->hasActiveTrigger($tenantId, ['server.offline', 'server.down'])) {
+            $offlineServers = Database::getInstance()->fetchAll(
+                "SELECT name FROM servers
+                 WHERE tenant_id = ? AND status = 'offline'
+                   AND last_check_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
+                [$tenantId]
+            );
+
+            foreach ($offlineServers as $server) {
+                $this->notifications->notifyServerDown($server['name']);
+            }
+        }
+    }
+
+    /** @param array<int, string> $triggers */
+    private function hasActiveTrigger(int $tenantId, array $triggers): bool
+    {
+        if ($triggers === []) {
+            return false;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($triggers), '?'));
+        $params = array_merge([$tenantId], $triggers);
+        $row = Database::getInstance()->fetchOne(
+            "SELECT id FROM automation_rules
+             WHERE tenant_id = ? AND is_active = 1 AND trigger_event IN ({$placeholders})
+             LIMIT 1",
+            $params
         );
 
-        foreach ($offlineServers as $server) {
-            $this->notifications->notifyServerDown($server['name']);
-        }
+        return $row !== null;
     }
 }

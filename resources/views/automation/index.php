@@ -68,20 +68,58 @@
     </div>
 </div>
 
+<div class="alert alert-info border-0 shadow-sm mt-3 mb-0 small">
+    <strong>Nota:</strong> Solo las reglas con estado <em>Activa</em> se ejecutan.
+    El aviso «servidor caído» usa el Chat ID de admin de <a href="/settings#telegram">Configuración → Telegram</a>.
+    Desactivar una regla hace que deje de correr en el siguiente cron (no hay acciones ocultas).
+</div>
+
 <?php
 $content = ob_get_clean();
 $scripts = <<<'JS'
 <script>
 document.getElementById('btnRunAll')?.addEventListener('click', async () => {
-    const res = await fetch('/automation/run', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-    const data = await res.json();
-    alert(data.message);
+    const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+    const res = await fetch('/automation/run', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+    });
+    const data = await res.json().catch(() => ({}));
+    alert(data.message || data.error || ('HTTP ' + res.status));
     location.reload();
 });
 document.querySelectorAll('.btn-toggle').forEach(btn => {
     btn.addEventListener('click', async function() {
-        await fetch(`/automation/${this.dataset.id}/toggle`, { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content } });
-        location.reload();
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            alert('No hay token CSRF. Recarga la página (F5).');
+            return;
+        }
+        this.disabled = true;
+        try {
+            const res = await fetch(`/automation/${this.dataset.id}/toggle`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Csrf-Token': csrf,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ _token: csrf }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                alert(data.error || data.message || ('No se pudo cambiar el estado (HTTP ' + res.status + ')'));
+                this.disabled = false;
+                return;
+            }
+            location.reload();
+        } catch (e) {
+            alert('Error de red: ' + e.message);
+            this.disabled = false;
+        }
     });
 });
 </script>

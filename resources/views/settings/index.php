@@ -1,9 +1,22 @@
 <?php ob_start(); ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Configuración</h4>
-    <a href="/settings/stop-messages" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-chat-left-text me-1"></i>Mensajes al detener
-    </a>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="/settings/notifications" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-chat-dots me-1"></i>Mensajes a los usuarios
+        </a>
+        <a href="/settings/stop-messages" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-chat-left-text me-1"></i>Mensajes al detener
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-light border mb-4">
+    <div class="fw-semibold mb-1">Mensajes</div>
+    <ul class="small mb-0">
+        <li><a href="/settings/notifications">Mensajes a los usuarios</a> — plantillas Telegram/WhatsApp de caducidad y avisos enviados a clientes.</li>
+        <li><a href="/settings/stop-messages">Mensajes al detener</a> — textos que ve el reproductor al cortar una sesión en En directo (Plex/Jellyfin).</li>
+    </ul>
 </div>
 
 <ul class="nav nav-tabs mb-4" role="tablist">
@@ -11,6 +24,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">Email / SMTP</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegram">Telegram</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Facturación</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cron">Cron / Tareas</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#security">Seguridad</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#oauth">SSO / OAuth</button></li>
 </ul>
@@ -63,10 +77,100 @@
                 <form method="POST" action="/settings">
                     <?= csrf_field() ?>
                     <input type="hidden" name="group" value="telegram">
-                    <div class="mb-3"><label class="form-label">Bot Token</label><input name="telegram_bot_token" class="form-control" value="<?= e($settings['telegram_bot_token'] ?? '') ?>"></div>
-                    <div class="mb-3"><label class="form-label">Chat ID</label><input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Bot Token</label>
+                        <input name="telegram_bot_token" class="form-control" value="<?= e($settings['telegram_bot_token'] ?? '') ?>" autocomplete="off">
+                        <div class="form-text">También se puede definir en <code>.env</code> como <code>TELEGRAM_BOT_TOKEN</code>. Si hay valor aquí, tiene prioridad.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Chat ID del admin (alertas)</label>
+                        <input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>" placeholder="Ej. 123456789">
+                        <div class="form-text">Donde llegan avisos del panel (servidor caído, automatizaciones admin). No es el chat de cada cliente.</div>
+                    </div>
+
+                    <hr class="my-4">
+                    <h6 class="mb-2"><i class="bi bi-shield-exclamation me-1"></i>Sandbox (pruebas de mensajes a usuarios)</h6>
+                    <p class="small text-muted">Con sandbox activo, los mensajes enviados a usuarios (ficha, masivo, caducidad) van a tu chat de prueba en lugar del cliente. Así puedes probar textos sin molestar a nadie.</p>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" name="telegram_sandbox_enabled" value="1" id="tgSandbox"
+                               <?= !empty($settings['telegram_sandbox_enabled']) && $settings['telegram_sandbox_enabled'] !== '0' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="tgSandbox">Activar modo sandbox</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sandbox Chat ID</label>
+                        <input name="telegram_sandbox_chat_id" class="form-control" value="<?= e($settings['telegram_sandbox_chat_id'] ?? '') ?>"
+                               placeholder="Tu Chat ID de Telegram para pruebas">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="telegram_sandbox_copy_real" value="1" id="tgSandboxCopy"
+                               <?= !empty($settings['telegram_sandbox_copy_real']) && $settings['telegram_sandbox_copy_real'] !== '0' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="tgSandboxCopy">Además, enviar copia al usuario real</label>
+                    </div>
                     <button class="btn btn-primary">Guardar Telegram</button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="cron">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h6 class="mb-2">Token de seguridad</h6>
+                <p class="small text-muted">Obligatorio para las URLs HTTP. También puedes poner <code>CRON_TOKEN=...</code> en <code>.env</code> (prioridad sobre este valor).</p>
+                <form method="POST" action="/settings" class="row g-2 align-items-end">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="group" value="cron">
+                    <div class="col-md-8">
+                        <label class="form-label">CRON_TOKEN</label>
+                        <input type="text" name="cron_token" class="form-control font-monospace" autocomplete="off"
+                               placeholder="<?= !empty($cronTokenConfigured) ? e($cronTokenMasked) : 'genera-un-secreto-largo' ?>">
+                        <div class="form-text">Déjalo en blanco para no cambiar el actual.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-primary w-100">Guardar token</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h6 class="mb-2">CLI (recomendado en VPS)</h6>
+                <pre class="bg-light p-3 small mb-2">*/5 * * * * php <?= e($cronCliBase) ?> all >> /var/log/multipanel-cron.log 2>&amp;1
+0 3 * * * php <?= e($cronCliBase) ?> backup
+0 9 * * * php <?= e($cronCliBase) ?> expiry</pre>
+                <p class="small text-muted mb-0">Ruta absoluta del script: <code><?= e($cronCliBase) ?></code></p>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="mb-2">URLs HTTP (Plesk / cron web)</h6>
+                <p class="small text-muted">Sustituye <code>TU_TOKEN</code> por el CRON_TOKEN. Si <code>APP_URL</code> no está bien, usa rutas relativas bajo tu dominio.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Tarea</th>
+                                <th>Qué hace</th>
+                                <th>Programación sugerida</th>
+                                <th>URL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($cronCatalog as $task => $meta): ?>
+                            <tr>
+                                <td><code><?= e($task) ?></code><br><span class="small"><?= e($meta['title']) ?></span></td>
+                                <td class="small"><?= e($meta['description']) ?></td>
+                                <td class="small text-nowrap"><?= e($meta['schedule']) ?></td>
+                                <td class="small">
+                                    <code class="user-select-all"><?= e(($cronHttpBase !== '/cron/run' ? $cronHttpBase : '/cron/run') . ($task === 'all' ? '' : '/' . $task) . '?token=TU_TOKEN') ?></code>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -237,8 +341,9 @@ document.querySelector('#presetsTable tbody')?.addEventListener('click', (e) => 
     }
 });
 
-if (location.hash === '#billing') {
-    document.querySelector('[data-bs-target="#billing"]')?.click();
+const hashTab = location.hash.replace('#', '');
+if (hashTab) {
+    document.querySelector(`[data-bs-target="#${hashTab}"]`)?.click();
 }
 </script>
 JS;

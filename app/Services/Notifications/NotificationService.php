@@ -80,11 +80,12 @@ final class NotificationService
 
     public function notifyServerDown(string $serverName): void
     {
+        // Solo Telegram admin (chat de Configuración). Discord opcional si está configurado.
         $this->notify(
             'server.down',
             'Servidor caído',
             "El servidor \"{$serverName}\" no responde.",
-            ['telegram', 'discord'],
+            ['telegram'],
             ['level' => 'error']
         );
     }

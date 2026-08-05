@@ -1,5 +1,11 @@
 <?php ob_start(); ?>
-<h4 class="mb-4">Mensajes Telegram — avisos de caducidad</h4>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0">Mensajes a los usuarios</h4>
+        <small class="text-muted">Plantillas Telegram enviadas a clientes (caducidad y avisos). Distinto de «Mensajes al detener» (En directo).</small>
+    </div>
+    <a href="/settings" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear me-1"></i>Volver a Configuración</a>
+</div>
 <p class="text-muted small">Personaliza los mensajes automáticos por días restantes. Placeholders: <code><?= e($placeholders) ?></code></p>
 
 <form method="POST" action="/settings/notifications">

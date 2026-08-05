@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\BillingSettingsService;
+use App\Services\CronService;
 use App\Services\TwoFactorService;
 use Core\Controller;
 use Core\Database;
@@ -32,6 +33,10 @@ class SettingsController extends Controller
 
         $stripeSecretKey = $this->billingSettings->getStripeSecretKey($tenantId);
 
+        $appUrl = rtrim((string) config('app.url', ''), '/');
+        $cronToken = trim((string) ($settings['cron_token'] ?? env('CRON_TOKEN', '')));
+        $cronBase = ($appUrl !== '' ? $appUrl : '') . '/cron/run';
+
         return $this->view('settings.index', [
             'title' => 'Configuración',
             'settings' => $settings,
@@ -42,6 +47,11 @@ class SettingsController extends Controller
             'stripeHasSecretKey' => trim($stripeSecretKey) !== '',
             'stripePublishableKey' => $this->billingSettings->getStripePublishableKey($tenantId),
             'stripeHasWebhookSecret' => trim($this->billingSettings->getStripeWebhookSecret($tenantId)) !== '',
+            'cronCatalog' => CronService::catalog(),
+            'cronCliBase' => base_path('cron/run.php'),
+            'cronHttpBase' => $cronBase,
+            'cronTokenConfigured' => $cronToken !== '',
+            'cronTokenMasked' => $cronToken !== '' ? $this->maskKey($cronToken) : '',
         ]);
     }
 
@@ -95,21 +105,44 @@ class SettingsController extends Controller
 
         $fields = match ($group) {
             'smtp' => ['mail_host', 'mail_port', 'mail_username', 'mail_password', 'mail_from'],
-            'telegram' => ['telegram_bot_token', 'telegram_chat_id'],
+            'telegram' => [
+                'telegram_bot_token',
+                'telegram_chat_id',
+                'telegram_sandbox_enabled',
+                'telegram_sandbox_chat_id',
+                'telegram_sandbox_copy_real',
+            ],
+            'cron' => ['cron_token'],
             'discord' => ['discord_webhook_url'],
             'security' => ['rate_limit_max', 'session_lifetime'],
             default => ['app_name', 'app_timezone', 'app_locale'],
         };
 
+        if ($group === 'telegram') {
+            // Checkboxes: si no vienen, guardar 0
+            $this->saveSetting($tenantId, 'telegram', 'telegram_sandbox_enabled', $request->input('telegram_sandbox_enabled') ? '1' : '0');
+            $this->saveSetting($tenantId, 'telegram', 'telegram_sandbox_copy_real', $request->input('telegram_sandbox_copy_real') ? '1' : '0');
+        }
+
         foreach ($fields as $field) {
+            if (in_array($field, ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real'], true)) {
+                continue;
+            }
             $value = $request->input($field);
-            if ($value !== null) {
-                $this->saveSetting($tenantId, $group, $field, $value);
+            if ($value !== null && $value !== '') {
+                $this->saveSetting($tenantId, $group, $field, (string) $value);
             }
         }
 
+        $hash = match ($group) {
+            'telegram' => '#telegram',
+            'cron' => '#cron',
+            'smtp' => '#smtp',
+            default => '',
+        };
+
         Session::getInstance()->flash('success', 'Configuración guardada.');
-        return $this->redirect('/settings');
+        return $this->redirect('/settings' . $hash);
     }
 
     public function enable2fa(Request $request): Response

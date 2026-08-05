@@ -189,8 +189,10 @@ final class MediaUserManagementService
         $sent = $this->telegram->send($title, $body, [
             'chat_id' => $chatId,
             'media_user_id' => (int) $user->id,
+            'tenant_id' => (int) ($user->tenant_id ?? 1),
             'message_type' => 'manual',
             'log_message' => true,
+            'user_message' => true,
         ]);
 
         AuditService::log('media_user.message_sent', 'media_user', (int) $user->id, null, [

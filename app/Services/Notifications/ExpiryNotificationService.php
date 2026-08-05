@@ -91,8 +91,10 @@ final class ExpiryNotificationService
             $sent = $this->telegram->send($title, $body, [
                 'chat_id' => $chatId,
                 'media_user_id' => (int) $user->id,
+                'tenant_id' => (int) ($user->tenant_id ?? 1),
                 'message_type' => 'expiry_' . $milestoneKey,
                 'log_message' => true,
+                'user_message' => true,
             ]);
 
             if ($sent) {
