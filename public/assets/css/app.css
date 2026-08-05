@@ -114,6 +114,15 @@ body {
     padding: 0.45rem 0.55rem;
     border-radius: 0.35rem;
     background: rgba(33, 37, 41, 0.04);
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.session-stream-info:hover,
+.session-stream-info:focus-visible {
+    background: rgba(33, 37, 41, 0.08);
+    outline: none;
 }
 
 .session-stream-row {
@@ -144,6 +153,42 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Compacto por defecto; clic en el bloque muestra el texto completo */
+.session-stream-info.expanded dd {
+    overflow: visible;
+    text-overflow: unset;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.session-stream-info .stream-info-toggle {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #6c757d;
+    text-align: right;
+    letter-spacing: 0.01em;
+}
+
+.session-stream-info.expanded .stream-info-toggle {
+    color: var(--bs-primary, #0d6efd);
+}
+
+[data-bs-theme="dark"] .session-stream-info {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+[data-bs-theme="dark"] .session-stream-info:hover,
+[data-bs-theme="dark"] .session-stream-info:focus-visible {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .session-stream-info dd {
+    color: #e9ecef;
 }
 
 @media (max-width: 991.98px) {

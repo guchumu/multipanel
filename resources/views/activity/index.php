@@ -305,7 +305,9 @@ function streamInfoHtml(s) {
         .filter(([, v]) => String(v ?? '').trim() !== '')
         .map(([k, v]) => `<div class="session-stream-row"><dt>\${escapeHtml(k)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
         .join('');
-    return body ? `<dl class="session-stream-info small mb-2">\${body}</dl>` : '';
+    return body
+        ? `<dl class="session-stream-info small mb-2" role="button" tabindex="0" aria-expanded="false" title="Clic para ver el detalle completo">\${body}<span class="stream-info-toggle" aria-hidden="true">Ver más</span></dl>`
+        : '';
 }
 
 function overLimitBadgeHtml(s) {

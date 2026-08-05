@@ -68,4 +68,40 @@
             }
         });
     });
+
+    /**
+     * En directo: Quality/Stream/... compacto con ellipsis;
+     * clic en el bloque (también tras polling) expande el texto completo.
+     */
+    function toggleSessionStreamInfo(info) {
+        if (!info) return;
+        const expanded = info.classList.toggle('expanded');
+        info.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        info.setAttribute(
+            'title',
+            expanded ? 'Clic para ocultar el detalle' : 'Clic para ver el detalle completo'
+        );
+        const toggle = info.querySelector('.stream-info-toggle');
+        if (toggle) {
+            toggle.textContent = expanded ? 'Ver menos' : 'Ver más';
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        const info = e.target.closest('.session-stream-info');
+        if (!info) return;
+        // No interferir con controles de detener/mensaje
+        if (e.target.closest('.kill-message-box, .btn-kill-session, a, button, input, select, textarea')) {
+            return;
+        }
+        toggleSessionStreamInfo(info);
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const info = e.target.closest('.session-stream-info');
+        if (!info || e.target !== info) return;
+        e.preventDefault();
+        toggleSessionStreamInfo(info);
+    });
 })();

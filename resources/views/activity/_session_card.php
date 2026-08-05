@@ -84,7 +84,11 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 'Subtitle' => (string) ($streamInfo['subtitle'] ?? 'None'),
             ];
             ?>
-            <dl class="session-stream-info small mb-2">
+            <dl class="session-stream-info small mb-2"
+                role="button"
+                tabindex="0"
+                aria-expanded="false"
+                title="Clic para ver el detalle completo">
                 <?php foreach ($streamRows as $label => $value): ?>
                 <?php if (trim($value) === '') { continue; } ?>
                 <div class="session-stream-row">
@@ -92,6 +96,7 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                     <dd title="<?= e($value) ?>"><?= e($value) ?></dd>
                 </div>
                 <?php endforeach; ?>
+                <span class="stream-info-toggle" aria-hidden="true">Ver más</span>
             </dl>
             <?php $progress = (int) ($session['progress'] ?? 0); ?>
             <div class="progress mb-1" style="height: 4px;">
