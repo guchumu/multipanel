@@ -379,6 +379,63 @@ final class JellyfinService
         }
     }
 
+    /** @return array{external_id: string, username: string}|null */
+    public function findUserByName(string $username): ?array
+    {
+        $needle = mb_strtolower(trim($username));
+        if ($needle === '') {
+            return null;
+        }
+
+        foreach ($this->getUsers() as $user) {
+            if (mb_strtolower(trim((string) ($user['username'] ?? ''))) === $needle) {
+                $id = (string) ($user['external_id'] ?? '');
+                if ($id === '') {
+                    return null;
+                }
+
+                return [
+                    'external_id' => $id,
+                    'username' => (string) ($user['username'] ?? $username),
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Cambia la contraseña de un usuario (API key de admin; CurrentPw vacío).
+     */
+    public function updateUserPassword(string $userId, string $newPassword): bool
+    {
+        $userId = trim($userId);
+        $newPassword = trim($newPassword);
+        if ($userId === '' || $newPassword === '') {
+            return false;
+        }
+
+        try {
+            $this->client->post("/Users/{$userId}/Password", [
+                'headers' => $this->authHeaders(),
+                'json' => [
+                    'Id' => $userId,
+                    'CurrentPw' => '',
+                    'NewPw' => $newPassword,
+                ],
+            ]);
+
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Jellyfin update password failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
     public function deleteUser(string $userId): bool
     {
         try {

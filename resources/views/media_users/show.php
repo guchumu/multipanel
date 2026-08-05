@@ -86,6 +86,46 @@ ob_start();
             </div>
         </div>
 
+        <?php if (($serverType ?? null) === 'jellyfin'): ?>
+        <div class="card border-0 shadow-sm mb-4" id="jellyfinCredentialsCard">
+            <div class="card-header bg-white"><strong><i class="bi bi-key me-1"></i>Credenciales Jellyfin</strong></div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <label class="form-label small mb-1">Usuario</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" id="jellyfinUsername" class="form-control" value="<?= e($mediaUser->username) ?>" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="btnCopyJellyfinUser" title="Copiar usuario"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small mb-1">Contraseña</label>
+                    <div class="input-group input-group-sm">
+                        <input type="password" id="jellyfinPassword" class="form-control" value="<?= e($jellyfinPassword ?? '') ?>" readonly placeholder="<?= ($jellyfinPassword ?? '') === '' ? 'Sin contraseña guardada' : '' ?>">
+                        <button type="button" class="btn btn-outline-secondary" id="btnRevealJellyfinPassword" title="Mostrar/ocultar" <?= ($jellyfinPassword ?? '') === '' ? 'disabled' : '' ?>><i class="bi bi-eye"></i></button>
+                        <button type="button" class="btn btn-outline-secondary" id="btnCopyJellyfinPassword" title="Copiar contraseña" <?= ($jellyfinPassword ?? '') === '' ? 'disabled' : '' ?>><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="btnRegenJellyfinPassword">
+                        <i class="bi bi-arrow-repeat me-1"></i>Regenerar contraseña
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-info" id="btnSendJellyfinTelegram" <?= $mediaUser->telegram_chat_id ? '' : 'disabled title="Sin Telegram Chat ID"' ?>>
+                        <i class="bi bi-telegram me-1"></i>Enviar por Telegram
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="btnSendJellyfinWhatsapp">
+                        <i class="bi bi-whatsapp me-1"></i>WhatsApp
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCopyJellyfinCredentials" <?= ($credentialsText ?? '') === '' ? 'disabled' : '' ?>>
+                        <i class="bi bi-clipboard-check me-1"></i>Copiar mensaje
+                    </button>
+                </div>
+                <label class="form-label small mb-1">Texto para enviar al cliente</label>
+                <textarea id="jellyfinCredentialsText" class="form-control form-control-sm" rows="5" readonly><?= e($credentialsText ?? '') ?></textarea>
+                <p class="small text-muted mb-0 mt-2">La contraseña se guarda cifrada con APP_KEY. Tras regenerar, se actualiza también en Jellyfin.</p>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white"><strong>Control del usuario</strong></div>
             <div class="card-body">
@@ -252,6 +292,7 @@ ob_start();
 <?php
 $content = ob_get_clean();
 $scripts = '<script>window.MEDIA_USER_UUID = ' . json_encode($mediaUser->uuid) . ';';
-$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($mediaUser->metaGet('whatsapp_phone')) . ';</script>';
+$scripts .= 'window.MEDIA_USER_WHATSAPP = ' . json_encode($mediaUser->metaGet('whatsapp_phone')) . ';';
+$scripts .= 'window.MEDIA_USER_SERVER_TYPE = ' . json_encode($serverType ?? null) . ';</script>';
 $scripts .= '<script src="' . e(asset('js/media-user-show.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');

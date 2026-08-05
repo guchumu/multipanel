@@ -386,6 +386,36 @@ class MediaUserRepository
         $ensured = true;
     }
 
+    public function ensureJellyfinPasswordColumn(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+
+        if (!$this->hasColumn('media_users', 'jellyfin_password_encrypted')) {
+            try {
+                (new \Core\Updater())->runMigrations();
+            } catch (\Throwable) {
+                // Continue with direct ALTER if migrations fail.
+            }
+        }
+
+        if (!$this->hasColumn('media_users', 'jellyfin_password_encrypted')) {
+            try {
+                Database::getInstance()->pdo()->exec(
+                    'ALTER TABLE `media_users` ADD COLUMN `jellyfin_password_encrypted` TEXT NULL AFTER `password`'
+                );
+            } catch (\Throwable $e) {
+                if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+                    throw $e;
+                }
+            }
+        }
+
+        $ensured = true;
+    }
+
     public function backfillMissingServerIds(int $tenantId): int
     {
         $db = Database::getInstance();

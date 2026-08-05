@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS `media_users` (
     `telegram_chat_id` VARCHAR(50) NULL,
     `username` VARCHAR(100) NOT NULL,
     `password` VARCHAR(255) NULL,
+    `jellyfin_password_encrypted` TEXT NULL,
     `display_name` VARCHAR(255) NULL,
     `avatar` VARCHAR(500) NULL,
     `status` ENUM('active','suspended','pending','invited','blocked','expired','deleted') NOT NULL DEFAULT 'pending',

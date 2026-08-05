@@ -52,6 +52,7 @@ ob_start();
                 <div class="col-md-6">
                     <label class="form-label">Contraseña</label>
                     <input type="text" name="password" class="form-control" placeholder="Auto-generada si vacío">
+                    <div class="form-text">En Jellyfin se crea la cuenta con esta contraseña y queda guardada (cifrada) para copiar/enviar.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Max streams</label>

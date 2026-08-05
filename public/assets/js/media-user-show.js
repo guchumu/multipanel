@@ -282,6 +282,111 @@
         window.open(waLink(body), '_blank');
     });
 
+    function copyText(value, okMsg) {
+        const text = (value || '').toString();
+        if (!text) {
+            toast('No hay nada que copiar.');
+            return;
+        }
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).then(() => toast(okMsg)).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                toast(okMsg);
+            });
+            return;
+        }
+        toast(okMsg);
+    }
+
+    function applyJellyfinCredentials(username, password, text) {
+        const userInput = document.getElementById('jellyfinUsername');
+        const passInput = document.getElementById('jellyfinPassword');
+        const textArea = document.getElementById('jellyfinCredentialsText');
+        if (userInput && username) userInput.value = username;
+        if (passInput) {
+            passInput.value = password || '';
+            passInput.type = 'password';
+        }
+        if (textArea && typeof text === 'string') textArea.value = text;
+        const hasPass = !!(password && String(password).length);
+        ['btnRevealJellyfinPassword', 'btnCopyJellyfinPassword', 'btnCopyJellyfinCredentials'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.disabled = !hasPass;
+        });
+    }
+
+    document.getElementById('btnRevealJellyfinPassword')?.addEventListener('click', () => {
+        const input = document.getElementById('jellyfinPassword');
+        if (!input) return;
+        input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    document.getElementById('btnCopyJellyfinUser')?.addEventListener('click', () => {
+        copyText(document.getElementById('jellyfinUsername')?.value || '', 'Usuario copiado');
+    });
+
+    document.getElementById('btnCopyJellyfinPassword')?.addEventListener('click', () => {
+        copyText(document.getElementById('jellyfinPassword')?.value || '', 'Contraseña copiada');
+    });
+
+    document.getElementById('btnCopyJellyfinCredentials')?.addEventListener('click', () => {
+        copyText(document.getElementById('jellyfinCredentialsText')?.value || '', 'Mensaje copiado');
+    });
+
+    document.getElementById('btnRegenJellyfinPassword')?.addEventListener('click', async () => {
+        if (!confirm('¿Regenerar la contraseña en Jellyfin? La anterior dejará de funcionar.')) return;
+        const btn = document.getElementById('btnRegenJellyfinPassword');
+        const original = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Regenerando…';
+        }
+        try {
+            const data = await post(`/media-users/${uuid}/jellyfin-password/regenerate`);
+            if (data.success === false || !data.__httpOk) {
+                throw new Error(data.message || data.error || 'Error');
+            }
+            applyJellyfinCredentials(data.username, data.password, data.credentials_text || '');
+            toast(data.message || 'Contraseña regenerada');
+        } catch (err) {
+            toast(err.message || 'No se pudo regenerar');
+        } finally {
+            if (btn && original) {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        }
+    });
+
+    document.getElementById('btnSendJellyfinTelegram')?.addEventListener('click', async () => {
+        try {
+            const data = await post(`/media-users/${uuid}/jellyfin-credentials/send`);
+            if (data.success === false || !data.__httpOk) {
+                throw new Error(data.message || data.error || 'Error');
+            }
+            if (data.credentials_text) {
+                applyJellyfinCredentials(data.username, data.password, data.credentials_text);
+            }
+            toast(data.message || 'Credenciales enviadas por Telegram');
+        } catch (err) {
+            toast(err.message || 'No se pudo enviar');
+        }
+    });
+
+    document.getElementById('btnSendJellyfinWhatsapp')?.addEventListener('click', () => {
+        const text = document.getElementById('jellyfinCredentialsText')?.value || '';
+        if (!text.trim()) {
+            toast('No hay credenciales para enviar. Regenera la contraseña primero.');
+            return;
+        }
+        window.open(waLink(text), '_blank');
+    });
+
     document.addEventListener('click', async function (e) {
         const btn = e.target.closest('.btn-kill-session');
         if (!btn) return;

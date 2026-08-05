@@ -72,12 +72,26 @@ class DashboardController extends Controller
         $days = max(1, (int) $request->input('days', 30));
         $serverId = (int) $request->input('server_id', 0);
 
-        $result = $this->bulk->inviteEmailWithDays($tenantId, $serverId, $email, $days);
+        try {
+            $result = $this->bulk->inviteEmailWithDays($tenantId, $serverId, $email, $days);
+        } catch (\Throwable $e) {
+            Session::getInstance()->flash('error', 'Error al invitar: ' . $e->getMessage());
+            return $this->redirect('/dashboard');
+        }
 
-        Session::getInstance()->flash(
+        $session = Session::getInstance();
+        $session->flash(
             !empty($result['success']) ? 'success' : 'error',
             (string) ($result['message'] ?? 'Error al invitar.')
         );
+
+        if (!empty($result['success']) && !empty($result['password']) && !empty($result['username'])) {
+            $session->flash('jellyfin_credentials', [
+                'username' => (string) $result['username'],
+                'password' => (string) $result['password'],
+                'text' => (string) ($result['credentials_text'] ?? ''),
+            ]);
+        }
 
         if (!empty($result['success']) && !empty($result['uuid'])) {
             return $this->redirect('/media-users/' . $result['uuid']);

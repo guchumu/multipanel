@@ -14,6 +14,8 @@ use Core\Model;
  * @property string $uuid
  * @property int|null $server_id
  * @property string $username
+ * @property string|null $password
+ * @property string|null $jellyfin_password_encrypted
  * @property string $status
  * @property int|null $on_server 1 = aparece en la lista del servidor, 0 = ausente, null = aún no sincronizado
  * @property string|null $membership_synced_at

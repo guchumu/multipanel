@@ -29,6 +29,7 @@ final class Updater
         '008_user_messages_and_registro.sql' => ['table' => 'media_user_messages'],
         '009_server_is_default.sql' => ['column' => ['servers', 'is_default']],
         '010_media_user_server_membership.sql' => ['column' => ['media_users', 'on_server']],
+        '011_media_user_jellyfin_password.sql' => ['column' => ['media_users', 'jellyfin_password_encrypted']],
     ];
 
     public function __construct()

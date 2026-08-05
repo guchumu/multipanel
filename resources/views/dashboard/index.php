@@ -160,15 +160,21 @@ ob_start();
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100">
+                        <button type="submit" class="btn btn-primary w-100" <?= empty($servers) ? 'disabled' : '' ?>>
                             <i class="bi bi-send me-1"></i>Invitar
                         </button>
                     </div>
                 </form>
                 <p class="small text-muted mb-0 mt-2">
-                    Reutiliza el flujo de altas por email: en Plex envía la invitación; en Jellyfin crea la cuenta.
+                    En <strong>Plex</strong> envía la invitación por email. En <strong>Jellyfin</strong> genera usuario y contraseña,
+                    crea la cuenta en el servidor y te muestra las credenciales para copiar/enviar.
                     El servidor ★ predeterminado se selecciona automáticamente.
                 </p>
+                <?php if (empty($servers)): ?>
+                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                    No hay servidores configurados. Añade uno en <a href="/servers">Servidores</a> antes de invitar.
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

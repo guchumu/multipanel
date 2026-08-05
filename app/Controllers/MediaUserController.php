@@ -91,10 +91,15 @@ class MediaUserController extends Controller
             return $this->redirect('/media-users');
         }
 
+        $this->mediaUsers->ensureJellyfinPasswordColumn();
+
+        $server = null;
+        $serverType = null;
         if ($user->server_id) {
             $server = Server::find((int) $user->server_id);
             if ($server) {
                 $user->server_name = $server->name;
+                $serverType = (string) $server->type;
             }
         }
 
@@ -108,10 +113,34 @@ class MediaUserController extends Controller
             );
         }
 
+        $jellyfinPassword = null;
+        $credentialsText = null;
+        if ($serverType === 'jellyfin') {
+            $jellyfinPassword = $this->provisioning->revealJellyfinPassword($user);
+            if ($jellyfinPassword !== null && $server !== null) {
+                $credentialsText = $this->provisioning->credentialsShareText($user, $server, $jellyfinPassword);
+            }
+        }
+
+        $flashCredentials = Session::getInstance()->getFlash('jellyfin_credentials');
+        if (is_array($flashCredentials)) {
+            if (!empty($flashCredentials['password'])) {
+                $jellyfinPassword = (string) $flashCredentials['password'];
+            }
+            if (!empty($flashCredentials['text'])) {
+                $credentialsText = (string) $flashCredentials['text'];
+            } elseif ($jellyfinPassword !== null && $server !== null) {
+                $credentialsText = $this->provisioning->credentialsShareText($user, $server, $jellyfinPassword);
+            }
+        }
+
         return $this->view('media_users.show', [
             'title' => $user->display_name ?? $user->username,
             // Must not be named "user": AuthMiddleware shares auth $user for the layout/navbar.
             'mediaUser' => $user,
+            'serverType' => $serverType,
+            'jellyfinPassword' => $jellyfinPassword,
+            'credentialsText' => $credentialsText,
             'timeline' => $this->activity->timeline((int) $user->id),
             'messages' => $this->messages->listForUser((int) $user->id, 20),
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
@@ -371,15 +400,22 @@ class MediaUserController extends Controller
         }
 
         $password = $request->input('password') ?: $this->passwords->generate();
+        $serverId = $request->input('server_id') ?: null;
+        $server = $serverId ? Server::find((int) $serverId) : null;
+
+        $username = (string) $data['username'];
+        if ($server !== null && $server->type === 'jellyfin' && trim($username) === '') {
+            $username = $this->provisioning->generateJellyfinUsername($email ?? 'user', $tenantId);
+        }
 
         $user = new MediaUser([
             'tenant_id' => $tenantId,
             'uuid' => Uuid::uuid4()->toString(),
-            'server_id' => $request->input('server_id') ?: null,
-            'username' => $data['username'],
+            'server_id' => $serverId,
+            'username' => $username,
             'email' => $email,
             'password' => $this->passwords->hash($password),
-            'display_name' => $request->input('display_name'),
+            'display_name' => $request->input('display_name') ?: $username,
             'status' => $request->input('status') ?? 'pending',
             'max_streams' => (int) ($request->input('max_streams') ?? 1),
             'max_devices' => (int) ($request->input('max_devices') ?? 5),
@@ -393,16 +429,77 @@ class MediaUserController extends Controller
         $this->notifications->notifyUserCreated($user->username, $user->email ?? 'N/A');
 
         $flash = 'Usuario creado. Contraseña: ' . $password;
-        if ($user->server_id) {
-            $server = Server::find((int) $user->server_id);
-            if ($server !== null) {
-                $result = $this->provisioning->provision($user, $server, $password);
-                $flash .= ' | ' . $result['message'];
+        $session = Session::getInstance();
+        if ($server !== null) {
+            $result = $this->provisioning->provision($user, $server, $password);
+            $flash .= ' | ' . $result['message'];
+            if ($server->type === 'jellyfin' && !empty($result['password'])) {
+                $session->flash('jellyfin_credentials', [
+                    'username' => (string) ($result['username'] ?? $user->username),
+                    'password' => (string) $result['password'],
+                    'text' => $this->provisioning->credentialsShareText($user, $server, (string) $result['password']),
+                ]);
+                $session->flash('success', $flash);
+                return $this->redirect('/media-users/' . $user->uuid);
             }
         }
 
-        Session::getInstance()->flash('success', $flash);
+        $session->flash('success', $flash);
         return $this->redirect('/media-users');
+    }
+
+    public function regenerateJellyfinPassword(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $server = $user->server_id ? Server::find((int) $user->server_id) : null;
+        if ($server === null || $server->type !== 'jellyfin') {
+            return $this->json(['success' => false, 'message' => 'Este usuario no está en un servidor Jellyfin.'], 422);
+        }
+
+        $result = $this->provisioning->regenerateJellyfinPassword($user, $server);
+        if (!empty($result['success']) && !empty($result['password'])) {
+            $result['credentials_text'] = $this->provisioning->credentialsShareText(
+                $user,
+                $server,
+                (string) $result['password']
+            );
+            $this->audit->log('media_user.jellyfin_password_regenerated', 'media_user', (int) $user->id);
+        }
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    public function sendJellyfinCredentials(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $server = $user->server_id ? Server::find((int) $user->server_id) : null;
+        if ($server === null || $server->type !== 'jellyfin') {
+            return $this->json(['success' => false, 'message' => 'Este usuario no está en un servidor Jellyfin.'], 422);
+        }
+
+        $password = $this->provisioning->revealJellyfinPassword($user);
+        if ($password === null || $password === '') {
+            return $this->json(['success' => false, 'message' => 'No hay contraseña Jellyfin guardada. Regenera una primero.'], 422);
+        }
+
+        $text = $this->provisioning->credentialsShareText($user, $server, $password);
+        $result = $this->management->sendTelegramMessage($user, 'Acceso Jellyfin', $text);
+
+        return $this->json([
+            'success' => (bool) ($result['success'] ?? false),
+            'message' => (string) ($result['message'] ?? 'No enviado'),
+            'credentials_text' => $text,
+            'username' => (string) $user->username,
+            'password' => $password,
+        ], !empty($result['success']) ? 200 : 422);
     }
 
     public function suspend(Request $request, string $uuid): Response
