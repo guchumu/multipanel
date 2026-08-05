@@ -28,6 +28,7 @@ final class Updater
         '007_payments_history.sql' => ['table' => 'payments_history'],
         '008_user_messages_and_registro.sql' => ['table' => 'media_user_messages'],
         '009_server_is_default.sql' => ['column' => ['servers', 'is_default']],
+        '010_media_user_server_membership.sql' => ['column' => ['media_users', 'on_server']],
     ];
 
     public function __construct()

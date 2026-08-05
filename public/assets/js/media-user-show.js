@@ -160,6 +160,34 @@
         }
     });
 
+    async function forceMembershipSync(btn) {
+        if (!btn) return;
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Comprobando…';
+        try {
+            const data = await post(`/media-users/${uuid}/sync-membership`);
+            toast(responseMessage(data, 'Sincronización completada.', 'No se pudo sincronizar.'));
+            if (data.success !== false && data.__httpOk !== false) {
+                setTimeout(() => location.reload(), 700);
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        } catch (err) {
+            toast(err.message || 'Error de red');
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+
+    document.getElementById('btnSyncMembership')?.addEventListener('click', function () {
+        forceMembershipSync(this);
+    });
+    document.getElementById('btnSyncMembershipControl')?.addEventListener('click', function () {
+        forceMembershipSync(this);
+    });
+
     document.getElementById('stripePreset')?.addEventListener('change', (e) => {
         const opt = e.target.selectedOptions[0];
         if (!opt || opt.value === '') return;

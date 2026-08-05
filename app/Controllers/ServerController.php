@@ -246,7 +246,12 @@ class ServerController extends Controller
             $synced = $this->sync->sync($server);
             $stats = $this->sync->lastUserSyncStats();
             $msg = $synced
-                ? sprintf('Servidor actualizado y sincronizado (%d usuarios nuevos, %d actualizados).', $stats['imported'], $stats['updated'])
+                ? sprintf(
+                    'Servidor actualizado y sincronizado (%d nuevos, %d actualizados, %d ausentes).',
+                    (int) ($stats['imported'] ?? 0),
+                    (int) ($stats['updated'] ?? 0),
+                    (int) ($stats['missing'] ?? 0)
+                )
                 : 'Servidor actualizado pero OFFLINE: ' . ($server->last_error ?? 'no se pudo conectar.');
         }
 
@@ -265,12 +270,25 @@ class ServerController extends Controller
         $stats = $this->sync->lastUserSyncStats();
         $this->audit->log('server.synced', 'server', (int) $server->id);
 
+        $message = $success
+            ? sprintf(
+                'Forzar sync OK: %d nuevos, %d actualizados, %d ausentes del servidor, %d restaurados (%d en panel).',
+                (int) ($stats['imported'] ?? 0),
+                (int) ($stats['updated'] ?? 0),
+                (int) ($stats['missing'] ?? 0),
+                (int) ($stats['restored'] ?? 0),
+                (int) ($stats['total'] ?? 0)
+            )
+            : 'Sync fallido: ' . ($server->last_error ?? 'no se pudo conectar al servidor.');
+
+        if ($success && !empty($stats['warning'])) {
+            $message .= ' ' . $stats['warning'];
+        }
+
         return $this->json([
             'success' => $success,
             'status' => $server->status,
-            'message' => $success
-                ? sprintf('Sync OK: %d usuarios nuevos, %d actualizados (%d total).', $stats['imported'], $stats['updated'], $stats['total'])
-                : 'Sync fallido: ' . ($server->last_error ?? 'no se pudo conectar al servidor.'),
+            'message' => $message,
             'users' => $stats,
             'last_error' => $server->last_error,
             'debug' => $this->sync->lastDebug(),
@@ -335,11 +353,22 @@ class ServerController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $synced = $this->sync->syncAll($tenantId);
         $total = count($this->servers->allByTenant($tenantId));
+        $stats = $this->sync->lastUserSyncStats();
 
-        Session::getInstance()->flash(
-            'success',
-            sprintf('Sincronización completada: %d de %d servidores online.', $synced, $total)
+        $msg = sprintf(
+            'Forzar sincronización: %d/%d servidores online. Usuarios: %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+            $synced,
+            $total,
+            (int) ($stats['imported'] ?? 0),
+            (int) ($stats['updated'] ?? 0),
+            (int) ($stats['missing'] ?? 0),
+            (int) ($stats['restored'] ?? 0)
         );
+        if (!empty($stats['warning'])) {
+            $msg .= ' ' . $stats['warning'];
+        }
+
+        Session::getInstance()->flash('success', $msg);
 
         return $this->redirect('/servers');
     }

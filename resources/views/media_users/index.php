@@ -1,11 +1,14 @@
 <?php
-$queryBase = static function (?string $status, ?int $serverId) {
+$queryBase = static function (?string $status, ?int $serverId, ?bool $onServer = null) {
     $params = [];
     if ($status) {
         $params['status'] = $status;
     }
     if ($serverId) {
         $params['server_id'] = $serverId;
+    }
+    if ($onServer !== null) {
+        $params['on_server'] = $onServer ? '1' : '0';
     }
     return $params !== [] ? '?' . http_build_query($params) : '';
 };
@@ -30,11 +33,32 @@ $statusLabel = static function (string $status): string {
     };
 };
 
+$membershipBadge = static function ($onServer): array {
+    if ($onServer === null || $onServer === '') {
+        return ['label' => 'Sin sync', 'class' => 'bg-light text-dark border'];
+    }
+    if ((int) $onServer === 1) {
+        return ['label' => 'En biblioteca', 'class' => 'bg-success'];
+    }
+    return ['label' => 'No está en el servidor', 'class' => 'bg-danger'];
+};
+
+$currentOnServer = $currentOnServer ?? null;
+
 ob_start();
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Usuarios Media</h4>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        <form method="POST" action="/media-users/sync-membership" class="d-inline">
+            <?= csrf_field() ?>
+            <?php if ($currentServerId): ?>
+            <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
+            <?php endif; ?>
+            <button type="submit" class="btn btn-outline-primary" title="Reconsulta Plex/Jellyfin y marca quién sigue en la biblioteca">
+                <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
+            </button>
+        </form>
         <a href="/media-users/cleanup-iptv" class="btn btn-outline-danger"><i class="bi bi-funnel me-1"></i>Limpieza IPTV</a>
         <a href="/media-users/activity" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Actividad</a>
         <a href="/media-users/expiring" class="btn btn-outline-warning"><i class="bi bi-hourglass-split me-1"></i>Próximos vencimientos</a>
@@ -48,10 +72,11 @@ ob_start();
     <div class="card-body py-2">
         <div class="d-flex flex-wrap gap-3 align-items-center">
             <div class="btn-group btn-group-sm">
-                <a href="/media-users<?= e($queryBase(null, $currentServerId)) ?>" class="btn btn-outline-secondary <?= !$currentStatus ? 'active' : '' ?>">Todos</a>
+                <a href="/media-users<?= e($queryBase(null, $currentServerId)) ?>" class="btn btn-outline-secondary <?= !$currentStatus && $currentOnServer === null ? 'active' : '' ?>">Todos</a>
                 <a href="/media-users<?= e($queryBase('active', $currentServerId)) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
                 <a href="/media-users<?= e($queryBase('suspended', $currentServerId)) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
                 <a href="/media-users<?= e($queryBase('pending', $currentServerId)) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
+                <a href="/media-users<?= e($queryBase(null, $currentServerId, false)) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera del servidor</a>
             </div>
             <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-auto flex-wrap">
                 <div class="position-relative" style="min-width: 220px;">
@@ -60,6 +85,9 @@ ob_start();
                 </div>
                 <?php if ($currentStatus): ?>
                 <input type="hidden" name="status" value="<?= e($currentStatus) ?>">
+                <?php endif; ?>
+                <?php if ($currentOnServer !== null): ?>
+                <input type="hidden" name="on_server" value="<?= $currentOnServer ? '1' : '0' ?>">
                 <?php endif; ?>
                 <label class="small text-muted mb-0">Servidor:</label>
                 <select name="server_id" class="form-select form-select-sm" style="min-width: 180px;" onchange="this.form.submit()">
@@ -94,6 +122,7 @@ ob_start();
                     <th>Email</th>
                     <th>Servidor</th>
                     <th>Estado</th>
+                    <th>Biblioteca</th>
                     <th>Streams</th>
                     <th>Expira</th>
                     <th>Vence en</th>
@@ -103,9 +132,10 @@ ob_start();
             </thead>
             <tbody id="usersTableBody">
                 <?php if (empty($users)): ?>
-                <tr><td colspan="10" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="11" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
+                <?php $mb = $membershipBadge($u->on_server ?? null); ?>
                 <tr>
                     <td class="small text-muted"><?= (int) $u->id ?></td>
                     <td><a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none"><?= e($u->display_name ?? $u->username) ?></a></td>
@@ -120,6 +150,11 @@ ob_start();
                     <td>
                         <span class="badge <?= e($statusBadgeClass((string) $u->status)) ?>">
                             <?= e($statusLabel((string) $u->status)) ?>
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge <?= e($mb['class']) ?>" title="<?= e($u->membership_synced_at ? 'Última sync: ' . $u->membership_synced_at : 'Aún no se ha forzado sync') ?>">
+                            <?= e($mb['label']) ?>
                         </span>
                     </td>
                     <td><?= (int) $u->max_streams ?></td>
@@ -157,8 +192,8 @@ ob_start();
 $totalPages = max(1, (int) ($totalPages ?? 1));
 $page = max(1, (int) ($page ?? 1));
 if ($totalPages > 1):
-    $pageQuery = static function (int $p) use ($queryBase, $currentStatus, $currentServerId): string {
-        $params = $queryBase($currentStatus, $currentServerId ? (int) $currentServerId : null);
+    $pageQuery = static function (int $p) use ($queryBase, $currentStatus, $currentServerId, $currentOnServer): string {
+        $params = $queryBase($currentStatus, $currentServerId ? (int) $currentServerId : null, $currentOnServer);
         $sep = $params === '' ? '?' : '&';
         return '/media-users' . $params . $sep . 'page=' . $p;
     };

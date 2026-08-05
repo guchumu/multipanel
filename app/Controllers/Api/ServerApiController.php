@@ -89,10 +89,21 @@ class ServerApiController extends Controller
         }
 
         $success = $this->sync->sync($server);
+        $stats = $this->sync->lastUserSyncStats();
 
         return $this->json([
             'success' => $success,
             'data' => $this->formatServer($server),
+            'users' => $stats,
+            'message' => $success
+                ? sprintf(
+                    'Forzar sync OK: %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+                    (int) ($stats['imported'] ?? 0),
+                    (int) ($stats['updated'] ?? 0),
+                    (int) ($stats['missing'] ?? 0),
+                    (int) ($stats['restored'] ?? 0)
+                )
+                : 'Sync fallido',
         ]);
     }
 

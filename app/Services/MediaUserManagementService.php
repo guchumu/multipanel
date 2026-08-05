@@ -240,6 +240,8 @@ final class MediaUserManagementService
 
         if ($removed) {
             $user->status = 'suspended';
+            $user->on_server = 0;
+            $user->membership_synced_at = now()->format('Y-m-d H:i:s');
             $user->metaSet('plex_shared_server_id', null);
             $user->metaSet('plex_library_section_ids', null);
             $user->save();

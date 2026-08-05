@@ -10,6 +10,7 @@ use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
 use App\Services\Media\ServerEndpoint;
+use Core\Cache;
 use Core\Database;
 use Core\Logger;
 use Ramsey\Uuid\Uuid;
@@ -19,8 +20,15 @@ use Ramsey\Uuid\Uuid;
  */
 final class ServerSyncService
 {
-    /** @var array{imported: int, updated: int, total: int} */
-    private array $lastUserSyncStats = ['imported' => 0, 'updated' => 0, 'total' => 0];
+    /** @var array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string} */
+    private array $lastUserSyncStats = [
+        'imported' => 0,
+        'updated' => 0,
+        'missing' => 0,
+        'restored' => 0,
+        'total' => 0,
+        'warning' => null,
+    ];
 
     /** @var array<string, mixed>|null */
     private ?array $lastDebug = null;
@@ -71,6 +79,7 @@ final class ServerSyncService
             $this->recordStats($server);
             $this->recordActiveSessions($server, $sessions);
             $this->persistDebugLight($server, true);
+            $this->forgetSoftSyncCache((int) $server->tenant_id);
 
             Logger::info('Server synced', ['server_id' => $server->id, 'users' => $userStats]);
             return true;
@@ -207,12 +216,22 @@ final class ServerSyncService
         $server->save();
     }
 
-    /** @return array{imported: int, updated: int, total: int} */
+    /**
+     * Reconsulta la lista real de usuarios del servidor (Plex/Jellyfin), importa/actualiza
+     * y marca quién sigue en la biblioteca (`on_server`) sin borrar filas del panel.
+     *
+     * @return array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string}
+     */
     private function syncUsers(Server $server, PlexService|JellyfinService $media): array
     {
         $db = Database::getInstance();
+        $this->ensureMembershipColumns();
         $imported = 0;
         $updated = 0;
+        $restored = 0;
+        $seenExternalIds = [];
+        $now = now()->format('Y-m-d H:i:s');
+        $hasMembershipCols = $this->hasMembershipColumns();
 
         foreach ($media->getUsers() as $remoteUser) {
             $externalId = (string) ($remoteUser['external_id'] ?? '');
@@ -222,18 +241,30 @@ final class ServerSyncService
                 continue;
             }
 
+            $seenExternalIds[$externalId] = true;
+
             $existing = $db->fetchOne(
-                'SELECT id FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1',
+                $hasMembershipCols
+                    ? 'SELECT id, on_server FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1'
+                    : 'SELECT id FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1',
                 [$server->id, $externalId]
             );
 
             if ($existing) {
-                $db->update('media_users', [
+                $payload = [
                     'username' => $username,
                     'email' => $remoteUser['email'] ?? null,
                     'display_name' => $username,
                     'avatar' => $remoteUser['thumb'] ?? null,
-                ], 'id = ?', [$existing['id']]);
+                ];
+                if ($hasMembershipCols) {
+                    if ((int) ($existing['on_server'] ?? -1) === 0) {
+                        $restored++;
+                    }
+                    $payload['on_server'] = 1;
+                    $payload['membership_synced_at'] = $now;
+                }
+                $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
                 $updated++;
                 continue;
             }
@@ -252,19 +283,24 @@ final class ServerSyncService
             ) : null;
 
             if ($pending) {
-                $db->update('media_users', [
+                $payload = [
                     'external_id' => $externalId,
                     'username' => $username,
                     'display_name' => $username,
                     'avatar' => $remoteUser['thumb'] ?? null,
                     'status' => 'active',
-                ], 'id = ?', [$pending['id']]);
+                ];
+                if ($hasMembershipCols) {
+                    $payload['on_server'] = 1;
+                    $payload['membership_synced_at'] = $now;
+                }
+                $db->update('media_users', $payload, 'id = ?', [$pending['id']]);
                 Logger::info('Media user invite auto-accepted', ['media_user_id' => $pending['id'], 'server_id' => $server->id, 'email' => $email]);
                 $updated++;
                 continue;
             }
 
-            $db->insert('media_users', [
+            $insert = [
                 'tenant_id' => $server->tenant_id,
                 'uuid' => Uuid::uuid4()->toString(),
                 'server_id' => $server->id,
@@ -275,8 +311,42 @@ final class ServerSyncService
                 'avatar' => $remoteUser['thumb'] ?? null,
                 'status' => 'active',
                 'expires_at' => null,
-            ]);
+            ];
+            if ($hasMembershipCols) {
+                $insert['on_server'] = 1;
+                $insert['membership_synced_at'] = $now;
+            }
+            $db->insert('media_users', $insert);
             $imported++;
+        }
+
+        $missing = 0;
+        $warning = null;
+
+        // Lista vacía es ambigua (API fallida vs servidor sin shares): no marcar ausentes.
+        if ($hasMembershipCols && $seenExternalIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($seenExternalIds), '?'));
+            $params = array_merge([$now, $server->id], array_keys($seenExternalIds));
+            $db->query(
+                "UPDATE media_users
+                 SET on_server = 0, membership_synced_at = ?
+                 WHERE server_id = ?
+                   AND deleted_at IS NULL
+                   AND external_id IS NOT NULL AND external_id != ''
+                   AND external_id NOT IN ({$placeholders})
+                   AND (on_server IS NULL OR on_server = 1)",
+                $params
+            );
+
+            $missingRow = $db->fetchOne(
+                'SELECT COUNT(*) AS total FROM media_users
+                 WHERE server_id = ? AND deleted_at IS NULL AND on_server = 0
+                   AND external_id IS NOT NULL AND external_id != \'\'',
+                [$server->id]
+            );
+            $missing = (int) ($missingRow['total'] ?? 0);
+        } elseif ($hasMembershipCols && $seenExternalIds === []) {
+            $warning = 'El servidor no devolvió usuarios: no se marcaron ausentes (evita falsos positivos).';
         }
 
         $count = $db->fetchOne(
@@ -286,13 +356,139 @@ final class ServerSyncService
         $server->total_users = (int) ($count['total'] ?? 0);
         $server->save();
 
-        return ['imported' => $imported, 'updated' => $updated, 'total' => $server->total_users];
+        return [
+            'imported' => $imported,
+            'updated' => $updated,
+            'missing' => $missing,
+            'restored' => $restored,
+            'total' => $server->total_users,
+            'warning' => $warning,
+        ];
     }
 
-    /** @return array{imported: int, updated: int, total: int} */
+    /** @return array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string} */
     public function lastUserSyncStats(): array
     {
         return $this->lastUserSyncStats;
+    }
+
+    /**
+     * Force-sync membership for a single media user against their server user list.
+     *
+     * @return array{success: bool, on_server: ?bool, message: string, users?: array<string, mixed>}
+     */
+    public function syncMediaUserMembership(\App\Models\MediaUser $user): array
+    {
+        if (!$user->server_id) {
+            return ['success' => false, 'on_server' => null, 'message' => 'El usuario no tiene servidor asignado.'];
+        }
+
+        $server = Server::find((int) $user->server_id);
+        if ($server === null) {
+            return ['success' => false, 'on_server' => null, 'message' => 'Servidor no encontrado.'];
+        }
+
+        $ok = $this->sync($server);
+        $stats = $this->lastUserSyncStats;
+        if (!$ok) {
+            return [
+                'success' => false,
+                'on_server' => null,
+                'message' => 'Sync fallido: ' . ($server->last_error ?? 'no se pudo conectar al servidor.'),
+                'users' => $stats,
+            ];
+        }
+
+        $fresh = Database::getInstance()->fetchOne(
+            'SELECT on_server, membership_synced_at, status, external_id FROM media_users WHERE id = ? LIMIT 1',
+            [(int) $user->id]
+        );
+        $onServer = isset($fresh['on_server']) ? ((int) $fresh['on_server'] === 1) : null;
+        if ($fresh && ($fresh['external_id'] ?? '') === '') {
+            $onServer = false;
+            $label = 'aún no está en el servidor (invitación pendiente o sin external_id)';
+        } else {
+            $label = $onServer === true
+                ? 'está en la biblioteca / lista del servidor'
+                : ($onServer === false ? 'NO está en el servidor' : 'estado desconocido');
+        }
+
+        return [
+            'success' => true,
+            'on_server' => $onServer,
+            'message' => sprintf(
+                'Sincronización forzada: el usuario %s. (%d nuevos, %d actualizados, %d ausentes, %d restaurados)',
+                $label,
+                $stats['imported'],
+                $stats['updated'],
+                $stats['missing'],
+                $stats['restored']
+            ),
+            'users' => $stats,
+            'membership_synced_at' => $fresh['membership_synced_at'] ?? null,
+            'status' => $fresh['status'] ?? $user->status,
+        ];
+    }
+
+    private function forgetSoftSyncCache(int $tenantId): void
+    {
+        Cache::forget('stats_snapshot_synced_' . $tenantId);
+    }
+
+    private function ensureMembershipColumns(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+
+        if (!$this->hasMembershipColumns()) {
+            try {
+                (new \Core\Updater())->runMigrations();
+            } catch (\Throwable) {
+                // Fall through to direct ALTER.
+            }
+        }
+
+        if (!$this->hasMembershipColumns()) {
+            try {
+                Database::getInstance()->pdo()->exec(
+                    'ALTER TABLE `media_users`
+                     ADD COLUMN `on_server` TINYINT(1) NULL DEFAULT NULL AFTER `external_id`,
+                     ADD COLUMN `membership_synced_at` DATETIME NULL AFTER `on_server`'
+                );
+            } catch (\Throwable $e) {
+                if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
+                    Logger::warning('Could not add media_users membership columns', ['error' => $e->getMessage()]);
+                }
+            }
+        }
+
+        $ensured = true;
+    }
+
+    private function hasMembershipColumns(): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS total
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?
+                   AND COLUMN_NAME = ?',
+                ['media_users', 'on_server']
+            );
+            $cached = ((int) ($row['total'] ?? 0)) > 0;
+        } catch (\Throwable) {
+            $cached = false;
+        }
+
+        return $cached;
     }
 
     public function refreshDbCounts(int|Server $server): void
@@ -473,11 +669,33 @@ final class ServerSyncService
     public function syncAll(int $tenantId): int
     {
         $synced = 0;
+        $aggregate = [
+            'imported' => 0,
+            'updated' => 0,
+            'missing' => 0,
+            'restored' => 0,
+            'total' => 0,
+            'warning' => null,
+        ];
+
         foreach ($this->servers->allByTenant($tenantId) as $server) {
             if ($this->sync($server)) {
                 $synced++;
+                $stats = $this->lastUserSyncStats;
+                $aggregate['imported'] += (int) ($stats['imported'] ?? 0);
+                $aggregate['updated'] += (int) ($stats['updated'] ?? 0);
+                $aggregate['missing'] += (int) ($stats['missing'] ?? 0);
+                $aggregate['restored'] += (int) ($stats['restored'] ?? 0);
+                $aggregate['total'] += (int) ($stats['total'] ?? 0);
+                if (!empty($stats['warning'])) {
+                    $aggregate['warning'] = (string) $stats['warning'];
+                }
             }
         }
+
+        $this->lastUserSyncStats = $aggregate;
+        $this->forgetSoftSyncCache($tenantId);
+
         return $synced;
     }
 }

@@ -15,6 +15,8 @@ use Core\Model;
  * @property int|null $server_id
  * @property string $username
  * @property string $status
+ * @property int|null $on_server 1 = aparece en la lista del servidor, 0 = ausente, null = aún no sincronizado
+ * @property string|null $membership_synced_at
  * @property string|null $expires_at
  * @property string|null $telegram_chat_id
  */
@@ -25,6 +27,18 @@ class MediaUser extends Model
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    /** True if last force-sync found this external_id on the media server. */
+    public function isOnServer(): bool
+    {
+        return (int) ($this->on_server ?? -1) === 1;
+    }
+
+    /** True if last force-sync confirmed the user is no longer on the server. */
+    public function isMissingOnServer(): bool
+    {
+        return (int) ($this->on_server ?? -1) === 0;
     }
 
     public function isExpired(): bool

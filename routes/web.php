@@ -120,6 +120,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptv'], 'media_users.cleanup_iptv');
     $router->post('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptvApply'], 'media_users.cleanup_iptv.apply', [CsrfMiddleware::class]);
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
+    $router->post('/media-users/sync-membership', [MediaUserController::class, 'syncMembershipAll'], 'media_users.sync_membership_all', [CsrfMiddleware::class]);
     $router->get('/media-users/bulk', [MediaUserController::class, 'bulkCreate'], 'media_users.bulk');
     $router->post('/media-users/bulk', [MediaUserController::class, 'bulkStore'], 'media_users.bulk.store', [CsrfMiddleware::class]);
     $router->get('/media-users/create', [MediaUserController::class, 'create'], 'media_users.create');
@@ -133,6 +134,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/profile', [MediaUserController::class, 'updateProfile'], 'media_users.profile', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/send-message', [MediaUserController::class, 'sendMessage'], 'media_users.send_message', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/remove-server', [MediaUserController::class, 'removeFromServer'], 'media_users.remove_server', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/sync-membership', [MediaUserController::class, 'syncMembership'], 'media_users.sync_membership', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/telegram', [MediaUserController::class, 'updateTelegram'], 'media_users.telegram', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/whatsapp', [MediaUserController::class, 'updateWhatsapp'], 'media_users.whatsapp', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/stripe-checkout', [MediaUserController::class, 'stripeCheckout'], 'media_users.stripe_checkout', [CsrfMiddleware::class]);

@@ -13,8 +13,14 @@ use Core\Database;
 class MediaUserRepository
 {
     /** @return array<int, MediaUser> */
-    public function paginate(int $tenantId, int $page = 1, int $perPage = 20, ?string $status = null, ?int $serverId = null): array
-    {
+    public function paginate(
+        int $tenantId,
+        int $page = 1,
+        int $perPage = 20,
+        ?string $status = null,
+        ?int $serverId = null,
+        ?bool $onServer = null,
+    ): array {
         $offset = ($page - 1) * $perPage;
         $params = [$tenantId];
         $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
@@ -30,6 +36,11 @@ class MediaUserRepository
         if ($serverId !== null) {
             $sql .= ' AND mu.`server_id` = ?';
             $params[] = $serverId;
+        }
+
+        if ($onServer !== null && $this->hasOnServerColumn()) {
+            $sql .= ' AND mu.`on_server` = ?';
+            $params[] = $onServer ? 1 : 0;
         }
 
         $sql .= ' ORDER BY mu.`created_at` DESC LIMIT ? OFFSET ?';
@@ -60,8 +71,12 @@ class MediaUserRepository
         return (int) ($row['total'] ?? 0);
     }
 
-    public function countFiltered(int $tenantId, ?string $status = null, ?int $serverId = null): int
-    {
+    public function countFiltered(
+        int $tenantId,
+        ?string $status = null,
+        ?int $serverId = null,
+        ?bool $onServer = null,
+    ): int {
         $params = [$tenantId];
         $sql = 'SELECT COUNT(*) as total FROM `media_users` WHERE `tenant_id` = ? AND `deleted_at` IS NULL';
 
@@ -73,6 +88,11 @@ class MediaUserRepository
         if ($serverId !== null) {
             $sql .= ' AND `server_id` = ?';
             $params[] = $serverId;
+        }
+
+        if ($onServer !== null && $this->hasOnServerColumn()) {
+            $sql .= ' AND `on_server` = ?';
+            $params[] = $onServer ? 1 : 0;
         }
 
         $row = Database::getInstance()->fetchOne($sql, $params);
@@ -120,8 +140,14 @@ class MediaUserRepository
     }
 
     /** @return array<int, MediaUser> */
-    public function search(int $tenantId, string $query, int $limit = 25, ?string $status = null, ?int $serverId = null): array
-    {
+    public function search(
+        int $tenantId,
+        string $query,
+        int $limit = 25,
+        ?string $status = null,
+        ?int $serverId = null,
+        ?bool $onServer = null,
+    ): array {
         $query = trim($query);
         if ($query === '' || mb_strlen($query) < 2) {
             return [];
@@ -163,6 +189,11 @@ class MediaUserRepository
         if ($serverId !== null) {
             $sql .= ' AND mu.`server_id` = ?';
             $params[] = $serverId;
+        }
+
+        if ($onServer !== null && $this->hasOnServerColumn()) {
+            $sql .= ' AND mu.`on_server` = ?';
+            $params[] = $onServer ? 1 : 0;
         }
 
         $sql .= ' ORDER BY mu.`username` ASC LIMIT ?';
@@ -292,6 +323,11 @@ class MediaUserRepository
     private function hasExternalIdColumn(): bool
     {
         return $this->hasColumn('media_users', 'external_id');
+    }
+
+    private function hasOnServerColumn(): bool
+    {
+        return $this->hasColumn('media_users', 'on_server');
     }
 
     private function hasColumn(string $table, string $column): bool

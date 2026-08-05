@@ -39,6 +39,16 @@
         }
     }
 
+    function membershipBadge(onServer) {
+        if (onServer === null || onServer === undefined || onServer === '') {
+            return { label: 'Sin sync', cls: 'bg-light text-dark border' };
+        }
+        if (Number(onServer) === 1) {
+            return { label: 'En biblioteca', cls: 'bg-success' };
+        }
+        return { label: 'No está en el servidor', cls: 'bg-danger' };
+    }
+
     function daysLeftBadge(expiresAt) {
         if (!expiresAt) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
         const today = new Date();
@@ -57,7 +67,7 @@
 
     function renderRows(users) {
         if (!users.length) {
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Sin resultados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Sin resultados</td></tr>';
             return;
         }
 
@@ -70,6 +80,7 @@
                 ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')"><i class="bi bi-pause"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
             const dl = daysLeftBadge(u.expires_at);
+            const mb = membershipBadge(u.on_server);
 
             return `<tr>
                 <td class="small text-muted">${Number(u.id || 0)}</td>
@@ -77,6 +88,7 @@
                 <td class="small">${escapeHtml(u.email || '-')}</td>
                 <td class="small">${serverBadge}</td>
                 <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>
+                <td><span class="badge ${mb.cls}">${escapeHtml(mb.label)}</span></td>
                 <td>${Number(u.max_streams || 0)}</td>
                 <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input" data-uuid="${escapeHtml(u.uuid)}"
@@ -143,8 +155,10 @@
         const params = new URLSearchParams({ q });
         const status = new URLSearchParams(window.location.search).get('status');
         const serverId = new URLSearchParams(window.location.search).get('server_id');
+        const onServer = new URLSearchParams(window.location.search).get('on_server');
         if (status) params.set('status', status);
         if (serverId) params.set('server_id', serverId);
+        if (onServer === '0' || onServer === '1') params.set('on_server', onServer);
 
         const seq = ++requestSeq;
         if (meta) {

@@ -240,6 +240,8 @@ CREATE TABLE IF NOT EXISTS `media_users` (
     `uuid` CHAR(36) NOT NULL,
     `server_id` BIGINT UNSIGNED NULL,
     `external_id` VARCHAR(255) NULL,
+    `on_server` TINYINT(1) NULL DEFAULT NULL,
+    `membership_synced_at` DATETIME NULL,
     `email` VARCHAR(255) NULL,
     `telegram_chat_id` VARCHAR(50) NULL,
     `username` VARCHAR(100) NOT NULL,

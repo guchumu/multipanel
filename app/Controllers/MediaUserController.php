@@ -21,6 +21,7 @@ use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
 use App\Services\MediaUserProvisioningService;
 use App\Services\PasswordService;
+use App\Services\ServerSyncService;
 use App\Services\SubscriptionPeriod;
 use App\Services\Notifications\NotificationService;
 use Core\Controller;
@@ -51,6 +52,7 @@ class MediaUserController extends Controller
         private StreamingActivityService $streaming = new StreamingActivityService(),
         private MediaUserDedupeService $dedupe = new MediaUserDedupeService(),
         private IptvCleanupService $iptvCleanup = new IptvCleanupService(),
+        private ServerSyncService $serverSync = new ServerSyncService(),
     ) {
     }
 
@@ -258,14 +260,19 @@ class MediaUserController extends Controller
         $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $onServerFilter = $request->input('on_server');
+        $onServer = null;
+        if ($onServerFilter === '1' || $onServerFilter === '0') {
+            $onServer = $onServerFilter === '1';
+        }
         $page = max(1, (int) $request->input('page', 1));
         $perPage = 20;
-        $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId);
+        $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer);
         $totalPages = max(1, (int) ceil($totalCount / $perPage));
         if ($page > $totalPages) {
             $page = $totalPages;
         }
-        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId);
+        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId, $onServer);
 
         return $this->view('media_users.index', [
             'title' => 'Usuarios Media',
@@ -273,6 +280,7 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'currentStatus' => $status,
             'currentServerId' => $serverId,
+            'currentOnServer' => $onServer,
             'totalCount' => $totalCount,
             'showingCount' => count($users),
             'page' => $page,
@@ -288,13 +296,18 @@ class MediaUserController extends Controller
             $q = trim((string) $request->input('q', ''));
             $status = $request->input('status') ?: null;
             $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+            $onServerFilter = $request->input('on_server');
+            $onServer = null;
+            if ($onServerFilter === '1' || $onServerFilter === '0') {
+                $onServer = $onServerFilter === '1';
+            }
 
-            $users = $this->mediaUsers->search($tenantId, $q, 50, $status, $serverId);
+            $users = $this->mediaUsers->search($tenantId, $q, 50, $status, $serverId, $onServer);
 
             return $this->json([
                 'query' => $q,
                 'count' => count($users),
-                'total' => $this->mediaUsers->countFiltered($tenantId, $status, $serverId),
+                'total' => $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer),
                 'users' => array_map(static fn (MediaUser $u): array => [
                     'id' => (int) $u->id,
                     'uuid' => (string) $u->uuid,
@@ -302,6 +315,8 @@ class MediaUserController extends Controller
                     'email' => (string) ($u->email ?? ''),
                     'server_name' => (string) ($u->server_name ?? ''),
                     'status' => (string) $u->status,
+                    'on_server' => isset($u->on_server) ? (int) $u->on_server : null,
+                    'membership_synced_at' => $u->membership_synced_at ?? null,
                     'max_streams' => (int) $u->max_streams,
                     'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
                     'telegram_chat_id' => (string) ($u->telegram_chat_id ?? ''),
@@ -512,6 +527,72 @@ class MediaUserController extends Controller
         $result = $this->management->removeFromServer($user);
 
         return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * Fuerza reconsulta de la lista de usuarios del servidor de este media user
+     * para saber si sigue en la biblioteca (on_server).
+     */
+    public function syncMembership(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $result = $this->serverSync->syncMediaUserMembership($user);
+        $this->audit->log('media_user.membership_synced', 'media_user', (int) $user->id, null, [
+            'on_server' => $result['on_server'] ?? null,
+        ]);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    /**
+     * Forzar sincronización de membresía en todos los servidores (o uno filtrado).
+     */
+    public function syncMembershipAll(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+
+        if ($serverId) {
+            $server = Server::find($serverId);
+            if ($server === null || (int) $server->tenant_id !== $tenantId) {
+                Session::getInstance()->flash('error', 'Servidor no encontrado.');
+                return $this->redirect('/media-users');
+            }
+            $ok = $this->serverSync->sync($server);
+            $stats = $this->serverSync->lastUserSyncStats();
+            $msg = $ok
+                ? sprintf(
+                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+                    $server->name,
+                    (int) ($stats['imported'] ?? 0),
+                    (int) ($stats['updated'] ?? 0),
+                    (int) ($stats['missing'] ?? 0),
+                    (int) ($stats['restored'] ?? 0)
+                )
+                : 'Sync fallido: ' . ($server->last_error ?? 'sin conexión');
+            Session::getInstance()->flash($ok ? 'success' : 'error', $msg);
+            $redirect = '/media-users?server_id=' . $serverId;
+            return $this->redirect($redirect);
+        }
+
+        $synced = $this->serverSync->syncAll($tenantId);
+        $total = count($this->servers->allByTenant($tenantId));
+        $stats = $this->serverSync->lastUserSyncStats();
+        Session::getInstance()->flash('success', sprintf(
+            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+            $synced,
+            $total,
+            (int) ($stats['imported'] ?? 0),
+            (int) ($stats['updated'] ?? 0),
+            (int) ($stats['missing'] ?? 0),
+            (int) ($stats['restored'] ?? 0)
+        ));
+
+        return $this->redirect('/media-users');
     }
 
     public function updateTelegram(Request $request, string $uuid): Response

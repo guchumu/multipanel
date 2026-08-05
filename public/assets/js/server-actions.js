@@ -87,8 +87,8 @@
     document.querySelectorAll('.btn-sync').forEach(btn => {
         btn.addEventListener('click', async function () {
             const uuid = this.dataset.uuid;
-            setBusy(this, true, 'Sincronizando…');
-            showStatus('Sincronizando servidor (usuarios, bibliotecas, sesiones)…', 'info');
+            setBusy(this, true, 'Forzando…');
+            showStatus('Forzando sincronización (lista real de usuarios, bibliotecas, sesiones)…', 'info');
             try {
                 const data = await postJson(`/servers/${uuid}/sync`);
                 if (!data.__httpOk || data.success === false) {
@@ -96,8 +96,12 @@
                     setBusy(this, false);
                     return;
                 }
-                showStatus(responseMessage(data, 'Sync completado.', 'Error al sincronizar.'), 'success');
-                setTimeout(() => location.reload(), 800);
+                const u = data.users || {};
+                const detail = typeof data.message === 'string' && data.message
+                    ? data.message
+                    : `Sync OK: ${u.imported || 0} nuevos, ${u.updated || 0} actualizados, ${u.missing || 0} ausentes.`;
+                showStatus(detail, 'success');
+                setTimeout(() => location.reload(), 1200);
             } catch (e) {
                 showStatus('Error de red al sincronizar.', 'danger');
                 setBusy(this, false);

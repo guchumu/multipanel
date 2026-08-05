@@ -8,8 +8,8 @@
             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-pencil me-1"></i>Editar
             </a>
-            <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Importar/actualizar usuarios desde este servidor">
-                <i class="bi bi-arrow-repeat me-1"></i>Sincronizar usuarios
+            <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Reconsulta la lista real de usuarios y marca quién no está en la biblioteca">
+                <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
             </button>
             <button type="button" class="btn btn-sm btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>">
                 <i class="bi bi-plug me-1"></i>Test
@@ -24,7 +24,7 @@
 <?php if ($server->status !== 'online' && $server->last_error): ?>
 <div class="alert alert-warning">
     <strong>Servidor offline.</strong> <?= e($server->last_error) ?>
-    <div class="small mt-1">Usa <strong>Sincronizar</strong> o <strong>Debug</strong> para reintentar manualmente.</div>
+    <div class="small mt-1">Usa <strong>Forzar sincronización</strong> o <strong>Debug</strong> para reintentar manualmente.</div>
 </div>
 <?php endif; ?>
 

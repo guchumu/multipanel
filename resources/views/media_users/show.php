@@ -7,6 +7,16 @@ $statusBadgeClass = static function (string $status): string {
         default => 'bg-light text-dark border',
     };
 };
+$membershipBadge = static function ($onServer): array {
+    if ($onServer === null || $onServer === '') {
+        return ['label' => 'Sin sync', 'class' => 'bg-light text-dark border', 'hint' => 'Pulsa Forzar sincronización para comprobar si está en el servidor.'];
+    }
+    if ((int) $onServer === 1) {
+        return ['label' => 'En biblioteca', 'class' => 'bg-success', 'hint' => 'Aparece en la lista de usuarios del servidor.'];
+    }
+    return ['label' => 'No está en el servidor', 'class' => 'bg-danger', 'hint' => 'Tenía external_id en el panel pero ya no aparece en Plex/Jellyfin.'];
+};
+$mb = $membershipBadge($mediaUser->on_server ?? null);
 $playMethodLabel = static function (string $method): string {
     return match ($method) {
         'direct_play' => 'Direct Play',
@@ -32,8 +42,17 @@ ob_start();
             <h4 class="mb-1"><?= e($mediaUser->display_name ?? $mediaUser->username) ?></h4>
             <p class="text-muted small mb-0">ID <?= (int) $mediaUser->id ?> · <?= e($mediaUser->email ?? '-') ?> · <?= e($mediaUser->server_name ?? 'Sin servidor') ?></p>
         </div>
-        <span class="badge <?= e($statusBadgeClass((string) $mediaUser->status)) ?> fs-6"><?= e($mediaUser->status) ?></span>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="badge <?= e($statusBadgeClass((string) $mediaUser->status)) ?> fs-6"><?= e($mediaUser->status) ?></span>
+            <span class="badge <?= e($mb['class']) ?> fs-6" title="<?= e($mb['hint']) ?>"><?= e($mb['label']) ?></span>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnSyncMembership" title="Reconsulta la lista del servidor para este usuario">
+                <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
+            </button>
+        </div>
     </div>
+    <?php if (!empty($mediaUser->membership_synced_at)): ?>
+    <p class="small text-muted mt-2 mb-0">Última comprobación de biblioteca: <?= e($mediaUser->membership_synced_at) ?></p>
+    <?php endif; ?>
 </div>
 
 <div class="row g-4">
@@ -97,8 +116,10 @@ ob_start();
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $mediaUser->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
                     <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncMembershipControl" title="Comprobar si sigue en la biblioteca del servidor"><i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca</button>
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
                 </div>
+                <p class="small text-muted mt-2 mb-0"><?= e($mb['hint']) ?></p>
             </div>
         </div>
 
