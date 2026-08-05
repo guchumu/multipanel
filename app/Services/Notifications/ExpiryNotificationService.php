@@ -129,7 +129,7 @@ final class ExpiryNotificationService
         return $stats;
     }
 
-    private function alreadySent(int mediaUserId, string $milestone): bool
+    private function alreadySent(int $mediaUserId, string $milestone): bool
     {
         $row = Database::getInstance()->fetchOne(
             'SELECT id FROM media_user_expiry_notices WHERE media_user_id = ? AND milestone = ? LIMIT 1',
@@ -139,7 +139,7 @@ final class ExpiryNotificationService
         return $row !== null;
     }
 
-    private function recordSent(int mediaUserId, string $milestone): void
+    private function recordSent(int $mediaUserId, string $milestone): void
     {
         Database::getInstance()->insert('media_user_expiry_notices', [
             'media_user_id' => $mediaUserId,

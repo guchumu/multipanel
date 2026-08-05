@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           while IFS= read -r -d '' file; do
             php -l "$file"
-          done < <(find app core -type f -name '*.php' -print0)
+          done < <(find app core cron -type f -name '*.php' -print0)
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit --colors=always
