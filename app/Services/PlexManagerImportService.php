@@ -15,7 +15,7 @@ use Ramsey\Uuid\Uuid;
  * One-time migration from legacy plex_manager SQL dumps (phpMyAdmin).
  *
  * Solo se aplican filas con servicio IN (1, 5) — ver config/import_servicio.php.
- * 1 = Servitron, 5 = NucBox. El resto (IPTV u otros packs) se ignora.
+ * 1 = Server10, 5 = NucBox. El resto (IPTV u otros packs) se ignora.
  */
 final class PlexManagerImportService
 {

@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 
 final class ServicioServerMapperTest extends TestCase
 {
-    public function test_allowed_codes_include_servitron_and_nucbox(): void
+    public function test_allowed_codes_include_server10_and_nucbox(): void
     {
         $this->assertTrue(ServicioServerMapper::isAllowed(1));
         $this->assertTrue(ServicioServerMapper::isAllowed(5));
@@ -19,11 +19,13 @@ final class ServicioServerMapperTest extends TestCase
 
     public function test_servicio_from_server_name(): void
     {
-        $this->assertSame(1, ServicioServerMapper::servicioFromServerName('Servitron'));
-        $this->assertSame(1, ServicioServerMapper::servicioFromServerName('Plex Servitron Principal'));
+        $this->assertSame(1, ServicioServerMapper::servicioFromServerName('Server10'));
+        $this->assertSame(1, ServicioServerMapper::servicioFromServerName('server10'));
+        $this->assertSame(1, ServicioServerMapper::servicioFromServerName('Plex Server 10 Principal'));
         $this->assertSame(5, ServicioServerMapper::servicioFromServerName('Nucbox'));
         $this->assertSame(5, ServicioServerMapper::servicioFromServerName('NucBox HD'));
         $this->assertNull(ServicioServerMapper::servicioFromServerName('IPTV Mix'));
+        $this->assertNull(ServicioServerMapper::servicioFromServerName('Servitron'));
     }
 
     public function test_resolve_row_prefers_servicio_column(): void
@@ -31,7 +33,7 @@ final class ServicioServerMapperTest extends TestCase
         $code = ServicioServerMapper::resolveRowServicio(
             ['email' => 'a@test.com', 'servicio' => '5', 'server_id' => 1],
             ['a@test.com' => 1],
-            [1 => 'Servitron']
+            [1 => 'Server10']
         );
         $this->assertSame(5, $code);
     }
@@ -48,7 +50,7 @@ final class ServicioServerMapperTest extends TestCase
         $fromName = ServicioServerMapper::resolveRowServicio(
             ['email' => 'b@test.com', 'server_id' => 2],
             [],
-            [2 => 'Servitron']
+            [2 => 'Server10']
         );
         $this->assertSame(1, $fromName);
     }

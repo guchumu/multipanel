@@ -12,9 +12,9 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
 
 <div class="alert alert-secondary small">
     <strong>Filtro servicio:</strong> del SQL/CSV solo se aplican filas con
-    <code>servicio</code> / <code>service</code> <strong>1</strong> (Servitron) o <strong>5</strong> (NucBox).
+    <code>servicio</code> / <code>service</code> <strong>1</strong> (Server10) o <strong>5</strong> (NucBox).
     El resto (IPTV u otros packs) se ignora. Si la fila no trae esa columna, se infiere por
-    <code>payments_history.service</code> o por el nombre del servidor legacy (Servitron/Nucbox).
+    <code>payments_history.service</code> o por el nombre del servidor legacy (Server10/Nucbox).
     Flujo limpio: <a href="/media-users/limpieza">Usuarios → Limpieza / reinicio</a>
     (borrar todos → sync → importar fechas).
 </div>
@@ -68,7 +68,7 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
                 <ul class="small text-muted mb-3">
                     <li><strong>servers</strong> → Servidores Plex (URL, token, machine_id) — solo modo completo</li>
                     <li><strong>users</strong> → Usuarios media + clientes CRM (filtrados por servicio 1/5)</li>
-                    <li><strong>servicio / service / payments_history</strong> → 1=Servitron, 5=NucBox</li>
+                    <li><strong>servicio / service / payments_history</strong> → 1=Server10, 5=NucBox</li>
                     <li><strong>end_date</strong> → Fecha expiración</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
                     <li><strong>telegram_chat_id / telegram_id</strong> → Chat ID Telegram del usuario media (<code>media_users.telegram_chat_id</code>)</li>

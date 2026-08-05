@@ -78,7 +78,7 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'activeCount' => $activeCount,
             'confirmPhrase' => MediaUserWipeService::CONFIRM_PHRASE,
-            'servicioLabels' => config('import_servicio.labels', [1 => 'Servitron', 5 => 'NucBox']),
+            'servicioLabels' => config('import_servicio.labels', [1 => 'Server10', 5 => 'NucBox']),
             'servicioMap' => config('import_servicio.map', []),
         ]);
     }

@@ -1,6 +1,6 @@
 <?php
 ob_start();
-$servicioLabels = $servicioLabels ?? [1 => 'Servitron', 5 => 'NucBox'];
+$servicioLabels = $servicioLabels ?? [1 => 'Server10', 5 => 'NucBox'];
 $servicioMap = $servicioMap ?? [];
 ?>
 <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
@@ -91,7 +91,7 @@ $servicioMap = $servicioMap ?? [];
         <p class="small text-muted mb-2">
             Sube <code>plex_manager.sql</code> en modo <strong>solo metadata</strong>: actualiza
             <code>expires_at</code>, Telegram y email sobre usuarios ya sincronizados, emparejando por email/username
-            en el servidor correcto (1→Servitron, 5→NucBox).
+            en el servidor correcto (1→Server10, 5→NucBox).
         </p>
         <?php if (!empty($servicioMap)): ?>
         <p class="small text-muted mb-3">

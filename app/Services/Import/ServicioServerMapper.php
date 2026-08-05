@@ -36,7 +36,7 @@ final class ServicioServerMapper
     {
         $map = config('import_servicio.map', []);
         if (!is_array($map)) {
-            return [1 => ['servitron'], 5 => ['nucbox', 'nuc box']];
+            return [1 => ['server10', 'server 10'], 5 => ['nucbox', 'nuc box']];
         }
 
         $out = [];

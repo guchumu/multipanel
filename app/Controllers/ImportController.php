@@ -104,7 +104,7 @@ class ImportController extends Controller
 
             if ($mode === PlexManagerImportService::MODE_OVERLAY) {
                 $msg = sprintf(
-                    'Importar fechas/datos (solo servicio 1=Servitron, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d.',
+                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d.',
                     $parsed['users'],
                     (int) ($result['matched'] ?? 0),
                     (int) ($result['updated'] ?? 0),

@@ -18,14 +18,14 @@ caducidades del importador (sin mezclar IPTV).
    - Recrea en el panel solo quienes están en la biblioteca remota.
 3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay).
    - Solo filas con `servicio` / `service` **1** o **5**.
-   - 1 → Servitron, 5 → NucBox (match por nombre de servidor).
+   - 1 → Server10, 5 → NucBox (match por nombre de servidor).
    - Actualiza `expires_at`, Telegram, email sobre usuarios ya sync (email/username).
 
 ## Filtro servicio
 
 | Código | Servidor destino (needles por defecto) |
 |--------|----------------------------------------|
-| 1 | `servitron` |
+| 1 | `server10`, `server 10` |
 | 5 | `nucbox`, `nuc box` |
 
 Origen del código en cada fila SQL (en este orden):
@@ -37,7 +37,7 @@ Origen del código en cada fila SQL (en este orden):
 Si tus servidores se llaman distinto, define en `.env`:
 
 ```env
-IMPORT_SERVICIO_1_SERVERS=servitron,plex-principal
+IMPORT_SERVICIO_1_SERVERS=server10,server 10
 IMPORT_SERVICIO_5_SERVERS=nucbox,nuc box
 ```
 
