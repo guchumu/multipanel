@@ -401,6 +401,12 @@ final class PlexService
             'user' => (string) ($user['title'] ?? ''),
             // Plex User.id → media_users.external_id (match fiable para límites de stream)
             'user_id' => (string) ($user['id'] ?? ''),
+            // Preferir publicAddress (WAN); si no, address (LAN)
+            'client_ip' => SessionClientIp::prefer(
+                isset($player['publicAddress']) ? (string) $player['publicAddress'] : null,
+                isset($player['address']) ? (string) $player['address'] : null,
+                isset($sessionMeta['location']) ? (string) $sessionMeta['location'] : null,
+            ),
             'player' => (string) ($player['title'] ?? ''),
             'platform' => (string) ($player['platform'] ?? $player['device'] ?? ''),
             'state' => (string) ($player['state'] ?? 'playing'),
@@ -482,6 +488,12 @@ final class PlexService
             'user' => (string) ($session->User['title'] ?? ''),
             // Plex User.id → media_users.external_id (match fiable para límites de stream)
             'user_id' => (string) ($session->User['id'] ?? ''),
+            // Preferir publicAddress (WAN); si no, address (LAN)
+            'client_ip' => SessionClientIp::prefer(
+                isset($session->Player['publicAddress']) ? (string) $session->Player['publicAddress'] : null,
+                isset($session->Player['address']) ? (string) $session->Player['address'] : null,
+                isset($session->Session['location']) ? (string) $session->Session['location'] : null,
+            ),
             'player' => (string) ($session->Player['title'] ?? ''),
             'platform' => (string) ($session->Player['platform'] ?? $session->Player['device'] ?? ''),
             'state' => (string) ($session->Player['state'] ?? 'playing'),

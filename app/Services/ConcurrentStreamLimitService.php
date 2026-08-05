@@ -19,9 +19,12 @@ use Core\Logger;
  *  1. media_users.external_id = session.user_id (Plex User.id / Jellyfin UserId)
  *  2. LOWER(username) or LOWER(display_name) = LOWER(session.user)
  *
- * Policy when over limit: keep the N sessions with highest progress (primary watch),
- * kill the newest/excess (lowest progress, then later in list). Documented choice:
- * "kill newest beyond limit so primary watch continues".
+ * Default count mode: distinct_ip — el límite es el nº de IPs de cliente distintas
+ * (varias sesiones en la misma IP cuentan como 1). Alternativa: sessions.
+ *
+ * Policy distinct_ip when over limit: keep the N oldest IPs (first seen in the
+ * session list); kill ALL sessions from the newest excess IP(s).
+ * Policy sessions: keep highest-progress sessions; kill newest/excess.
  */
 final class ConcurrentStreamLimitService
 {
@@ -51,8 +54,10 @@ final class ConcurrentStreamLimitService
         $defaultLimit = $this->settings->getDefaultMaxStreams($tenantId);
         $enforce = $this->settings->isEnforcementEnabled($tenantId);
         $killMessage = $this->settings->getKillMessage($tenantId);
+        $countMode = $this->settings->getCountMode($tenantId);
+        $distinctIp = $countMode === StreamLimitSettingsService::COUNT_MODE_DISTINCT_IP;
 
-        // Attach media_user_id + limit to each session.
+        // Attach media_user_id + limit + normalized IP key.
         foreach ($sessions as $i => $session) {
             $match = $this->resolveMediaUser($session, $maps);
             $sessions[$i]['media_user_id'] = $match['id'] ?? null;
@@ -62,6 +67,8 @@ final class ConcurrentStreamLimitService
                 : $defaultLimit;
             $sessions[$i]['over_limit'] = false;
             $sessions[$i]['user_stream_count'] = 0;
+            $sessions[$i]['client_ip'] = SessionClientIp::normalize((string) ($session['client_ip'] ?? ''));
+            $sessions[$i]['ip_key'] = $this->ipKeyForSession($sessions[$i], $i);
         }
 
         // Group by media_user_id (only matched sessions).
@@ -80,49 +87,46 @@ final class ConcurrentStreamLimitService
 
         foreach ($byUser as $mediaUserId => $indexes) {
             $limit = (int) ($sessions[$indexes[0]]['stream_limit'] ?? $defaultLimit);
-            $count = count($indexes);
+            $serverId = (int) ($sessions[$indexes[0]]['server_id'] ?? 0);
+            $username = (string) ($sessions[$indexes[0]]['user'] ?? '');
+
+            if ($distinctIp) {
+                [$count, $excessIndexes, $distinctIps] = $this->excessByDistinctIp($indexes, $sessions, $limit);
+            } else {
+                [$count, $excessIndexes, $distinctIps] = $this->excessBySessions($indexes, $sessions, $limit);
+            }
 
             foreach ($indexes as $idx) {
                 $sessions[$idx]['user_stream_count'] = $count;
                 $sessions[$idx]['over_limit'] = $count > $limit;
+                $sessions[$idx]['count_mode'] = $countMode;
             }
 
-            if (!$enforce || $count <= $limit) {
+            if (!$enforce || $excessIndexes === []) {
                 continue;
             }
-
-            // Sort keep-first: highest progress, then earlier index (older in API list).
-            usort($indexes, static function (int $a, int $b) use ($sessions): int {
-                $pa = (int) ($sessions[$a]['progress'] ?? 0);
-                $pb = (int) ($sessions[$b]['progress'] ?? 0);
-                if ($pa !== $pb) {
-                    return $pb <=> $pa; // higher progress first (keep)
-                }
-
-                return $a <=> $b; // stable / older-in-list first
-            });
-
-            $keep = array_slice($indexes, 0, $limit);
-            $excess = array_slice($indexes, $limit);
-            unset($keep);
 
             $killedIds = [];
             $titles = [];
             $allSessionIds = [];
-            $serverId = (int) ($sessions[$indexes[0]]['server_id'] ?? 0);
-            $username = (string) ($sessions[$indexes[0]]['user'] ?? '');
+            $allIps = [];
 
             foreach ($indexes as $idx) {
                 $allSessionIds[] = (string) ($sessions[$idx]['session_id'] ?? '');
+                $ip = (string) ($sessions[$idx]['client_ip'] ?? '');
+                if ($ip !== '') {
+                    $allIps[$ip] = true;
+                }
                 $titles[] = [
                     'title' => (string) ($sessions[$idx]['title'] ?? ''),
                     'player' => (string) ($sessions[$idx]['player'] ?? ''),
                     'server' => (string) ($sessions[$idx]['server_name'] ?? ''),
                     'session_id' => (string) ($sessions[$idx]['session_id'] ?? ''),
+                    'ip' => $ip,
                 ];
             }
 
-            foreach ($excess as $idx) {
+            foreach ($excessIndexes as $idx) {
                 $sessionId = trim((string) ($sessions[$idx]['session_id'] ?? ''));
                 $sid = (int) ($sessions[$idx]['server_id'] ?? 0);
                 if ($sessionId === '' || $sid <= 0) {
@@ -153,6 +157,12 @@ final class ConcurrentStreamLimitService
 
             if ($killedIds !== []) {
                 $violations++;
+                $action = $distinctIp ? 'kill_newest_ips' : 'kill_newest';
+                $clientIps = array_values(array_keys($allIps));
+                if ($distinctIps !== []) {
+                    $clientIps = array_values(array_unique(array_merge($clientIps, $distinctIps)));
+                }
+
                 $this->logViolation(
                     $tenantId,
                     $mediaUserId,
@@ -163,7 +173,9 @@ final class ConcurrentStreamLimitService
                     $allSessionIds,
                     $killedIds,
                     $titles,
-                    $killMessage
+                    $killMessage,
+                    $action,
+                    $clientIps
                 );
 
                 AuditService::log(
@@ -174,8 +186,10 @@ final class ConcurrentStreamLimitService
                     [
                         'stream_count' => $count,
                         'limit' => $limit,
+                        'count_mode' => $countMode,
+                        'client_ips' => $clientIps,
                         'killed_session_ids' => $killedIds,
-                        'action' => 'kill_newest',
+                        'action' => $action,
                         'server_id' => $serverId,
                     ],
                     null,
@@ -191,28 +205,129 @@ final class ConcurrentStreamLimitService
                 ARRAY_FILTER_USE_BOTH
             ));
 
-            // Recalculate counts after removals.
-            $recount = [];
+            // Recalcular conteo tras cortes.
+            $byUserLeft = [];
             foreach ($sessions as $i => $session) {
                 $uid = $session['media_user_id'] ?? null;
                 if ($uid === null) {
                     continue;
                 }
-                $recount[(int) $uid] = ($recount[(int) $uid] ?? 0) + 1;
+                $byUserLeft[(int) $uid][] = $i;
             }
-            foreach ($sessions as $i => $session) {
-                $uid = $session['media_user_id'] ?? null;
-                if ($uid === null) {
-                    continue;
+            foreach ($byUserLeft as $indexes) {
+                $limit = (int) ($sessions[$indexes[0]]['stream_limit'] ?? $defaultLimit);
+                if ($distinctIp) {
+                    [$count] = $this->excessByDistinctIp($indexes, $sessions, $limit);
+                } else {
+                    $count = count($indexes);
                 }
-                $c = $recount[(int) $uid] ?? 0;
-                $limit = (int) ($session['stream_limit'] ?? $defaultLimit);
-                $sessions[$i]['user_stream_count'] = $c;
-                $sessions[$i]['over_limit'] = $c > $limit;
+                foreach ($indexes as $idx) {
+                    $sessions[$idx]['user_stream_count'] = $count;
+                    $sessions[$idx]['over_limit'] = $count > $limit;
+                }
             }
         }
 
         return ['sessions' => $sessions, 'killed' => $killedTotal, 'violations' => $violations];
+    }
+
+    /**
+     * Clave de agrupación: IP normalizada, o unknown:{session} si no hay IP.
+     *
+     * @param array<string, mixed> $session
+     */
+    private function ipKeyForSession(array $session, int $index): string
+    {
+        $ip = SessionClientIp::normalize((string) ($session['client_ip'] ?? ''));
+        if ($ip !== '') {
+            return $ip;
+        }
+
+        $sid = trim((string) ($session['session_id'] ?? ''));
+
+        return 'unknown:' . ($sid !== '' ? $sid : (string) $index);
+    }
+
+    /**
+     * @param array<int, int> $indexes
+     * @param array<int, array<string, mixed>> $sessions
+     * @return array{0: int, 1: array<int, int>, 2: array<int, string>} count, excess session indexes, distinct display IPs
+     */
+    private function excessByDistinctIp(array $indexes, array $sessions, int $limit): array
+    {
+        /** @var array<string, array{first: int, indexes: array<int, int>, display: string}> $byIp */
+        $byIp = [];
+        foreach ($indexes as $idx) {
+            $key = (string) ($sessions[$idx]['ip_key'] ?? $this->ipKeyForSession($sessions[$idx], $idx));
+            if (!isset($byIp[$key])) {
+                $display = (string) ($sessions[$idx]['client_ip'] ?? '');
+                $byIp[$key] = [
+                    'first' => $idx,
+                    'indexes' => [],
+                    'display' => $display !== '' ? $display : $key,
+                ];
+            }
+            $byIp[$key]['indexes'][] = $idx;
+            $byIp[$key]['first'] = min($byIp[$key]['first'], $idx);
+        }
+
+        // IPs más antiguas primero (menor índice = apareció antes en el snapshot).
+        uasort($byIp, static fn (array $a, array $b): int => $a['first'] <=> $b['first']);
+
+        $orderedKeys = array_keys($byIp);
+        $count = count($orderedKeys);
+        $distinctIps = array_values(array_map(
+            static fn (string $k): string => $byIp[$k]['display'],
+            $orderedKeys
+        ));
+
+        if ($count <= $limit) {
+            return [$count, [], $distinctIps];
+        }
+
+        $excessKeys = array_slice($orderedKeys, $limit);
+        $excessIndexes = [];
+        foreach ($excessKeys as $key) {
+            foreach ($byIp[$key]['indexes'] as $idx) {
+                $excessIndexes[] = $idx;
+            }
+        }
+
+        return [$count, $excessIndexes, $distinctIps];
+    }
+
+    /**
+     * @param array<int, int> $indexes
+     * @param array<int, array<string, mixed>> $sessions
+     * @return array{0: int, 1: array<int, int>, 2: array<int, string>}
+     */
+    private function excessBySessions(array $indexes, array $sessions, int $limit): array
+    {
+        $count = count($indexes);
+        $ips = [];
+        foreach ($indexes as $idx) {
+            $ip = (string) ($sessions[$idx]['client_ip'] ?? '');
+            if ($ip !== '') {
+                $ips[$ip] = true;
+            }
+        }
+        $distinctIps = array_values(array_keys($ips));
+
+        if ($count <= $limit) {
+            return [$count, [], $distinctIps];
+        }
+
+        usort($indexes, static function (int $a, int $b) use ($sessions): int {
+            $pa = (int) ($sessions[$a]['progress'] ?? 0);
+            $pb = (int) ($sessions[$b]['progress'] ?? 0);
+            if ($pa !== $pb) {
+                return $pb <=> $pa;
+            }
+
+            return $a <=> $b;
+        });
+
+        return [$count, array_slice($indexes, $limit), $distinctIps];
     }
 
     /**

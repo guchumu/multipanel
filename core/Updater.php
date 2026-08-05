@@ -32,6 +32,7 @@ final class Updater
         '011_media_user_jellyfin_password.sql' => ['column' => ['media_users', 'jellyfin_password_encrypted']],
         '012_playback_stop_messages.sql' => ['table' => 'playback_stop_messages'],
         '013_stream_limit_enforcement.sql' => ['table' => 'stream_limit_violations'],
+        '014_stream_limit_distinct_ip.sql' => ['column' => ['stream_limit_violations', 'client_ips']],
     ];
 
     public function __construct()

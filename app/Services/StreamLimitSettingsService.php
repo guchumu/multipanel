@@ -10,13 +10,17 @@ use Core\Database;
  * Tenant settings for concurrent stream limit enforcement.
  *
  * Group: streams
- * Keys: enforcement_enabled, default_max_streams, kill_message
+ * Keys: enforcement_enabled, default_max_streams, kill_message, count_mode
  */
 final class StreamLimitSettingsService
 {
     public const GROUP = 'streams';
 
     public const DEFAULT_MAX_STREAMS = 2;
+
+    public const COUNT_MODE_DISTINCT_IP = 'distinct_ip';
+
+    public const COUNT_MODE_SESSIONS = 'sessions';
 
     public const DEFAULT_KILL_MESSAGE = 'Se ha superado el límite de reproducciones simultáneas. Se ha cortado una emisión adicional.';
 
@@ -76,6 +80,28 @@ final class StreamLimitSettingsService
     }
 
     /**
+     * distinct_ip (default): cuenta IPs de cliente distintas.
+     * sessions: cuenta cada sesión activa.
+     */
+    public function getCountMode(int $tenantId): string
+    {
+        $value = trim((string) ($this->get($tenantId, 'count_mode') ?? ''));
+        if ($value === self::COUNT_MODE_SESSIONS) {
+            return self::COUNT_MODE_SESSIONS;
+        }
+
+        return self::COUNT_MODE_DISTINCT_IP;
+    }
+
+    public function setCountMode(int $tenantId, string $mode): void
+    {
+        $mode = $mode === self::COUNT_MODE_SESSIONS
+            ? self::COUNT_MODE_SESSIONS
+            : self::COUNT_MODE_DISTINCT_IP;
+        $this->set($tenantId, 'count_mode', $mode, 'string');
+    }
+
+    /**
      * Effective limit for a media user: per-user override or tenant default.
      */
     public function resolveLimitForUser(int $tenantId, mixed $maxStreams): int
@@ -87,13 +113,14 @@ final class StreamLimitSettingsService
         return max(1, min(50, (int) $maxStreams));
     }
 
-    /** @return array{enforcement_enabled: bool, default_max_streams: int, kill_message: string} */
+    /** @return array{enforcement_enabled: bool, default_max_streams: int, kill_message: string, count_mode: string} */
     public function all(int $tenantId): array
     {
         return [
             'enforcement_enabled' => $this->isEnforcementEnabled($tenantId),
             'default_max_streams' => $this->getDefaultMaxStreams($tenantId),
             'kill_message' => (string) ($this->get($tenantId, 'kill_message') ?? ''),
+            'count_mode' => $this->getCountMode($tenantId),
         ];
     }
 
