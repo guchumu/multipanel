@@ -103,6 +103,65 @@ final class JellyfinService
         }
     }
 
+    /**
+     * Trigger a scan/refresh for a single Jellyfin library (CollectionFolder ItemId).
+     * POST /Items/{itemId}/Refresh
+     */
+    public function refreshLibrary(string $itemId): bool
+    {
+        try {
+            $this->client->post('/Items/' . rawurlencode($itemId) . '/Refresh', [
+                'headers' => $this->authHeaders(),
+                'query' => [
+                    'Recursive' => 'true',
+                    'ImageRefreshMode' => 'Default',
+                    'MetadataRefreshMode' => 'Default',
+                    'ReplaceAllImages' => 'false',
+                    'ReplaceAllMetadata' => 'false',
+                ],
+            ]);
+            return true;
+        } catch (GuzzleException $e) {
+            Logger::error('Jellyfin library refresh failed', [
+                'server_id' => $this->server->id,
+                'item_id' => $itemId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Trigger a full library scan on the Jellyfin server.
+     * POST /Library/Refresh
+     *
+     * @return array{success: bool, scanned: int, failed: int, error?: string}
+     */
+    public function refreshAllLibraries(): array
+    {
+        try {
+            $this->client->post('/Library/Refresh', [
+                'headers' => $this->authHeaders(),
+            ]);
+            return [
+                'success' => true,
+                'scanned' => 1,
+                'failed' => 0,
+            ];
+        } catch (GuzzleException $e) {
+            Logger::error('Jellyfin full library refresh failed', [
+                'server_id' => $this->server->id,
+                'error' => $e->getMessage(),
+            ]);
+            return [
+                'success' => false,
+                'scanned' => 0,
+                'failed' => 1,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function getActiveSessions(): array
     {

@@ -257,6 +257,72 @@ final class PlexService
         }
     }
 
+    /**
+     * Trigger a library section scan on the Plex Media Server.
+     * POST /library/sections/{id}/refresh
+     */
+    public function refreshLibrary(string|int $sectionId): bool
+    {
+        if ($this->lastError !== null) {
+            return false;
+        }
+
+        try {
+            $this->client->post('/library/sections/' . rawurlencode((string) $sectionId) . '/refresh', [
+                'headers' => $this->authHeaders(),
+            ]);
+            return true;
+        } catch (GuzzleException $e) {
+            $this->lastError = $e->getMessage();
+            Logger::error('Plex library refresh failed', [
+                'server_id' => $this->server->id,
+                'section_id' => $sectionId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Trigger a scan for every library section on the Plex server.
+     *
+     * @return array{success: bool, scanned: int, failed: int, error?: string}
+     */
+    public function refreshAllLibraries(): array
+    {
+        $libraries = $this->getLibraries();
+        if ($libraries === []) {
+            return [
+                'success' => false,
+                'scanned' => 0,
+                'failed' => 0,
+                'error' => $this->lastError ?? 'No se encontraron bibliotecas en Plex.',
+            ];
+        }
+
+        $scanned = 0;
+        $failed = 0;
+        foreach ($libraries as $lib) {
+            $id = (string) ($lib['external_id'] ?? '');
+            if ($id === '') {
+                $failed++;
+                continue;
+            }
+            if ($this->refreshLibrary($id)) {
+                $scanned++;
+            } else {
+                $failed++;
+            }
+        }
+
+        return [
+            'success' => $scanned > 0,
+            'scanned' => $scanned,
+            'failed' => $failed,
+            'error' => $failed > 0 ? ($this->lastError ?? null) : null,
+        ];
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function getActiveSessions(): array
     {

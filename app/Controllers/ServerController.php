@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\AuditService;
 use App\Services\Media\MediaDiscoveryService;
+use App\Services\Media\MediaServerFactory;
 use App\Services\Media\ServerEndpoint;
 use App\Services\ServerConnectionDebugService;
 use App\Services\ServerLoadService;
@@ -170,12 +171,18 @@ class ServerController extends Controller
             'SELECT COUNT(*) AS libraries FROM libraries WHERE server_id = ?',
             [$server->id]
         );
+        $libraries = $db->fetchAll(
+            'SELECT id, external_id, name, type, path, item_count, is_enabled
+             FROM libraries WHERE server_id = ? ORDER BY name ASC',
+            [$server->id]
+        );
 
         return $this->view('servers.show', [
             'title' => $server->name,
             'server' => $server,
             'panelUsers' => (int) ($dbStats['users'] ?? 0),
             'panelLibraries' => (int) ($dbLibraries['libraries'] ?? 0),
+            'libraries' => $libraries ?: [],
             'debug' => $this->connectionDebug->loadDebug($server) ?? $this->sync->lastDebug(),
         ]);
     }
@@ -346,6 +353,133 @@ class ServerController extends Controller
             'last_error' => $server->last_error,
             'debug' => $this->sync->lastDebug(),
         ]);
+    }
+
+    /**
+     * Trigger a media-server library scan for one section already synced to the panel.
+     * Does not remove users or alter library shares — only asks Plex/Jellyfin to scan.
+     */
+    public function scanLibrary(Request $request, string $uuid, string $externalId): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['success' => false, 'error' => 'Servidor no encontrado', 'message' => 'Servidor no encontrado.'], 404);
+        }
+
+        $externalId = trim(urldecode($externalId));
+        if ($externalId === '') {
+            return $this->json(['success' => false, 'message' => 'Biblioteca no válida.'], 422);
+        }
+
+        $db = \Core\Database::getInstance();
+        $library = $db->fetchOne(
+            'SELECT id, external_id, name FROM libraries WHERE server_id = ? AND external_id = ? LIMIT 1',
+            [$server->id, $externalId]
+        );
+        if ($library === null) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Biblioteca no encontrada en el panel. Usa «Forzar sincronización» primero.',
+            ], 404);
+        }
+
+        $platform = $server->type === 'jellyfin' ? 'Jellyfin' : 'Plex';
+
+        try {
+            $media = MediaServerFactory::make($server);
+            $ok = $media->refreshLibrary($externalId);
+
+            if ($ok) {
+                try {
+                    $this->audit->log('server.library_scanned', 'server', (int) $server->id, null, [
+                        'external_id' => $externalId,
+                        'library' => $library['name'] ?? null,
+                    ]);
+                } catch (\Throwable $auditError) {
+                    \Core\Logger::warning('server.library_scanned audit failed', ['error' => $auditError->getMessage()]);
+                }
+            }
+
+            return $this->json([
+                'success' => $ok,
+                'message' => $ok
+                    ? sprintf('Escaneo iniciado en %s: %s', $platform, (string) ($library['name'] ?? $externalId))
+                    : sprintf('No se pudo iniciar el escaneo en %s.', $platform),
+            ], $ok ? 200 : 502);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('server.scan_library failed', [
+                'uuid' => $uuid,
+                'external_id' => $externalId,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->json([
+                'success' => false,
+                'message' => 'Error al iniciar el escaneo: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Trigger a scan of all libraries on the Plex/Jellyfin server.
+     */
+    public function scanAllLibraries(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['success' => false, 'error' => 'Servidor no encontrado', 'message' => 'Servidor no encontrado.'], 404);
+        }
+
+        $platform = $server->type === 'jellyfin' ? 'Jellyfin' : 'Plex';
+
+        try {
+            $media = MediaServerFactory::make($server);
+            $result = $media->refreshAllLibraries();
+            $ok = !empty($result['success']);
+
+            if ($ok) {
+                try {
+                    $this->audit->log('server.libraries_scanned', 'server', (int) $server->id, null, [
+                        'scanned' => $result['scanned'] ?? null,
+                        'failed' => $result['failed'] ?? null,
+                    ]);
+                } catch (\Throwable $auditError) {
+                    \Core\Logger::warning('server.libraries_scanned audit failed', ['error' => $auditError->getMessage()]);
+                }
+            }
+
+            $message = $ok
+                ? sprintf('Escaneo iniciado en %s (todas las bibliotecas).', $platform)
+                : sprintf(
+                    'No se pudo iniciar el escaneo en %s.%s',
+                    $platform,
+                    !empty($result['error']) ? ' ' . $result['error'] : ''
+                );
+
+            if ($ok && (int) ($result['failed'] ?? 0) > 0) {
+                $message = sprintf(
+                    'Escaneo iniciado en %s: %d biblioteca(s), %d con error.',
+                    $platform,
+                    (int) ($result['scanned'] ?? 0),
+                    (int) ($result['failed'] ?? 0)
+                );
+            }
+
+            return $this->json([
+                'success' => $ok,
+                'message' => $message,
+                'scanned' => (int) ($result['scanned'] ?? 0),
+                'failed' => (int) ($result['failed'] ?? 0),
+            ], $ok ? 200 : 502);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('server.scan_all_libraries failed', [
+                'uuid' => $uuid,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->json([
+                'success' => false,
+                'message' => 'Error al iniciar el escaneo: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function syncAll(Request $request): Response

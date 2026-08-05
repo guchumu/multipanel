@@ -11,6 +11,9 @@
             <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Reconsulta la lista real de usuarios y marca quién no está en la biblioteca">
                 <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
             </button>
+            <button type="button" class="btn btn-sm btn-outline-info btn-scan-all" data-uuid="<?= e($server->uuid) ?>" title="Pide a <?= e(strtoupper($server->type)) ?> que escanee todas las bibliotecas en disco">
+                <i class="bi bi-disc me-1"></i>Escanear todas
+            </button>
             <button type="button" class="btn btn-sm btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>">
                 <i class="bi bi-plug me-1"></i>Test
             </button>
@@ -54,6 +57,62 @@
                     <div class="col-6 col-md-3"><h3 class="mb-0"><?= e($server->health_score ?? 100) ?>%</h3><small class="text-muted">Salud</small></div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+                <h6 class="mb-0">Bibliotecas</h6>
+                <p class="text-muted small mb-0">
+                    Escanea en <?= e(strtoupper($server->type)) ?> (disco/metadatos). No modifica usuarios ni permisos.
+                    «Forzar sincronización» solo actualiza la copia en el panel.
+                </p>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary btn-scan-all" data-uuid="<?= e($server->uuid) ?>">
+                <i class="bi bi-disc me-1"></i>Escanear todas
+            </button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Tipo</th>
+                        <th class="d-none d-md-table-cell">ID externo</th>
+                        <th class="text-end">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($libraries)): ?>
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-4">
+                            No hay bibliotecas sincronizadas en el panel.
+                            Usa <strong>Forzar sincronización</strong> para importarlas.
+                        </td>
+                    </tr>
+                    <?php else: ?>
+                    <?php foreach ($libraries as $library): ?>
+                    <tr>
+                        <td class="fw-medium"><?= e($library['name'] ?? '') ?></td>
+                        <td><span class="badge bg-secondary"><?= e($library['type'] ?? '-') ?></span></td>
+                        <td class="small text-muted d-none d-md-table-cell"><code><?= e($library['external_id'] ?? '') ?></code></td>
+                        <td class="text-end">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-info btn-scan-library"
+                                    data-uuid="<?= e($server->uuid) ?>"
+                                    data-external-id="<?= e($library['external_id'] ?? '') ?>"
+                                    title="Escanear esta biblioteca en <?= e(strtoupper($server->type)) ?>">
+                                <i class="bi bi-disc me-1"></i>Escanear
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

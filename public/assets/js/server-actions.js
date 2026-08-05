@@ -1,5 +1,5 @@
 /**
- * Loading states and feedback for server sync / test / debug / default-star buttons.
+ * Loading states and feedback for server sync / scan / test / debug / default-star buttons.
  */
 (function () {
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
@@ -104,6 +104,62 @@
                 setTimeout(() => location.reload(), 1200);
             } catch (e) {
                 showStatus('Error de red al sincronizar.', 'danger');
+                setBusy(this, false);
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-scan-all').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const uuid = this.dataset.uuid;
+            const buttons = document.querySelectorAll('.btn-scan-all, .btn-scan-library');
+            buttons.forEach(b => setBusy(b, true, 'Escaneando…'));
+            showStatus('Iniciando escaneo de todas las bibliotecas en el servidor…', 'info');
+            try {
+                const data = await postJson(`/servers/${uuid}/libraries/scan-all`);
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al iniciar el escaneo.'), 'danger');
+                    buttons.forEach(b => setBusy(b, false));
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Escaneo iniciado en el servidor.', 'Error al iniciar el escaneo.'),
+                    'success'
+                );
+                buttons.forEach(b => setBusy(b, false));
+            } catch (e) {
+                showStatus('Error de red al iniciar el escaneo.', 'danger');
+                buttons.forEach(b => setBusy(b, false));
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-scan-library').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            const uuid = this.dataset.uuid;
+            const externalId = this.dataset.externalId;
+            if (!externalId) {
+                showStatus('Biblioteca sin ID externo.', 'danger');
+                return;
+            }
+            setBusy(this, true, 'Escaneando…');
+            showStatus('Iniciando escaneo de la biblioteca en el servidor…', 'info');
+            try {
+                const data = await postJson(
+                    `/servers/${uuid}/libraries/${encodeURIComponent(externalId)}/scan`
+                );
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al iniciar el escaneo.'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Escaneo iniciado en el servidor.', 'Error al iniciar el escaneo.'),
+                    'success'
+                );
+                setBusy(this, false);
+            } catch (e) {
+                showStatus('Error de red al iniciar el escaneo.', 'danger');
                 setBusy(this, false);
             }
         });

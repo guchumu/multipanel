@@ -112,6 +112,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->put('/servers/{uuid}', [ServerController::class, 'update'], 'servers.update', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');
     $router->post('/servers/{uuid}/sync', [ServerController::class, 'sync'], 'servers.sync', [CsrfMiddleware::class]);
+    $router->post('/servers/{uuid}/libraries/scan-all', [ServerController::class, 'scanAllLibraries'], 'servers.libraries.scan_all', [CsrfMiddleware::class]);
+    $router->post('/servers/{uuid}/libraries/{externalId}/scan', [ServerController::class, 'scanLibrary'], 'servers.libraries.scan', [CsrfMiddleware::class]);
     $router->post('/servers/{uuid}/default', [ServerController::class, 'setDefault'], 'servers.default', [CsrfMiddleware::class]);
     $router->post('/servers/{uuid}/test', [ServerController::class, 'test'], 'servers.test', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}/debug', [ServerController::class, 'debug'], 'servers.debug');
