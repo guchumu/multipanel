@@ -24,7 +24,10 @@ $buildFilterUrl = static function (?int $serverId): string {
     return '/activity?' . http_build_query(['server_id' => $serverId]);
 };
 
-$renderSessionCard = static function (array $session) use ($playMethodLabel, $playMethodBadge): void {
+/** @var array<int, array{id:int,title:string,body:string,is_default:int}> $stopMessages */
+$stopMessages = $stopMessages ?? [];
+
+$renderSessionCard = static function (array $session) use ($playMethodLabel, $playMethodBadge, $stopMessages): void {
     include base_path('resources/views/activity/_session_card.php');
 };
 
@@ -42,6 +45,9 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2">
+        <a href="/settings/stop-messages" class="btn btn-outline-secondary btn-sm" title="Gestionar mensajes al detener">
+            <i class="bi bi-chat-left-text me-1"></i>Mensajes
+        </a>
         <span class="badge bg-primary" id="session-count"><?= (int) $totalCount ?> streams totales</span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="refresh-btn" title="Actualizar"><i class="bi bi-arrow-clockwise"></i></button>
     </div>
@@ -174,12 +180,25 @@ ob_start();
 $content = ob_get_clean();
 $viewMode = $currentServerId ? 'server' : 'all';
 $serverFilter = $currentServerId ? '?server_id=' . (int) $currentServerId : '';
+$stopMessagesJson = json_encode(
+    array_map(static fn (array $m): array => [
+        'id' => (int) $m['id'],
+        'title' => (string) $m['title'],
+        'body' => (string) $m['body'],
+        'is_default' => (int) $m['is_default'],
+    ], $stopMessages),
+    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+if ($stopMessagesJson === false) {
+    $stopMessagesJson = '[]';
+}
 $scripts = <<<JS
 <script>
 const viewMode = '{$viewMode}';
 const playLabels = { direct_play: 'Direct Play', direct_stream: 'Direct Stream', transcode: 'Transcode' };
 const playBadges = { direct_play: 'success', direct_stream: 'info', transcode: 'warning' };
 const apiUrl = '/activity/api{$serverFilter}';
+const stopMessages = {$stopMessagesJson};
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -245,15 +264,37 @@ function thumbHtml(s) {
     return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">`;
 }
 
+function defaultStopBody() {
+    const def = (stopMessages || []).find(m => Number(m.is_default) === 1);
+    if (def) return String(def.body || '');
+    return stopMessages.length ? String(stopMessages[0].body || '') : '';
+}
+
+function killPresetOptionsHtml() {
+    let html = '<option value="">Personalizado / sin mensaje</option>';
+    (stopMessages || []).forEach(m => {
+        html += `<option value="\${m.id}" \${Number(m.is_default) === 1 ? 'selected' : ''}>\${escapeHtml(m.title)}\${Number(m.is_default) === 1 ? ' ★' : ''}</option>`;
+    });
+    return html;
+}
+
+function killControlsHtml(s) {
+    if (!s.can_kill || !s.session_id) return '';
+    const body = escapeHtml(defaultStopBody());
+    return `<div class="mt-2 kill-message-box">
+        <select class="form-select form-select-sm mb-1 kill-preset-select" aria-label="Mensaje predefinido">\${killPresetOptionsHtml()}</select>
+        <textarea class="form-control form-control-sm mb-1 kill-message-input" rows="2" placeholder="Mensaje al usuario (opcional)" maxlength="500">\${body}</textarea>
+        <button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Pausar / detener</button>
+    </div>`;
+}
+
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
     const label = playLabels[method] || method;
     const progress = Number(s.progress || 0);
     const thumb = thumbHtml(s);
-    const killBtn = s.can_kill && s.session_id
-        ? `<div class="mt-2"><input type="text" class="form-control form-control-sm mb-1 kill-message-input" placeholder="Mensaje al usuario (opcional)" maxlength="200"><button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session" data-server-id="\${s.server_id}" data-session-id="\${escapeHtml(s.session_id)}"><i class="bi bi-stop-circle me-1"></i>Pausar / detener</button></div>`
-        : '';
+    const killBtn = killControlsHtml(s);
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
         <div class="card border-0 shadow-sm h-100 session-card">
@@ -345,6 +386,20 @@ async function refreshSessions() {
 
 document.getElementById('refresh-btn').addEventListener('click', refreshSessions);
 setInterval(refreshSessions, 10000);
+
+document.addEventListener('change', function (e) {
+    const select = e.target.closest('.kill-preset-select');
+    if (!select) return;
+    const box = select.closest('.kill-message-box');
+    const textarea = box?.querySelector('.kill-message-input');
+    if (!textarea) return;
+    if (!select.value) {
+        textarea.value = '';
+        return;
+    }
+    const preset = (stopMessages || []).find(m => String(m.id) === String(select.value));
+    textarea.value = preset ? String(preset.body || '') : '';
+});
 
 document.addEventListener('click', async function (e) {
     const btn = e.target.closest('.btn-kill-session');

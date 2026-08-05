@@ -76,12 +76,34 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 <span><?= $progress ?>%</span>
             </div>
             <?php if (!empty($session['can_kill'])): ?>
-            <div class="mt-2">
-                <input type="text" class="form-control form-control-sm mb-1 kill-message-input"
-                       placeholder="Mensaje al usuario (opcional)"
-                       maxlength="200"
-                       data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
-                       data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>">
+            <?php
+            /** @var array<int, array{id:int,title:string,body:string,is_default:int}> $stopMessages */
+            $stopMessages = $stopMessages ?? [];
+            $defaultBody = '';
+            foreach ($stopMessages as $preset) {
+                if ((int) ($preset['is_default'] ?? 0) === 1) {
+                    $defaultBody = (string) $preset['body'];
+                    break;
+                }
+            }
+            if ($defaultBody === '' && $stopMessages !== []) {
+                $defaultBody = (string) ($stopMessages[0]['body'] ?? '');
+            }
+            ?>
+            <div class="mt-2 kill-message-box">
+                <select class="form-select form-select-sm mb-1 kill-preset-select" aria-label="Mensaje predefinido">
+                    <option value="">Personalizado / sin mensaje</option>
+                    <?php foreach ($stopMessages as $preset): ?>
+                    <option value="<?= (int) $preset['id'] ?>"
+                            <?= (int) ($preset['is_default'] ?? 0) === 1 ? 'selected' : '' ?>>
+                        <?= e($preset['title']) ?><?= (int) ($preset['is_default'] ?? 0) === 1 ? ' ★' : '' ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+                <textarea class="form-control form-control-sm mb-1 kill-message-input"
+                          rows="2"
+                          placeholder="Mensaje al usuario (opcional)"
+                          maxlength="500"><?= e($defaultBody) ?></textarea>
                 <button type="button" class="btn btn-outline-danger btn-sm w-100 btn-kill-session"
                         data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
                         data-session-id="<?= e((string) ($session['session_id'] ?? '')) ?>">

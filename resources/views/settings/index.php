@@ -1,5 +1,10 @@
 <?php ob_start(); ?>
-<h4 class="mb-4">Configuración</h4>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h4 class="mb-0">Configuración</h4>
+    <a href="/settings/stop-messages" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-chat-left-text me-1"></i>Mensajes al detener
+    </a>
+</div>
 
 <ul class="nav nav-tabs mb-4" role="tablist">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#general">General</button></li>

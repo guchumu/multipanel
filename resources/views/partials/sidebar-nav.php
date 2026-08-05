@@ -36,6 +36,7 @@ $linkClass = static function (string $prefix) use ($currentPath): string {
     <li class="nav-item"><a class="<?= $linkClass('/privacy') ?>" href="/privacy"><i class="bi bi-shield-lock me-2"></i><?= __('privacy') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/logs') ?>" href="/logs"><i class="bi bi-journal-text me-2"></i><?= __('logs') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/settings') ?>" href="/settings"><i class="bi bi-gear me-2"></i><?= __('settings') ?></a></li>
+    <li class="nav-item"><a class="<?= $linkClass('/settings/stop-messages') ?>" href="/settings/stop-messages"><i class="bi bi-chat-left-text me-2"></i>Mensajes al detener</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/backups') ?>" href="/backups"><i class="bi bi-cloud-arrow-up me-2"></i><?= __('backups') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/updater') ?>" href="/updater"><i class="bi bi-arrow-up-circle me-2"></i><?= __('updates') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/diagnostics') ?>" href="/diagnostics"><i class="bi bi-heart-pulse me-2"></i><?= __('diagnostics') ?></a></li>

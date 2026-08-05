@@ -10,6 +10,7 @@ use App\Services\AuthService;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\PlaybackStopMessageService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Request;
@@ -24,6 +25,7 @@ class ActivityController extends Controller
         private AuthService $auth = new AuthService(),
         private StreamingActivityService $activity = new StreamingActivityService(),
         private ServerRepository $servers = new ServerRepository(),
+        private PlaybackStopMessageService $stopMessages = new PlaybackStopMessageService(),
     ) {
     }
 
@@ -41,6 +43,7 @@ class ActivityController extends Controller
             'serverStats' => $snapshot['server_stats'],
             'totalCount' => $snapshot['total_count'],
             'currentServerId' => $serverId,
+            'stopMessages' => $this->stopMessages->listForTenant($tenantId),
         ]);
     }
 

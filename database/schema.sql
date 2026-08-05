@@ -301,6 +301,21 @@ CREATE TABLE IF NOT EXISTS `media_user_messages` (
     CONSTRAINT `fk_messages_media_user` FOREIGN KEY (`media_user_id`) REFERENCES `media_users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `playback_stop_messages` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `title` VARCHAR(120) NOT NULL,
+    `body` TEXT NOT NULL,
+    `is_default` TINYINT(1) NOT NULL DEFAULT 0,
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_playback_stop_messages_tenant` (`tenant_id`),
+    KEY `idx_playback_stop_messages_default` (`tenant_id`, `is_default`),
+    CONSTRAINT `fk_playback_stop_messages_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `media_user_libraries` (
     `media_user_id` BIGINT UNSIGNED NOT NULL,
     `library_id` BIGINT UNSIGNED NOT NULL,
