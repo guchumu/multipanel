@@ -35,6 +35,7 @@ ob_start();
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Usuarios Media</h4>
     <div class="d-flex gap-2">
+        <a href="/media-users/cleanup-iptv" class="btn btn-outline-danger"><i class="bi bi-funnel me-1"></i>Limpieza IPTV</a>
         <a href="/media-users/activity" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Actividad</a>
         <a href="/media-users/expiring" class="btn btn-outline-warning"><i class="bi bi-hourglass-split me-1"></i>Próximos vencimientos</a>
         <a href="/media-users/broadcast" class="btn btn-outline-info"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
@@ -151,6 +152,46 @@ ob_start();
         </table>
     </div>
 </div>
+
+<?php
+$totalPages = max(1, (int) ($totalPages ?? 1));
+$page = max(1, (int) ($page ?? 1));
+if ($totalPages > 1):
+    $pageQuery = static function (int $p) use ($queryBase, $currentStatus, $currentServerId): string {
+        $params = $queryBase($currentStatus, $currentServerId ? (int) $currentServerId : null);
+        $sep = $params === '' ? '?' : '&';
+        return '/media-users' . $params . $sep . 'page=' . $p;
+    };
+?>
+<nav class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3" aria-label="Paginación usuarios">
+    <span class="small text-muted">Página <?= (int) $page ?> de <?= (int) $totalPages ?></span>
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+            <a class="page-link" href="<?= $page <= 1 ? '#' : e($pageQuery($page - 1)) ?>">Anterior</a>
+        </li>
+        <?php
+        $window = 2;
+        $start = max(1, $page - $window);
+        $end = min($totalPages, $page + $window);
+        if ($start > 1): ?>
+        <li class="page-item"><a class="page-link" href="<?= e($pageQuery(1)) ?>">1</a></li>
+        <?php if ($start > 2): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif;
+        endif;
+        for ($p = $start; $p <= $end; $p++): ?>
+        <li class="page-item <?= $p === $page ? 'active' : '' ?>">
+            <a class="page-link" href="<?= e($pageQuery($p)) ?>"><?= $p ?></a>
+        </li>
+        <?php endfor;
+        if ($end < $totalPages):
+            if ($end < $totalPages - 1): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif; ?>
+        <li class="page-item"><a class="page-link" href="<?= e($pageQuery($totalPages)) ?>"><?= (int) $totalPages ?></a></li>
+        <?php endif; ?>
+        <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+            <a class="page-link" href="<?= $page >= $totalPages ? '#' : e($pageQuery($page + 1)) ?>">Siguiente</a>
+        </li>
+    </ul>
+</nav>
+<?php endif; ?>
 
 <?php
 $content = ob_get_clean();

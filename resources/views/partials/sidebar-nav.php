@@ -16,6 +16,7 @@ $linkClass = static function (string $prefix) use ($currentPath): string {
     <li class="nav-item"><a class="<?= $linkClass('/media-users') ?>" href="/media-users"><i class="bi bi-people me-2"></i><?= __('media_users') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/media-users/activity') ?>" href="/media-users/activity"><i class="bi bi-clock-history me-2"></i>Actividad usuarios</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/media-users/expiring') ?>" href="/media-users/expiring"><i class="bi bi-hourglass-split me-2"></i>Próximos vencimientos</a></li>
+    <li class="nav-item"><a class="<?= $linkClass('/media-users/cleanup-iptv') ?>" href="/media-users/cleanup-iptv"><i class="bi bi-funnel me-2"></i>Limpieza IPTV</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/media-users/broadcast') ?>" href="/media-users/broadcast"><i class="bi bi-megaphone me-2"></i>Mensaje masivo</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/media-users/bulk') ?>" href="/media-users/bulk"><i class="bi bi-envelope-plus me-2"></i>Añadir emails</a></li>
     <li class="nav-item"><a class="<?= $linkClass('/import') ?>" href="/import"><i class="bi bi-upload me-2"></i><?= __('import_export') ?></a></li>

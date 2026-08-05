@@ -8,8 +8,8 @@
             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-pencil me-1"></i>Editar
             </a>
-            <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>">
-                <i class="bi bi-arrow-repeat me-1"></i>Sincronizar
+            <button type="button" class="btn btn-sm btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Importar/actualizar usuarios desde este servidor">
+                <i class="bi bi-arrow-repeat me-1"></i>Sincronizar usuarios
             </button>
             <button type="button" class="btn btn-sm btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>">
                 <i class="bi bi-plug me-1"></i>Test

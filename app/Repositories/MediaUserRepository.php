@@ -90,6 +90,35 @@ class MediaUserRepository
         return $row ? new MediaUser($row) : null;
     }
 
+    /**
+     * @param array<int, string> $uuids
+     * @return array<int, MediaUser>
+     */
+    public function findByUuids(int $tenantId, array $uuids): array
+    {
+        $uuids = array_values(array_unique(array_filter(array_map(
+            static fn ($u) => trim((string) $u),
+            $uuids
+        ), static fn (string $u) => $u !== '')));
+
+        if ($uuids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($uuids), '?'));
+        $params = array_merge([$tenantId], $uuids);
+        $rows = Database::getInstance()->fetchAll(
+            "SELECT mu.*, s.name AS server_name
+             FROM `media_users` mu
+             LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+             WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+               AND mu.`uuid` IN ({$placeholders})",
+            $params
+        );
+
+        return array_map(static fn ($row) => new MediaUser($row), $rows);
+    }
+
     /** @return array<int, MediaUser> */
     public function search(int $tenantId, string $query, int $limit = 25, ?string $status = null, ?int $serverId = null): array
     {

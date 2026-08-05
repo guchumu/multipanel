@@ -4,7 +4,9 @@
     <div class="d-flex gap-2">
         <form method="POST" action="/servers/sync-all" class="d-inline">
             <?= csrf_field() ?>
-            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-arrow-repeat me-1"></i>Sincronizar todos</button>
+            <button type="submit" class="btn btn-outline-primary" title="Importa/actualiza usuarios de todos los servidores">
+                <i class="bi bi-arrow-repeat me-1"></i>Sincronizar usuarios
+            </button>
         </form>
         <a href="/servers/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo servidor</a>
     </div>
@@ -76,7 +78,7 @@
                     <td>
                         <div class="btn-group btn-group-sm">
                             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
-                            <button class="btn btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Sincronizar"><i class="bi bi-arrow-repeat"></i></button>
+                            <button class="btn btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Sincronizar usuarios desde el servidor"><i class="bi bi-arrow-repeat"></i></button>
                             <button class="btn btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>" title="Test conexión"><i class="bi bi-plug"></i></button>
                             <a href="/servers/<?= e($server->uuid) ?>" class="btn btn-outline-warning" title="Ver debug"><i class="bi bi-bug"></i></a>
                             <form method="POST" action="/servers/<?= e($server->uuid) ?>" class="d-inline" onsubmit="return confirm('¿Eliminar <?= e(addslashes($server->name)) ?>?');">

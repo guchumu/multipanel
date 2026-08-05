@@ -107,3 +107,24 @@ body {
         padding: 0.2rem 0.45rem;
     }
 }
+
+/* Próximos vencimientos: caber en el ancho sin desbordar el shell */
+.expiring-card,
+.expiring-table-wrap {
+    max-width: 100%;
+}
+
+.expiring-table {
+    min-width: 0;
+}
+
+.expiring-table th,
+.expiring-table td {
+    vertical-align: middle;
+}
+
+@media (max-width: 767.98px) {
+    .expiring-table .btn-group {
+        gap: 0.15rem;
+    }
+}

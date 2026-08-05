@@ -15,6 +15,7 @@ use App\Services\BillingSettingsService;
 use App\Services\StreamingActivityService;
 use App\Services\MediaUserBulkService;
 use App\Services\MediaUserDedupeService;
+use App\Services\IptvCleanupService;
 use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
@@ -49,6 +50,7 @@ class MediaUserController extends Controller
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
         private StreamingActivityService $streaming = new StreamingActivityService(),
         private MediaUserDedupeService $dedupe = new MediaUserDedupeService(),
+        private IptvCleanupService $iptvCleanup = new IptvCleanupService(),
     ) {
     }
 
@@ -152,16 +154,118 @@ class MediaUserController extends Controller
         return $this->redirect('/media-users/broadcast');
     }
 
+    public function expiringBroadcast(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $title = trim((string) $request->input('title', 'Aviso de vencimiento'));
+        $body = trim((string) $request->input('body', ''));
+        $uuids = $request->input('uuids', []);
+        if (!is_array($uuids)) {
+            $uuids = [];
+        }
+
+        $redirectDays = max(1, (int) $request->input('days', 15));
+        $redirectServer = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $back = '/media-users/expiring?days=' . $redirectDays
+            . ($redirectServer ? '&server_id=' . $redirectServer : '');
+
+        if ($body === '') {
+            Session::getInstance()->flash('error', 'Escribe el mensaje.');
+            return $this->redirect($back);
+        }
+
+        if ($uuids === []) {
+            Session::getInstance()->flash('error', 'Selecciona al menos un usuario.');
+            return $this->redirect($back);
+        }
+
+        $users = $this->mediaUsers->findByUuids($tenantId, $uuids);
+        if ($users === []) {
+            Session::getInstance()->flash('error', 'No se encontraron usuarios seleccionados.');
+            return $this->redirect($back);
+        }
+
+        $result = $this->management->broadcastTelegram($users, $title, $body);
+
+        Session::getInstance()->flash('success', sprintf(
+            'Selección: %d enviados, %d fallidos, %d sin Telegram.',
+            $result['sent'],
+            $result['failed'],
+            $result['skipped']
+        ));
+
+        return $this->redirect($back);
+    }
+
+    public function cleanupIptv(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $result = $this->iptvCleanup->findCandidates($tenantId, $serverId);
+
+        return $this->view('media_users.cleanup_iptv', [
+            'title' => 'Limpieza IPTV',
+            'candidates' => $result['candidates'],
+            'heuristic' => $result['heuristic'],
+            'servers' => $this->servers->allByTenant($tenantId),
+            'currentServerId' => $serverId,
+        ]);
+    }
+
+    public function cleanupIptvApply(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $action = trim((string) $request->input('action', IptvCleanupService::ACTION_DETACH));
+        $confirm = trim((string) $request->input('confirm', ''));
+        $uuids = $request->input('uuids', []);
+        if (!is_array($uuids)) {
+            $uuids = [];
+        }
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $back = '/media-users/cleanup-iptv' . ($serverId ? '?server_id=' . $serverId : '');
+
+        $stats = $this->iptvCleanup->apply($tenantId, $uuids, $action, $confirm);
+
+        if ($stats['errors'] !== [] && $stats['processed'] === 0) {
+            Session::getInstance()->flash('error', implode(' ', $stats['errors']));
+            return $this->redirect($back);
+        }
+
+        $msg = sprintf(
+            'Limpieza IPTV: %d procesados (%d soft-delete, %d detach), %d omitidos.',
+            $stats['processed'],
+            $stats['soft_deleted'],
+            $stats['detached'],
+            $stats['skipped']
+        );
+        if ($stats['errors'] !== []) {
+            $msg .= ' Avisos: ' . implode(' ', array_slice($stats['errors'], 0, 3));
+        }
+        Session::getInstance()->flash('success', $msg);
+
+        return $this->redirect($back);
+    }
+
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->mediaUsers->ensureTelegramChatIdColumn();
+        try {
+            $this->mediaUsers->backfillTelegramChatIds($tenantId);
+        } catch (\Throwable) {
+            // No bloquear el listado si el backfill falla (JSON/metadata ausente).
+        }
         $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $page = max(1, (int) $request->input('page', 1));
         $perPage = 20;
-        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId);
         $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId);
+        $totalPages = max(1, (int) ceil($totalCount / $perPage));
+        if ($page > $totalPages) {
+            $page = $totalPages;
+        }
+        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId);
 
         return $this->view('media_users.index', [
             'title' => 'Usuarios Media',
@@ -173,6 +277,7 @@ class MediaUserController extends Controller
             'showingCount' => count($users),
             'page' => $page,
             'perPage' => $perPage,
+            'totalPages' => $totalPages,
         ]);
     }
 
