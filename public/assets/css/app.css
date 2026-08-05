@@ -17,6 +17,13 @@ body {
 
 .app-main {
     background-color: inherit;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.app-content {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .sidebar {
@@ -126,5 +133,98 @@ body {
 @media (max-width: 767.98px) {
     .expiring-table .btn-group {
         gap: 0.15rem;
+    }
+}
+
+/* Usuarios Media: evitar overflow horizontal de página */
+.media-users-page {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.media-users-card,
+.media-users-filters,
+.media-users-table-wrap {
+    max-width: 100%;
+}
+
+.media-users-table {
+    min-width: 0;
+    --bs-table-bg: transparent;
+}
+
+.media-users-table th,
+.media-users-table td {
+    vertical-align: middle;
+    padding: 0.45rem 0.55rem;
+}
+
+.media-users-col-id {
+    width: 3.25rem;
+    white-space: nowrap;
+}
+
+.media-users-name {
+    max-width: 11rem;
+}
+
+.media-users-email {
+    max-width: 10rem;
+}
+
+.media-users-server-badge,
+.media-users-membership-badge {
+    max-width: 8.5rem;
+}
+
+.media-users-search-field {
+    min-width: 10rem;
+    max-width: 22rem;
+}
+
+.media-users-server-select {
+    min-width: 8rem;
+    max-width: 14rem;
+}
+
+.media-users-expires-input {
+    min-width: 8.5rem;
+    max-width: 10rem;
+}
+
+.media-users-telegram-input {
+    min-width: 5.5rem;
+    max-width: 8.5rem;
+}
+
+.media-users-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1199.98px) {
+    .media-users-table {
+        font-size: 0.875rem;
+    }
+
+    .media-users-table th,
+    .media-users-table td {
+        padding: 0.4rem 0.45rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .media-users-name {
+        max-width: 9rem;
+    }
+
+    .media-users-search-field {
+        min-width: 100%;
+        max-width: none;
+    }
+
+    .media-users-server-select {
+        max-width: none;
+        flex: 1 1 8rem;
     }
 }

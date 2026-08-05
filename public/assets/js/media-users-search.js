@@ -74,32 +74,38 @@
         tbody.innerHTML = users.map((u) => {
             const active = u.status === 'active';
             const serverBadge = u.server_name
-                ? `<span class="badge bg-light text-dark border">${escapeHtml(u.server_name)}</span>`
+                ? `<span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
                 : '<span class="text-muted">—</span>';
             const actionBtn = active
                 ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')"><i class="bi bi-pause"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
             const dl = daysLeftBadge(u.expires_at);
             const mb = membershipBadge(u.on_server);
+            const username = escapeHtml(u.display_name || u.username || '');
 
             return `<tr>
-                <td class="small text-muted">${Number(u.id || 0)}</td>
-                <td><a href="/media-users/${escapeHtml(u.uuid)}" class="fw-medium text-decoration-none">${escapeHtml(u.username)}</a></td>
-                <td class="small">${escapeHtml(u.email || '-')}</td>
-                <td class="small">${serverBadge}</td>
+                <td class="small text-muted media-users-col-id">${Number(u.id || 0)}</td>
+                <td class="min-w-0">
+                    <a href="/media-users/${escapeHtml(u.uuid)}" class="fw-medium text-decoration-none text-truncate d-inline-block media-users-name">${username}</a>
+                    <div class="small text-muted d-md-none text-truncate media-users-name">${escapeHtml(u.email || '-')}</div>
+                </td>
+                <td class="small d-none d-md-table-cell text-truncate media-users-email">${escapeHtml(u.email || '-')}</td>
+                <td class="small d-none d-lg-table-cell">${serverBadge}</td>
                 <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>
-                <td><span class="badge ${mb.cls}">${escapeHtml(mb.label)}</span></td>
-                <td>${Number(u.max_streams || 0)}</td>
-                <td class="small">
-                    <input type="date" class="form-control form-control-sm expires-input" data-uuid="${escapeHtml(u.uuid)}"
+                <td class="d-none d-xl-table-cell">
+                    <span class="badge text-truncate d-inline-block media-users-membership-badge ${mb.cls}" title="${escapeHtml(mb.label)}">${escapeHtml(mb.label)}</span>
+                </td>
+                <td class="d-none d-xl-table-cell small">${Number(u.max_streams || 0)}</td>
+                <td class="small d-none d-lg-table-cell">
+                    <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(u.expires_at || '')}">
                 </td>
                 <td class="small text-nowrap"><span class="badge ${dl.cls}">${escapeHtml(dl.label)}</span></td>
-                <td class="small" style="min-width: 120px;">
-                    <input type="text" class="form-control form-control-sm telegram-input" data-uuid="${escapeHtml(u.uuid)}"
+                <td class="small d-none d-xl-table-cell">
+                    <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(u.telegram_chat_id || '')}" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
                 </td>
-                <td>
+                <td class="text-end">
                     <div class="btn-group btn-group-sm">
                         <a href="/media-users/${escapeHtml(u.uuid)}/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
                         ${actionBtn}

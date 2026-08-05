@@ -47,39 +47,40 @@ $currentOnServer = $currentOnServer ?? null;
 
 ob_start();
 ?>
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h4 class="mb-0">Usuarios Media</h4>
-    <div class="d-flex gap-2 flex-wrap">
+<div class="media-users-page">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="mb-0 text-truncate">Usuarios Media</h4>
+    <div class="d-flex gap-2 flex-wrap media-users-toolbar">
         <form method="POST" action="/media-users/sync-membership" class="d-inline">
             <?= csrf_field() ?>
             <?php if ($currentServerId): ?>
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
-            <button type="submit" class="btn btn-outline-primary" title="Reconsulta Plex/Jellyfin y marca quién sigue en la biblioteca">
-                <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
+            <button type="submit" class="btn btn-outline-primary btn-sm" title="Reconsulta Plex/Jellyfin y marca quién sigue en la biblioteca">
+                <i class="bi bi-arrow-repeat me-1"></i><span class="d-none d-xl-inline">Forzar sincronización</span><span class="d-xl-none">Sync</span>
             </button>
         </form>
-        <a href="/media-users/cleanup-iptv" class="btn btn-outline-danger"><i class="bi bi-funnel me-1"></i>Limpieza IPTV</a>
-        <a href="/media-users/activity" class="btn btn-outline-secondary"><i class="bi bi-clock-history me-1"></i>Actividad</a>
-        <a href="/media-users/expiring" class="btn btn-outline-warning"><i class="bi bi-hourglass-split me-1"></i>Próximos vencimientos</a>
-        <a href="/media-users/broadcast" class="btn btn-outline-info"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
-        <a href="/media-users/bulk" class="btn btn-outline-primary"><i class="bi bi-envelope-plus me-1"></i>Añadir emails</a>
-        <a href="/media-users/create" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Nuevo usuario</a>
+        <a href="/media-users/cleanup-iptv" class="btn btn-outline-danger btn-sm"><i class="bi bi-funnel me-1"></i><span class="d-none d-lg-inline">Limpieza IPTV</span><span class="d-lg-none">IPTV</span></a>
+        <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
+        <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
+        <a href="/media-users/broadcast" class="btn btn-outline-info btn-sm"><i class="bi bi-megaphone me-1"></i><span class="d-none d-lg-inline">Mensaje masivo</span></a>
+        <a href="/media-users/bulk" class="btn btn-outline-primary btn-sm"><i class="bi bi-envelope-plus me-1"></i><span class="d-none d-lg-inline">Añadir emails</span><span class="d-lg-none">Emails</span></a>
+        <a href="/media-users/create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
+<div class="card border-0 shadow-sm mb-3 media-users-filters">
     <div class="card-body py-2">
-        <div class="d-flex flex-wrap gap-3 align-items-center">
-            <div class="btn-group btn-group-sm">
+        <div class="d-flex flex-wrap gap-2 gap-md-3 align-items-center">
+            <div class="btn-group btn-group-sm flex-wrap">
                 <a href="/media-users<?= e($queryBase(null, $currentServerId)) ?>" class="btn btn-outline-secondary <?= !$currentStatus && $currentOnServer === null ? 'active' : '' ?>">Todos</a>
                 <a href="/media-users<?= e($queryBase('active', $currentServerId)) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
                 <a href="/media-users<?= e($queryBase('suspended', $currentServerId)) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
                 <a href="/media-users<?= e($queryBase('pending', $currentServerId)) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
-                <a href="/media-users<?= e($queryBase(null, $currentServerId, false)) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera del servidor</a>
+                <a href="/media-users<?= e($queryBase(null, $currentServerId, false)) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera</a>
             </div>
-            <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-auto flex-wrap">
-                <div class="position-relative" style="min-width: 220px;">
+            <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-lg-auto flex-wrap flex-grow-1 media-users-search-form">
+                <div class="position-relative media-users-search-field flex-grow-1">
                     <input type="search" id="userSearch" class="form-control form-control-sm" placeholder="Buscar usuario, email, Telegram…" autocomplete="off">
                     <div id="userSearchMeta" class="small text-muted mt-1 d-none"></div>
                 </div>
@@ -89,8 +90,8 @@ ob_start();
                 <?php if ($currentOnServer !== null): ?>
                 <input type="hidden" name="on_server" value="<?= $currentOnServer ? '1' : '0' ?>">
                 <?php endif; ?>
-                <label class="small text-muted mb-0">Servidor:</label>
-                <select name="server_id" class="form-select form-select-sm" style="min-width: 180px;" onchange="this.form.submit()">
+                <label class="small text-muted mb-0 flex-shrink-0">Servidor:</label>
+                <select name="server_id" class="form-select form-select-sm media-users-server-select" onchange="this.form.submit()">
                     <option value="">Todos</option>
                     <?php foreach ($servers as $server): ?>
                     <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>>
@@ -103,7 +104,7 @@ ob_start();
     </div>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm media-users-card">
     <div class="px-3 py-2 border-bottom bg-light small d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span id="usersCountSummary">
             Mostrando <strong><?= (int) $showingCount ?></strong> de <strong><?= (int) $totalCount ?></strong> usuarios
@@ -111,23 +112,23 @@ ob_start();
             <span class="text-muted">(página <?= (int) $page ?>)</span>
             <?php endif; ?>
         </span>
-        <span class="text-muted">ID = identificador interno del usuario</span>
+        <span class="text-muted d-none d-md-inline">ID = identificador interno</span>
     </div>
-    <div class="table-responsive">
-        <table class="table table-hover mb-0">
+    <div class="table-responsive media-users-table-wrap">
+        <table class="table table-hover mb-0 align-middle media-users-table">
             <thead class="table-light">
                 <tr>
-                    <th style="width: 4rem;">ID</th>
+                    <th class="media-users-col-id">ID</th>
                     <th>Usuario</th>
-                    <th>Email</th>
-                    <th>Servidor</th>
+                    <th class="d-none d-md-table-cell">Email</th>
+                    <th class="d-none d-lg-table-cell">Servidor</th>
                     <th>Estado</th>
-                    <th>Biblioteca</th>
-                    <th>Streams</th>
-                    <th>Expira</th>
-                    <th>Vence en</th>
-                    <th>Telegram</th>
-                    <th>Acciones</th>
+                    <th class="d-none d-xl-table-cell" title="Biblioteca">Bibl.</th>
+                    <th class="d-none d-xl-table-cell" title="Streams">Str.</th>
+                    <th class="d-none d-lg-table-cell">Expira</th>
+                    <th title="Vence en">Vence</th>
+                    <th class="d-none d-xl-table-cell">TG</th>
+                    <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody">
@@ -137,12 +138,17 @@ ob_start();
                 <?php foreach ($users as $u): ?>
                 <?php $mb = $membershipBadge($u->on_server ?? null); ?>
                 <tr>
-                    <td class="small text-muted"><?= (int) $u->id ?></td>
-                    <td><a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none"><?= e($u->display_name ?? $u->username) ?></a></td>
-                    <td class="small"><?= e($u->email ?? '-') ?></td>
-                    <td class="small">
+                    <td class="small text-muted media-users-col-id"><?= (int) $u->id ?></td>
+                    <td class="min-w-0">
+                        <a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none text-truncate d-inline-block media-users-name">
+                            <?= e($u->display_name ?? $u->username) ?>
+                        </a>
+                        <div class="small text-muted d-md-none text-truncate media-users-name"><?= e($u->email ?? '-') ?></div>
+                    </td>
+                    <td class="small d-none d-md-table-cell text-truncate media-users-email"><?= e($u->email ?? '-') ?></td>
+                    <td class="small d-none d-lg-table-cell">
                         <?php if ($u->server_name): ?>
-                        <span class="badge bg-light text-dark border"><?= e($u->server_name) ?></span>
+                        <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge"><?= e($u->server_name) ?></span>
                         <?php else: ?>
                         <span class="text-muted">—</span>
                         <?php endif; ?>
@@ -152,25 +158,25 @@ ob_start();
                             <?= e($statusLabel((string) $u->status)) ?>
                         </span>
                     </td>
-                    <td>
-                        <span class="badge <?= e($mb['class']) ?>" title="<?= e($u->membership_synced_at ? 'Última sync: ' . $u->membership_synced_at : 'Aún no se ha forzado sync') ?>">
+                    <td class="d-none d-xl-table-cell">
+                        <span class="badge text-truncate d-inline-block media-users-membership-badge <?= e($mb['class']) ?>" title="<?= e($mb['label']) ?><?= e($u->membership_synced_at ? ' · Última sync: ' . $u->membership_synced_at : ' · Aún no se ha forzado sync') ?>">
                             <?= e($mb['label']) ?>
                         </span>
                     </td>
-                    <td><?= (int) $u->max_streams ?></td>
-                    <td class="small">
-                        <input type="date" class="form-control form-control-sm expires-input" data-uuid="<?= e($u->uuid) ?>"
+                    <td class="d-none d-xl-table-cell small"><?= (int) $u->max_streams ?></td>
+                    <td class="small d-none d-lg-table-cell">
+                        <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
                     </td>
                     <td class="small text-nowrap">
                         <?php $dl = days_left_badge($u->expires_at); ?>
                         <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
                     </td>
-                    <td class="small" style="min-width: 120px;">
-                        <input type="text" class="form-control form-control-sm telegram-input" data-uuid="<?= e($u->uuid) ?>"
+                    <td class="small d-none d-xl-table-cell">
+                        <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->telegram_chat_id ?? '') ?>" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
                     </td>
-                    <td>
+                    <td class="text-end">
                         <div class="btn-group btn-group-sm">
                             <a href="/media-users/<?= e($u->uuid) ?>/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
                             <?php if ($u->status === 'active'): ?>
@@ -186,6 +192,7 @@ ob_start();
             </tbody>
         </table>
     </div>
+</div>
 </div>
 
 <?php

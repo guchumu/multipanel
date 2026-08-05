@@ -25,7 +25,7 @@
 
     <div class="app-shell d-flex min-vh-100">
         <?php include base_path('resources/views/partials/sidebar.php'); ?>
-        <div class="app-main flex-grow-1 d-flex flex-column min-vw-0">
+        <div class="app-main flex-grow-1 d-flex flex-column min-w-0">
             <?php include base_path('resources/views/partials/navbar.php'); ?>
             <main class="app-content flex-grow-1 p-3 p-lg-4">
                 <?php include base_path('resources/views/partials/alerts.php'); ?>
