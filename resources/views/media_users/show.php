@@ -75,7 +75,10 @@ ob_start();
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Streams</label>
-                        <input type="number" min="1" id="editMaxStreams" class="form-control form-control-sm" value="<?= (int) $mediaUser->max_streams ?>">
+                        <input type="number" min="1" max="50" id="editMaxStreams" class="form-control form-control-sm"
+                               value="<?= $mediaUser->max_streams !== null && $mediaUser->max_streams !== '' ? (int) $mediaUser->max_streams : '' ?>"
+                               placeholder="Def. <?= (int) ($defaultMaxStreams ?? 2) ?>"
+                               title="Vacío = límite por defecto del tenant">
                     </div>
                     <div class="col-md-3">
                         <label class="form-label small">Dispositivos</label>

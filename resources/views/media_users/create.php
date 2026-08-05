@@ -56,7 +56,10 @@ ob_start();
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Max streams</label>
-                    <input type="number" name="max_streams" class="form-control" value="1" min="1">
+                    <input type="number" name="max_streams" class="form-control"
+                           value="<?= isset($defaultMaxStreams) ? (int) $defaultMaxStreams : '' ?>"
+                           min="1" max="50" placeholder="Por defecto del tenant">
+                    <div class="form-text">Vacío = límite por defecto del tenant<?= isset($defaultMaxStreams) ? ' (' . (int) $defaultMaxStreams . ')' : '' ?>.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Max dispositivos</label>

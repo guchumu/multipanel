@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS `media_users` (
     `role` ENUM('admin','user','guest','kid') NOT NULL DEFAULT 'user',
     `locale` VARCHAR(10) NOT NULL DEFAULT 'es',
     `timezone` VARCHAR(50) NOT NULL DEFAULT 'Europe/Madrid',
-    `max_streams` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    `max_streams` TINYINT UNSIGNED NULL DEFAULT NULL,
     `max_devices` TINYINT UNSIGNED NOT NULL DEFAULT 5,
     `max_quality` VARCHAR(20) NULL,
     `parental_control` TINYINT(1) NOT NULL DEFAULT 0,
@@ -811,6 +811,29 @@ CREATE TABLE IF NOT EXISTS `gdpr_requests` (
     PRIMARY KEY (`id`),
     KEY `idx_gdpr_tenant` (`tenant_id`),
     KEY `idx_gdpr_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `stream_limit_violations` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `tenant_id` BIGINT UNSIGNED NOT NULL,
+    `media_user_id` BIGINT UNSIGNED NULL,
+    `server_id` BIGINT UNSIGNED NULL,
+    `username` VARCHAR(255) NULL,
+    `stream_count` INT UNSIGNED NOT NULL,
+    `stream_limit` INT UNSIGNED NOT NULL,
+    `session_ids` JSON NULL,
+    `killed_session_ids` JSON NULL,
+    `titles` JSON NULL,
+    `action` VARCHAR(40) NOT NULL DEFAULT 'kill_newest',
+    `message` VARCHAR(500) NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_stream_limit_violations_tenant` (`tenant_id`, `created_at`),
+    KEY `idx_stream_limit_violations_user` (`media_user_id`, `created_at`),
+    KEY `idx_stream_limit_violations_server` (`server_id`),
+    CONSTRAINT `fk_stream_limit_violations_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_stream_limit_violations_user` FOREIGN KEY (`media_user_id`) REFERENCES `media_users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_stream_limit_violations_server` FOREIGN KEY (`server_id`) REFERENCES `servers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

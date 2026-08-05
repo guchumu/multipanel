@@ -17,7 +17,7 @@ final class CronService
     /** @return array<int, string> */
     public static function tasks(): array
     {
-        return ['all', 'sync', 'automation', 'billing', 'backup', 'jobs', 'gdpr', 'cleanup', 'expiry', 'migrate', 'health'];
+        return ['all', 'sync', 'automation', 'billing', 'backup', 'jobs', 'gdpr', 'cleanup', 'expiry', 'migrate', 'health', 'streams'];
     }
 
     /**
@@ -28,7 +28,7 @@ final class CronService
         return [
             'all' => [
                 'title' => 'Todas',
-                'description' => 'Ejecuta migrate + billing + sync + automation + backup + jobs + expiry + gdpr + cleanup.',
+                'description' => 'Ejecuta migrate + billing + sync + automation + backup + jobs + expiry + streams + gdpr + cleanup.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'sync' => [
@@ -81,6 +81,11 @@ final class CronService
                 'description' => 'Comprueba que la app responde (útil para monitor externo).',
                 'schedule' => 'Cada 1–5 minutos (monitor)',
             ],
+            'streams' => [
+                'title' => 'Límite de streams',
+                'description' => 'Cuenta sesiones activas por usuario media y corta las que superan el límite.',
+                'schedule' => 'Cada 5–15 minutos (o con En directo abierto)',
+            ],
         ];
     }
 
@@ -108,6 +113,7 @@ final class CronService
             'expiry' => $this->runExpiryNotifications($tenantId, $capture),
             'migrate' => $this->runMigrations($capture),
             'health' => $capture('Health OK'),
+            'streams' => $this->runStreamLimits($tenantId, $capture),
             'all' => $this->runAll($tenantId, $capture),
         };
 
@@ -124,8 +130,26 @@ final class CronService
         $this->runBackup($tenantId, $out);
         $this->runJobs($out);
         $this->runExpiryNotifications($tenantId, $out);
+        $this->runStreamLimits($tenantId, $out);
         $this->runGdpr($out);
         $this->runCleanup($out);
+    }
+
+    /** @param callable(string): void $out */
+    private function runStreamLimits(int $tenantId, callable $out): void
+    {
+        $out('Enforcing concurrent stream limits...');
+        try {
+            $stats = (new ConcurrentStreamLimitService())->runForTenant($tenantId);
+            $out(sprintf(
+                '  Checked sessions: %d, killed: %d, violations: %d',
+                $stats['checked'],
+                $stats['killed'],
+                $stats['violations']
+            ));
+        } catch (\Throwable $e) {
+            $out('  Stream limits failed: ' . $e->getMessage());
+        }
     }
 
     /** @param callable(string): void $out */

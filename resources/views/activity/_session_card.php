@@ -50,6 +50,13 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
                 </span>
                 <span class="badge bg-secondary"><?= e(strtoupper($session['server_type'] ?? '')) ?></span>
             </div>
+            <?php if (!empty($session['over_limit'])): ?>
+            <div class="mb-2">
+                <span class="badge bg-danger" title="Este usuario supera su límite de streams simultáneos (<?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>)">
+                    <i class="bi bi-exclamation-octagon me-1"></i>Límite streams <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>
+                </span>
+            </div>
+            <?php endif; ?>
             <h6 class="card-title mb-1 text-truncate" title="<?= e($session['title'] ?? '') ?>">
                 <?= e($session['title'] ?? 'Sin título') ?>
             </h6>

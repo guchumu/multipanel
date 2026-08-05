@@ -114,6 +114,7 @@ final class MediaUserActivityService
             'media_user.profile_updated' => 'Datos actualizados',
             'media_user.payment_link_created' => 'Enlace de pago generado',
             'media_user.payment_renewed' => 'Pago recibido (renovación)',
+            'media_user.stream_limit_enforced' => 'Límite de streams aplicado',
             default => str_replace(['media_user.', '_'], ['', ' '], $action),
         };
     }
@@ -130,6 +131,7 @@ final class MediaUserActivityService
             'media_user.removed_from_server' => 'person-x',
             'media_user.payment_link_created' => 'credit-card',
             'media_user.payment_renewed' => 'cash-coin',
+            'media_user.stream_limit_enforced' => 'exclamation-octagon',
             default => 'clock-history',
         };
     }
@@ -145,7 +147,18 @@ final class MediaUserActivityService
         }
 
         $parts = [];
-        foreach (['status', 'expires_at', 'telegram_chat_id', 'notes', 'days_added', 'amount', 'currency', 'days'] as $field) {
+        if (is_array($new) && isset($new['stream_count'], $new['limit'])) {
+            $killed = is_array($new['killed_session_ids'] ?? null) ? count($new['killed_session_ids']) : 0;
+
+            return sprintf(
+                '%d streams / límite %d · cortadas %d',
+                (int) $new['stream_count'],
+                (int) $new['limit'],
+                $killed
+            );
+        }
+
+        foreach (['status', 'expires_at', 'telegram_chat_id', 'notes', 'days_added', 'amount', 'currency', 'days', 'max_streams'] as $field) {
             $o = is_array($old) ? ($old[$field] ?? null) : null;
             $n = is_array($new) ? ($new[$field] ?? null) : null;
             if ($o !== $n && ($o !== null || $n !== null)) {

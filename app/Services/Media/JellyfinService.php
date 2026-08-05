@@ -179,6 +179,8 @@ final class JellyfinService
                     'title' => $displayTitle,
                     'subtitle' => $subtitle,
                     'user' => (string) ($session['UserName'] ?? ''),
+                    // Jellyfin UserId → media_users.external_id (match fiable para límites de stream)
+                    'user_id' => (string) ($session['UserId'] ?? ''),
                     'player' => (string) ($session['Client'] ?? $session['DeviceName'] ?? ''),
                     'platform' => (string) ($session['DeviceName'] ?? ''),
                     'state' => !empty($playState['IsPaused']) ? 'paused' : 'playing',

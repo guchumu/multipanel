@@ -399,6 +399,8 @@ final class PlexService
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($user['title'] ?? ''),
+            // Plex User.id → media_users.external_id (match fiable para límites de stream)
+            'user_id' => (string) ($user['id'] ?? ''),
             'player' => (string) ($player['title'] ?? ''),
             'platform' => (string) ($player['platform'] ?? $player['device'] ?? ''),
             'state' => (string) ($player['state'] ?? 'playing'),
@@ -478,6 +480,8 @@ final class PlexService
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($session->User['title'] ?? ''),
+            // Plex User.id → media_users.external_id (match fiable para límites de stream)
+            'user_id' => (string) ($session->User['id'] ?? ''),
             'player' => (string) ($session->Player['title'] ?? ''),
             'platform' => (string) ($session->Player['platform'] ?? $session->Player['device'] ?? ''),
             'state' => (string) ($session->Player['state'] ?? 'playing'),

@@ -45,6 +45,9 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2">
+        <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
+            <i class="bi bi-exclamation-octagon me-1"></i>Límites
+        </a>
         <a href="/settings/stop-messages" class="btn btn-outline-secondary btn-sm" title="Gestionar mensajes al detener">
             <i class="bi bi-chat-left-text me-1"></i>Mensajes
         </a>
@@ -305,6 +308,13 @@ function streamInfoHtml(s) {
     return body ? `<dl class="session-stream-info small mb-2">\${body}</dl>` : '';
 }
 
+function overLimitBadgeHtml(s) {
+    if (!s.over_limit) return '';
+    const count = Number(s.user_stream_count || 0);
+    const limit = Number(s.stream_limit || 0);
+    return `<div class="mb-2"><span class="badge bg-danger" title="Este usuario supera su límite de streams simultáneos (\${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite streams \${count}/\${limit}</span></div>`;
+}
+
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
@@ -313,15 +323,17 @@ function sessionCardHtml(s) {
     const thumb = thumbHtml(s);
     const killBtn = killControlsHtml(s);
     const streamBlock = streamInfoHtml(s);
+    const overLimit = overLimitBadgeHtml(s);
 
     return `<div class="col-sm-6 col-lg-4 col-xl-3">
-        <div class="card border-0 shadow-sm h-100 session-card">
+        <div class="card border-0 shadow-sm h-100 session-card\${s.over_limit ? ' border border-danger' : ''}">
             <div class="session-poster rounded-top">\${thumb}</div>
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
                     <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
                     <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
                 </div>
+                \${overLimit}
                 <h6 class="card-title mb-1 text-truncate" title="\${escapeHtml(s.title)}">\${escapeHtml(s.title || 'Sin título')}</h6>
                 \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
                 <p class="small mb-1"><i class="bi bi-person me-1"></i>\${escapeHtml(s.user || '-')}</p>

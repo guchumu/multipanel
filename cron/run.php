@@ -7,7 +7,7 @@ declare(strict_types=1);
  * MultiPanel ERP - Cron Job Runner
  *
  * Usage: php cron/run.php [task]
- * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, expiry, migrate, health, all
+ * Tasks: sync, automation, billing, backup, jobs, gdpr, cleanup, expiry, migrate, health, streams, all
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';

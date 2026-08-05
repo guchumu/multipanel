@@ -144,6 +144,7 @@ class MediaUserController extends Controller
             'timeline' => $this->activity->timeline((int) $user->id),
             'messages' => $this->messages->listForUser((int) $user->id, 20),
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
+            'defaultMaxStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
         ]);
     }
@@ -367,7 +368,10 @@ class MediaUserController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
         return $this->view('media_users.create', array_merge(
-            ['title' => 'Nuevo usuario'],
+            [
+                'title' => 'Nuevo usuario',
+                'defaultMaxStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxStreams($tenantId),
+            ],
             $this->serverFormDefaults($tenantId)
         ));
     }
@@ -419,7 +423,9 @@ class MediaUserController extends Controller
             'password' => $this->passwords->hash($password),
             'display_name' => $request->input('display_name') ?: $username,
             'status' => $request->input('status') ?? 'pending',
-            'max_streams' => (int) ($request->input('max_streams') ?? 1),
+            'max_streams' => ($request->input('max_streams') === null || $request->input('max_streams') === '')
+                ? null
+                : max(1, min(50, (int) $request->input('max_streams'))),
             'max_devices' => (int) ($request->input('max_devices') ?? 5),
             'expires_at' => $request->input('expires_at') ?: null,
             'telegram_chat_id' => trim((string) $request->input('telegram_chat_id', '')) ?: null,

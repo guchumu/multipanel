@@ -163,7 +163,7 @@ ob_start();
                             <?= e($mb['label']) ?>
                         </span>
                     </td>
-                    <td class="d-none d-xl-table-cell small"><?= (int) $u->max_streams ?></td>
+                    <td class="d-none d-xl-table-cell small"><?= ($u->max_streams !== null && $u->max_streams !== '') ? (int) $u->max_streams : 'def' ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">

@@ -19,6 +19,7 @@ use App\Controllers\PluginController;
 use App\Controllers\ImportController;
 use App\Controllers\NotificationSettingsController;
 use App\Controllers\PlaybackStopMessageController;
+use App\Controllers\StreamLimitController;
 use App\Controllers\TenantController;
 use App\Controllers\StreamController;
 use App\Controllers\DiagnosticsController;
@@ -119,6 +120,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Media Users
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
     $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
+    $router->get('/media-users/stream-violations', [StreamLimitController::class, 'violations'], 'media_users.stream_violations');
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
@@ -193,6 +195,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->put('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'update'], 'settings.stop_messages.update', [CsrfMiddleware::class]);
     $router->post('/settings/stop-messages/{id}/default', [PlaybackStopMessageController::class, 'setDefault'], 'settings.stop_messages.default', [CsrfMiddleware::class]);
     $router->delete('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'destroy'], 'settings.stop_messages.destroy', [CsrfMiddleware::class]);
+    $router->get('/settings/stream-limits', [StreamLimitController::class, 'settings'], 'settings.stream_limits');
+    $router->post('/settings/stream-limits', [StreamLimitController::class, 'updateSettings'], 'settings.stream_limits.update', [CsrfMiddleware::class]);
 
     // Billing
     $router->get('/billing', [BillingController::class, 'index'], 'billing.index');

@@ -314,7 +314,13 @@ final class MediaUserManagementService
             return ['success' => false, 'message' => 'El email no es válido.'];
         }
         $user->email = $email ?: null;
-        $user->max_streams = max(1, (int) ($data['max_streams'] ?? $user->max_streams ?? 1));
+        // Vacío / null = usar default del tenant (settings.streams.default_max_streams)
+        if (array_key_exists('max_streams', $data)) {
+            $rawStreams = $data['max_streams'];
+            $user->max_streams = ($rawStreams === null || $rawStreams === '')
+                ? null
+                : max(1, min(50, (int) $rawStreams));
+        }
         $user->max_devices = max(1, (int) ($data['max_devices'] ?? $user->max_devices ?? 5));
         $user->save();
 

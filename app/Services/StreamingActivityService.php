@@ -83,10 +83,14 @@ final class StreamingActivityService
     {
         $cacheKey = 'activity_snapshot_' . $tenantId;
         $cached = Cache::get($cacheKey);
+        $streamLimitKilled = 0;
+        $streamLimitViolations = 0;
 
         if (is_array($cached) && isset($cached['sessions'], $cached['server_stats'])) {
             $allSessions = $cached['sessions'];
             $serverStats = $cached['server_stats'];
+            $streamLimitKilled = (int) ($cached['stream_limit_killed'] ?? 0);
+            $streamLimitViolations = (int) ($cached['stream_limit_violations'] ?? 0);
         } else {
             $allSessions = [];
             $serverStats = [];
@@ -107,9 +111,27 @@ final class StreamingActivityService
                 $allSessions = array_merge($allSessions, $serverSessions);
             }
 
+            // Anotar media_user / límite y cortar excesos si la aplicación está activa.
+            $limitResult = (new ConcurrentStreamLimitService())->enforceAndAnnotate($tenantId, $allSessions);
+            $allSessions = $limitResult['sessions'];
+            $streamLimitKilled = (int) $limitResult['killed'];
+            $streamLimitViolations = (int) $limitResult['violations'];
+
+            // Recalcular contadores por servidor tras posibles cortes.
+            $countsByServer = [];
+            foreach ($allSessions as $session) {
+                $sid = (int) ($session['server_id'] ?? 0);
+                $countsByServer[$sid] = ($countsByServer[$sid] ?? 0) + 1;
+            }
+            foreach ($serverStats as $i => $stat) {
+                $serverStats[$i]['count'] = $countsByServer[(int) $stat['id']] ?? 0;
+            }
+
             Cache::set($cacheKey, [
                 'sessions' => $allSessions,
                 'server_stats' => $serverStats,
+                'stream_limit_killed' => $streamLimitKilled,
+                'stream_limit_violations' => $streamLimitViolations,
             ], self::SNAPSHOT_CACHE_TTL);
         }
 
@@ -140,6 +162,8 @@ final class StreamingActivityService
             'server_stats' => $serverStats,
             'total_count' => count($allSessions),
             'filtered_count' => count($filtered),
+            'stream_limit_killed' => $streamLimitKilled,
+            'stream_limit_violations' => $streamLimitViolations,
         ];
     }
 
