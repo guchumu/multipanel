@@ -84,6 +84,7 @@ $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::cl
 // Admin protected routes
 $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/dashboard', [DashboardController::class, 'index'], 'dashboard');
+    $router->post('/dashboard/quick-invite', [DashboardController::class, 'quickInvite'], 'dashboard.quick_invite', [CsrfMiddleware::class]);
 
     // Live activity
     $router->get('/activity', [ActivityController::class, 'index'], 'activity.index');

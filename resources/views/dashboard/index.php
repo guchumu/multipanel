@@ -128,6 +128,53 @@ ob_start();
     </div>
 </div>
 
+<div class="row g-4 mt-1">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-envelope-plus me-1"></i>Invitación rápida</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/dashboard/quick-invite" class="row g-3 align-items-end">
+                    <?= csrf_field() ?>
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Email</label>
+                        <input type="email" name="email" class="form-control" required placeholder="usuario@ejemplo.com" autocomplete="email">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Días</label>
+                        <input type="number" name="days" class="form-control" value="30" min="1" max="3650" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Servidor</label>
+                        <select name="server_id" class="form-select" required>
+                            <?php
+                            $preferredServerId = isset($preferredServerId) ? (int) $preferredServerId : 0;
+                            foreach ($servers as $server):
+                            ?>
+                            <option value="<?= (int) $server->id ?>"
+                                <?= ($preferredServerId > 0 && (int) $server->id === $preferredServerId) ? 'selected' : '' ?>>
+                                <?= e($server->name) ?> (<?= e(strtoupper($server->type)) ?>)<?= $server->isDefault() ? ' ★' : '' ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-send me-1"></i>Invitar
+                        </button>
+                    </div>
+                </form>
+                <p class="small text-muted mb-0 mt-2">
+                    Reutiliza el flujo de altas por email: en Plex envía la invitación; en Jellyfin crea la cuenta.
+                    El servidor ★ predeterminado se selecciona automáticamente.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <?php
 $content = ob_get_clean();
 

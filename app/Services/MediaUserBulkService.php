@@ -23,7 +23,73 @@ final class MediaUserBulkService
     /** @return array{created: int, updated: int, skipped: int, errors: array<int, string>} */
     public function addEmailsToServer(int $tenantId, int $serverId, string $period, string $rawEmails): array
     {
-        $expiresAt = SubscriptionPeriod::toExpiresAt($period);
+        return $this->addEmailsWithExpiresAt(
+            $tenantId,
+            $serverId,
+            SubscriptionPeriod::toExpiresAt($period),
+            $rawEmails
+        );
+    }
+
+    /**
+     * Invitación rápida (dashboard): un email + duración en días + servidor.
+     *
+     * @return array{success: bool, message: string, created?: int, updated?: int, uuid?: ?string}
+     */
+    public function inviteEmailWithDays(int $tenantId, int $serverId, string $email, int $days): array
+    {
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return ['success' => false, 'message' => 'Email no válido.'];
+        }
+        if ($serverId <= 0) {
+            return ['success' => false, 'message' => 'Selecciona un servidor.'];
+        }
+
+        $result = $this->addEmailsWithExpiresAt(
+            $tenantId,
+            $serverId,
+            SubscriptionPeriod::daysToExpiresAt($days),
+            $email
+        );
+
+        $errors = $result['errors'];
+        if ($result['created'] === 0 && $result['updated'] === 0) {
+            return [
+                'success' => false,
+                'message' => $errors[0] ?? 'No se pudo enviar la invitación.',
+            ];
+        }
+
+        $db = Database::getInstance();
+        $row = $db->fetchOne(
+            'SELECT uuid FROM media_users WHERE tenant_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL ORDER BY id DESC LIMIT 1',
+            [$tenantId, $email]
+        );
+
+        $parts = [];
+        if ($result['created'] > 0) {
+            $parts[] = 'usuario creado';
+        }
+        if ($result['updated'] > 0) {
+            $parts[] = 'usuario actualizado';
+        }
+        if ($errors !== []) {
+            $parts[] = 'aviso: ' . $errors[0];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Invitación procesada (' . implode(', ', $parts) . ').',
+            'created' => $result['created'],
+            'updated' => $result['updated'],
+            'uuid' => $row['uuid'] ?? null,
+        ];
+    }
+
+    /** @return array{created: int, updated: int, skipped: int, errors: array<int, string>} */
+    private function addEmailsWithExpiresAt(int $tenantId, int $serverId, ?string $expiresAt, string $rawEmails): array
+    {
         $emails = $this->parseEmails($rawEmails);
         $db = Database::getInstance();
         $server = Server::find($serverId);

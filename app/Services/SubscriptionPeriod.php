@@ -35,8 +35,28 @@ final class SubscriptionPeriod
             '6m' => $now->modify('+6 months')->format('Y-m-d 23:59:59'),
             '1y' => $now->modify('+1 year')->format('Y-m-d 23:59:59'),
             'forever' => null,
-            default => $now->modify('+1 month')->format('Y-m-d 23:59:59'),
-        };
+        default => $now->modify('+1 month')->format('Y-m-d 23:59:59'),
+    };
+}
+
+/** Fecha de expiración a N días desde hoy (fin del día). */
+public static function daysToExpiresAt(int $days): string
+{
+    $days = max(1, $days);
+
+    return (new \DateTimeImmutable('today'))
+        ->modify('+' . $days . ' days')
+        ->format('Y-m-d 23:59:59');
+}
+
+    /** Fecha de expiración a N días desde hoy (fin del día). */
+    public static function daysToExpiresAt(int $days): string
+    {
+        $days = max(1, $days);
+
+        return (new \DateTimeImmutable('today'))
+            ->modify('+' . $days . ' days')
+            ->format('Y-m-d 23:59:59');
     }
 
     public static function addDaysToExpires(?string $currentExpires, int $days): string

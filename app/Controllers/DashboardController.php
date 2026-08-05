@@ -7,11 +7,13 @@ namespace App\Controllers;
 use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
+use App\Services\MediaUserBulkService;
 use App\Services\ServerSyncService;
 use Core\Cache;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
+use Core\Session;
 
 /**
  * Main dashboard controller.
@@ -23,6 +25,7 @@ class DashboardController extends Controller
         private ServerRepository $servers = new ServerRepository(),
         private AuthService $auth = new AuthService(),
         private ServerSyncService $sync = new ServerSyncService(),
+        private MediaUserBulkService $bulk = new MediaUserBulkService(),
     ) {
     }
 
@@ -47,13 +50,40 @@ class DashboardController extends Controller
         ];
 
         $serverList = $this->servers->allByTenant($tenantId);
+        $preferred = $this->servers->preferredDefaultForForms($tenantId);
+        $plex = $this->servers->findDefaultByTenant($tenantId, 'plex');
+        $jelly = $this->servers->findDefaultByTenant($tenantId, 'jellyfin');
 
         return $this->view('dashboard.index', [
             'title' => 'Dashboard',
             'stats' => $stats,
             'servers' => $serverList,
             'user' => $user,
+            'preferredServerId' => $preferred?->id ? (int) $preferred->id : null,
+            'defaultPlexServerId' => $plex?->id ? (int) $plex->id : null,
+            'defaultJellyfinServerId' => $jelly?->id ? (int) $jelly->id : null,
         ]);
+    }
+
+    public function quickInvite(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $email = trim((string) $request->input('email', ''));
+        $days = max(1, (int) $request->input('days', 30));
+        $serverId = (int) $request->input('server_id', 0);
+
+        $result = $this->bulk->inviteEmailWithDays($tenantId, $serverId, $email, $days);
+
+        Session::getInstance()->flash(
+            !empty($result['success']) ? 'success' : 'error',
+            (string) ($result['message'] ?? 'Error al invitar.')
+        );
+
+        if (!empty($result['success']) && !empty($result['uuid'])) {
+            return $this->redirect('/media-users/' . $result['uuid']);
+        }
+
+        return $this->redirect('/dashboard');
     }
 
     /**
