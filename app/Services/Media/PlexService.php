@@ -373,8 +373,14 @@ final class PlexService
             (string) ($session['ratingKey'] ?? ''),
         );
 
+        $sessionMeta = is_array($session['Session'] ?? null) ? $session['Session'] : [];
+        // /status/sessions/terminate espera Session.id (UUID), no sessionKey.
+        $sessionId = (string) ($sessionMeta['id'] ?? '');
+        $sessionKey = (string) ($session['sessionKey'] ?? '');
+
         return [
-            'session_id' => (string) ($session['sessionKey'] ?? ''),
+            'session_id' => $sessionId !== '' ? $sessionId : $sessionKey,
+            'session_key' => $sessionKey,
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($user['title'] ?? ''),
@@ -429,8 +435,13 @@ final class PlexService
             (string) ($session['ratingKey'] ?? ''),
         );
 
+        // /status/sessions/terminate espera Session.id (UUID), no sessionKey.
+        $sessionId = (string) ($session->Session['id'] ?? '');
+        $sessionKey = (string) ($session['sessionKey'] ?? '');
+
         return [
-            'session_id' => (string) ($session['sessionKey'] ?? ''),
+            'session_id' => $sessionId !== '' ? $sessionId : $sessionKey,
+            'session_key' => $sessionKey,
             'title' => $displayTitle,
             'subtitle' => $subtitle,
             'user' => (string) ($session->User['title'] ?? ''),
@@ -840,8 +851,27 @@ final class PlexService
             $reason = 'Acceso suspendido desde MultiPanel';
         }
 
+        // Preferir Session.id real: el UI/caché puede seguir mandando sessionKey.
+        $targetId = $this->resolveTerminateSessionId($sessionId) ?? $sessionId;
+
+        if ($this->requestTerminate($targetId, $reason)) {
+            return true;
+        }
+
+        if ($targetId !== $sessionId && $this->requestTerminate($sessionId, $reason)) {
+            return true;
+        }
+
+        // Si ya no aparece en /status/sessions, el objetivo se cumplió
+        // (sesión expirada o cortada pese a respuesta ambigua).
+        return !$this->sessionStillActive($sessionId);
+    }
+
+    private function requestTerminate(string $sessionId, string $reason): bool
+    {
         try {
-            $this->client->get('/status/sessions/terminate', [
+            $response = $this->client->get('/status/sessions/terminate', [
+                'http_errors' => false,
                 'headers' => $this->authHeaders(),
                 'query' => [
                     'sessionId' => $sessionId,
@@ -849,11 +879,73 @@ final class PlexService
                 ],
             ]);
 
-            return true;
+            $code = $response->getStatusCode();
+            if ($code >= 200 && $code < 300) {
+                return true;
+            }
+
+            // No tratar 404 como éxito aquí: con sessionKey incorrecto Plex
+            // también responde 404 y la reproducción seguiría activa.
+            Logger::error('Plex terminate session failed', [
+                'session_id' => $sessionId,
+                'http' => $code,
+                'body' => substr($response->getBody()->getContents(), 0, 300),
+            ]);
+
+            return false;
         } catch (GuzzleException $e) {
             Logger::error('Plex terminate session failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
             return false;
         }
+    }
+
+    /**
+     * Si el panel aún manda sessionKey (p. ej. tarjeta en caché), busca el
+     * Session.id real en las sesiones activas.
+     */
+    private function resolveTerminateSessionId(string $sessionIdOrKey): ?string
+    {
+        // Session.id es un id largo; sessionKey suele ser un entero corto.
+        // Si ya parece Session.id, no hace falta otra consulta a /status/sessions.
+        if (strlen($sessionIdOrKey) >= 16 && !ctype_digit($sessionIdOrKey)) {
+            return $sessionIdOrKey;
+        }
+
+        foreach ($this->listSessionsForTerminate() as $session) {
+            $id = (string) ($session['session_id'] ?? '');
+            $key = (string) ($session['session_key'] ?? '');
+            if ($sessionIdOrKey === $id || ($key !== '' && $sessionIdOrKey === $key)) {
+                return $id !== '' ? $id : null;
+            }
+        }
+
+        return null;
+    }
+
+    private function sessionStillActive(string $sessionIdOrKey): bool
+    {
+        foreach ($this->listSessionsForTerminate() as $session) {
+            $id = (string) ($session['session_id'] ?? '');
+            $key = (string) ($session['session_key'] ?? '');
+            if ($sessionIdOrKey === $id || ($key !== '' && $sessionIdOrKey === $key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function listSessionsForTerminate(): array
+    {
+        $savedError = $this->lastError;
+        $this->lastError = null;
+        $sessions = $this->getActiveSessions();
+        if ($this->lastError !== null && $sessions === []) {
+            $this->lastError = $savedError;
+        }
+
+        return $sessions;
     }
 
     /**

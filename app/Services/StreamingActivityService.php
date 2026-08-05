@@ -171,11 +171,17 @@ final class StreamingActivityService
     {
         $media = MediaServerFactory::make($server);
 
-        if ($media instanceof PlexService || $media instanceof JellyfinService) {
-            return $media->terminateSession($sessionId, $reason);
+        if (!($media instanceof PlexService || $media instanceof JellyfinService)) {
+            return false;
         }
 
-        return false;
+        $ok = $media->terminateSession($sessionId, $reason);
+        if ($ok) {
+            // Evitar que el polling siga mostrando la sesión cortada unos segundos.
+            Cache::forget('activity_snapshot_' . (int) $server->tenant_id);
+        }
+
+        return $ok;
     }
 
     /** @return array{body: string, content_type: string}|null */

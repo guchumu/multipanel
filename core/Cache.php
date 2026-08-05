@@ -74,6 +74,10 @@ final class Cache
 
     public static function forget(string $key): bool
     {
+        if (config('redis.enabled', false) && RedisClient::isAvailable()) {
+            RedisClient::delete('cache:' . $key);
+        }
+
         $file = self::filePath($key);
         return file_exists($file) ? unlink($file) : true;
     }

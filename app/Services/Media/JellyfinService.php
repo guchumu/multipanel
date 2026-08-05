@@ -285,15 +285,47 @@ final class JellyfinService
         }
 
         try {
-            $this->client->post("/Sessions/{$sessionId}/Playing/Stop", [
+            $response = $this->client->post("/Sessions/{$sessionId}/Playing/Stop", [
+                'http_errors' => false,
                 'headers' => $this->authHeaders(),
             ]);
 
-            return true;
+            $code = $response->getStatusCode();
+            if ($code >= 200 && $code < 300) {
+                return true;
+            }
+
+            // 404: sesión ya cerrada. Otros códigos: si ya no está activa, OK.
+            if ($code === 404 || !$this->sessionStillActive($sessionId)) {
+                return true;
+            }
+
+            Logger::error('Jellyfin stop session failed', [
+                'session_id' => $sessionId,
+                'http' => $code,
+                'body' => substr($response->getBody()->getContents(), 0, 300),
+            ]);
+
+            return false;
         } catch (GuzzleException $e) {
+            // Red intermitente: si la sesión ya no está, el objetivo se cumplió.
+            if (!$this->sessionStillActive($sessionId)) {
+                return true;
+            }
             Logger::error('Jellyfin stop session failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
             return false;
         }
+    }
+
+    private function sessionStillActive(string $sessionId): bool
+    {
+        foreach ($this->getActiveSessions() as $session) {
+            if ((string) ($session['session_id'] ?? '') === $sessionId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
