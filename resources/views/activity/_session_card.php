@@ -52,8 +52,8 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
             </div>
             <?php if (!empty($session['over_limit'])): ?>
             <div class="mb-2">
-                <span class="badge bg-danger" title="Este usuario supera su límite de streams simultáneos (<?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>)">
-                    <i class="bi bi-exclamation-octagon me-1"></i>Límite streams <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>
+                <span class="badge bg-danger" title="Supera el límite (IPs o sesiones distintas: <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>)">
+                    <i class="bi bi-exclamation-octagon me-1"></i>Límite <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>
                 </span>
             </div>
             <?php endif; ?>
@@ -64,6 +64,9 @@ $thumbFallback = 'data:image/svg+xml,' . rawurlencode(
             <p class="small text-muted mb-2 text-truncate"><?= e($session['subtitle']) ?></p>
             <?php endif; ?>
             <p class="small mb-1"><i class="bi bi-person me-1"></i><?= e($session['user'] ?? '-') ?></p>
+            <?php if (!empty($session['client_ip'])): ?>
+            <p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code><?= e((string) $session['client_ip']) ?></code></p>
+            <?php endif; ?>
             <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i><?= e($session['server_name'] ?? '-') ?></p>
             <p class="small mb-2"><i class="bi bi-display me-1"></i><?= e($session['player'] ?? '-') ?>
                 <?php if (!empty($session['platform'])): ?>

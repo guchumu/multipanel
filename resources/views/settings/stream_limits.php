@@ -1,5 +1,5 @@
 <?php
-/** @var array{enforcement_enabled: bool, default_max_streams: int, kill_message: string} $settings */
+/** @var array{enforcement_enabled: bool, default_max_streams: int, kill_message: string, count_mode: string} $settings */
 /** @var string $effectiveKillMessage */
 ob_start();
 ?>
@@ -7,8 +7,8 @@ ob_start();
     <a href="/settings" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Configuración</a>
     <h4 class="mb-0 mt-1">Límite de streams simultáneos</h4>
     <p class="text-muted small mb-0">
-        Controla cuántas reproducciones a la vez puede tener cada usuario media.
-        Si se supera el límite, se cortan las emisiones de más (se conserva la principal).
+        Por defecto cuenta <strong>IPs distintas</strong> (varias pantallas en casa = 1).
+        Si se supera el límite, se cortan las sesiones de las IPs más recientes.
     </p>
 </div>
 
@@ -35,8 +35,22 @@ ob_start();
                                id="default_max_streams" name="default_max_streams"
                                value="<?= (int) ($settings['default_max_streams'] ?? 2) ?>">
                         <div class="form-text">
-                            Se usa cuando el usuario media no tiene un valor propio en «Streams»
-                            (campo vacío / NULL). Cada usuario puede sobreescribirlo en su ficha.
+                            Valor por defecto: <strong>2</strong>. Se usa cuando el usuario no tiene «Streams» propio (vacío / NULL).
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="count_mode">Cómo contar</label>
+                        <select class="form-select" id="count_mode" name="count_mode" style="max-width: 360px">
+                            <option value="distinct_ip" <?= ($settings['count_mode'] ?? 'distinct_ip') === 'distinct_ip' ? 'selected' : '' ?>>
+                                IPs distintas (recomendado)
+                            </option>
+                            <option value="sessions" <?= ($settings['count_mode'] ?? '') === 'sessions' ? 'selected' : '' ?>>
+                                Cada sesión / emisión
+                            </option>
+                        </select>
+                        <div class="form-text">
+                            Con «IPs distintas»: 3 sesiones en la misma IP cuentan como 1 hacia el límite.
                         </div>
                     </div>
 
@@ -63,10 +77,10 @@ ob_start();
             <div class="card-body">
                 <h6 class="mb-2">Cómo funciona</h6>
                 <ul class="small text-muted mb-3 ps-3">
-                    <li>Se cuenta por usuario media en su servidor (Plex/Jellyfin user id, o nombre).</li>
-                    <li>Si hay más streams que el límite, se cortan los de más (los menos avanzados / más recientes).</li>
-                    <li>La emisión principal (más progreso) sigue.</li>
-                    <li>Se aplica al refrescar En directo y en el cron <code>streams</code>.</li>
+                    <li>Match por usuario media en su servidor (Plex/Jellyfin user id, o nombre).</li>
+                    <li>Modo IPs: se conservan las IPs más antiguas; se cortan todas las sesiones de las IPs nuevas de más.</li>
+                    <li>Modo sesiones: se conserva la emisión con más progreso.</li>
+                    <li>Se aplica al refrescar En directo y en el cron <code>streams</code> (o <code>all</code>).</li>
                 </ul>
                 <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-exclamation-octagon me-1"></i>Ver incumplimientos

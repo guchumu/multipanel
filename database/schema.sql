@@ -824,6 +824,7 @@ CREATE TABLE IF NOT EXISTS `stream_limit_violations` (
     `session_ids` JSON NULL,
     `killed_session_ids` JSON NULL,
     `titles` JSON NULL,
+    `client_ips` JSON NULL,
     `action` VARCHAR(40) NOT NULL DEFAULT 'kill_newest',
     `message` VARCHAR(500) NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

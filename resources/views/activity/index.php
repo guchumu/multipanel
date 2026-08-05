@@ -312,7 +312,7 @@ function overLimitBadgeHtml(s) {
     if (!s.over_limit) return '';
     const count = Number(s.user_stream_count || 0);
     const limit = Number(s.stream_limit || 0);
-    return `<div class="mb-2"><span class="badge bg-danger" title="Este usuario supera su límite de streams simultáneos (\${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite streams \${count}/\${limit}</span></div>`;
+    return `<div class="mb-2"><span class="badge bg-danger" title="Supera el límite (IPs/sesiones: \${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite \${count}/\${limit}</span></div>`;
 }
 
 function sessionCardHtml(s) {
@@ -337,6 +337,7 @@ function sessionCardHtml(s) {
                 <h6 class="card-title mb-1 text-truncate" title="\${escapeHtml(s.title)}">\${escapeHtml(s.title || 'Sin título')}</h6>
                 \${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
                 <p class="small mb-1"><i class="bi bi-person me-1"></i>\${escapeHtml(s.user || '-')}</p>
+                \${s.client_ip ? `<p class="small mb-1"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>` : ''}
                 <p class="small mb-1"><i class="bi bi-hdd-network me-1"></i>\${escapeHtml(s.server_name || '-')}</p>
                 <p class="small mb-2"><i class="bi bi-display me-1"></i>\${escapeHtml(s.player || '-')} \${s.platform ? `<span class="text-muted">(\${escapeHtml(s.platform)})</span>` : ''}</p>
                 \${streamBlock}

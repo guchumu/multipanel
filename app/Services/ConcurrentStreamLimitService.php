@@ -8,6 +8,7 @@ use App\Models\Server;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Media\SessionClientIp;
 use Core\Cache;
 use Core\Database;
 use Core\Logger;
@@ -463,6 +464,7 @@ final class ConcurrentStreamLimitService
      * @param array<int, string> $sessionIds
      * @param array<int, string> $killedIds
      * @param array<int, array<string, string>> $titles
+     * @param array<int, string> $clientIps
      */
     private function logViolation(
         int $tenantId,
@@ -475,9 +477,12 @@ final class ConcurrentStreamLimitService
         array $killedIds,
         array $titles,
         string $message,
+        string $action = 'kill_newest_ips',
+        array $clientIps = [],
     ): void {
         try {
-            Database::getInstance()->insert('stream_limit_violations', [
+            self::ensureClientIpsColumn();
+            $row = [
                 'tenant_id' => $tenantId,
                 'media_user_id' => $mediaUserId,
                 'server_id' => $serverId,
@@ -487,9 +492,13 @@ final class ConcurrentStreamLimitService
                 'session_ids' => json_encode(array_values($sessionIds), JSON_UNESCAPED_UNICODE),
                 'killed_session_ids' => json_encode(array_values($killedIds), JSON_UNESCAPED_UNICODE),
                 'titles' => json_encode(array_values($titles), JSON_UNESCAPED_UNICODE),
-                'action' => 'kill_newest',
+                'action' => $action,
                 'message' => mb_substr($message, 0, 500),
-            ]);
+            ];
+            if (self::hasClientIpsColumn()) {
+                $row['client_ips'] = json_encode(array_values($clientIps), JSON_UNESCAPED_UNICODE);
+            }
+            Database::getInstance()->insert('stream_limit_violations', $row);
         } catch (\Throwable $e) {
             Logger::warning('Could not log stream limit violation', ['error' => $e->getMessage()]);
         }
@@ -521,6 +530,19 @@ final class ConcurrentStreamLimitService
         return array_map(static function (array $row): array {
             $titles = json_decode((string) ($row['titles'] ?? '[]'), true);
             $killed = json_decode((string) ($row['killed_session_ids'] ?? '[]'), true);
+            $ips = json_decode((string) ($row['client_ips'] ?? '[]'), true);
+            if (!is_array($ips) || $ips === []) {
+                $ips = [];
+                if (is_array($titles)) {
+                    foreach ($titles as $t) {
+                        $ip = trim((string) ($t['ip'] ?? ''));
+                        if ($ip !== '') {
+                            $ips[$ip] = true;
+                        }
+                    }
+                    $ips = array_keys($ips);
+                }
+            }
 
             return [
                 'id' => (int) $row['id'],
@@ -536,6 +558,7 @@ final class ConcurrentStreamLimitService
                 'stream_limit' => (int) $row['stream_limit'],
                 'action' => (string) $row['action'],
                 'titles' => is_array($titles) ? $titles : [],
+                'client_ips' => is_array($ips) ? array_values($ips) : [],
                 'killed_session_ids' => is_array($killed) ? $killed : [],
                 'message' => (string) ($row['message'] ?? ''),
             ];
@@ -555,16 +578,60 @@ final class ConcurrentStreamLimitService
                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1',
                 ['stream_limit_violations']
             );
-            if ($row !== null) {
-                $ensured = true;
-                return;
+            if ($row === null) {
+                (new \Core\Updater())->runMigrations();
             }
-
-            (new \Core\Updater())->runMigrations();
+            self::ensureClientIpsColumn();
         } catch (\Throwable) {
             // ignore
         }
 
         $ensured = true;
+    }
+
+    private static function ensureClientIpsColumn(): void
+    {
+        if (self::hasClientIpsColumn()) {
+            return;
+        }
+
+        try {
+            (new \Core\Updater())->runMigrations();
+        } catch (\Throwable) {
+            // ignore
+        }
+
+        if (self::hasClientIpsColumn()) {
+            return;
+        }
+
+        try {
+            Database::getInstance()->pdo()->exec(
+                'ALTER TABLE `stream_limit_violations` ADD COLUMN `client_ips` JSON NULL'
+            );
+        } catch (\Throwable) {
+            // ignore duplicate/missing table
+        }
+    }
+
+    private static function hasClientIpsColumn(): bool
+    {
+        static $has = null;
+        if ($has !== null) {
+            return $has;
+        }
+
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT 1 AS ok FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+                ['stream_limit_violations', 'client_ips']
+            );
+            $has = $row !== null;
+        } catch (\Throwable) {
+            $has = false;
+        }
+
+        return $has;
     }
 }

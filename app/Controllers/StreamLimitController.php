@@ -42,10 +42,12 @@ class StreamLimitController extends Controller
         $enabled = (bool) $request->input('enforcement_enabled');
         $defaultMax = max(1, min(50, (int) $request->input('default_max_streams', 2)));
         $killMessage = trim((string) $request->input('kill_message', ''));
+        $countMode = trim((string) $request->input('count_mode', 'distinct_ip'));
 
         $this->settings->setEnforcementEnabled($tenantId, $enabled);
         $this->settings->setDefaultMaxStreams($tenantId, $defaultMax);
         $this->settings->setKillMessage($tenantId, $killMessage !== '' ? $killMessage : null);
+        $this->settings->setCountMode($tenantId, $countMode);
 
         Session::getInstance()->flash('success', 'Ajustes de límite de streams guardados.');
 

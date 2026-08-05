@@ -57,6 +57,19 @@ ob_start();
                         }
                     }
                     $killed = is_array($v['killed_session_ids'] ?? null) ? $v['killed_session_ids'] : [];
+                    $ips = is_array($v['client_ips'] ?? null) ? $v['client_ips'] : [];
+                    if ($ips === []) {
+                        foreach ($titles as $t) {
+                            $ip = trim((string) ($t['ip'] ?? ''));
+                            if ($ip !== '') {
+                                $ips[] = $ip;
+                            }
+                        }
+                        $ips = array_values(array_unique($ips));
+                    }
+                    $actionLabel = (($v['action'] ?? '') === 'kill_newest_ips')
+                        ? 'Cortar IPs más recientes'
+                        : 'Cortar sesiones más recientes';
                 ?>
                 <tr>
                     <td class="small text-nowrap"><?= e($v['at'] ?? '') ?></td>
@@ -73,8 +86,11 @@ ob_start();
                         <div class="text-truncate" style="max-width: 280px" title="<?= e(implode(' · ', $titleBits)) ?>">
                             <?= e($titleBits !== [] ? implode(' · ', $titleBits) : '—') ?>
                         </div>
+                        <?php if ($ips !== []): ?>
+                        <div class="text-muted">IPs: <code><?= e(implode(', ', $ips)) ?></code></div>
+                        <?php endif; ?>
                         <div class="text-muted">
-                            Acción: cortar más recientes (<?= count($killed) ?> sesión/es)
+                            <?= e($actionLabel) ?> (<?= count($killed) ?> sesión/es)
                         </div>
                     </td>
                     <td>
