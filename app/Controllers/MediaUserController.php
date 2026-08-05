@@ -283,6 +283,7 @@ class MediaUserController extends Controller
         $this->mediaUsers->ensureTelegramChatIdColumn();
         try {
             $this->mediaUsers->backfillTelegramChatIds($tenantId);
+            $this->mediaUsers->backfillEmailsFromCustomers($tenantId);
         } catch (\Throwable) {
             // No bloquear el listado si el backfill falla (JSON/metadata ausente).
         }
@@ -340,7 +341,8 @@ class MediaUserController extends Controller
                 'users' => array_map(static fn (MediaUser $u): array => [
                     'id' => (int) $u->id,
                     'uuid' => (string) $u->uuid,
-                    'username' => (string) ($u->display_name ?? $u->username),
+                    'username' => (string) ($u->username ?? ''),
+                    'display_name' => (string) ($u->display_name ?? ''),
                     'email' => (string) ($u->email ?? ''),
                     'server_name' => (string) ($u->server_name ?? ''),
                     'status' => (string) $u->status,
@@ -661,14 +663,16 @@ class MediaUserController extends Controller
             }
             $ok = $this->serverSync->sync($server);
             $stats = $this->serverSync->lastUserSyncStats();
+            $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
             $msg = $ok
                 ? sprintf(
-                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s',
                     $server->name,
                     (int) ($stats['imported'] ?? 0),
                     (int) ($stats['updated'] ?? 0),
                     (int) ($stats['missing'] ?? 0),
-                    (int) ($stats['restored'] ?? 0)
+                    (int) ($stats['restored'] ?? 0),
+                    $recovered
                 )
                 : 'Sync fallido: ' . ($server->last_error ?? 'sin conexión');
             Session::getInstance()->flash($ok ? 'success' : 'error', $msg);
@@ -679,17 +683,38 @@ class MediaUserController extends Controller
         $synced = $this->serverSync->syncAll($tenantId);
         $total = count($this->servers->allByTenant($tenantId));
         $stats = $this->serverSync->lastUserSyncStats();
+        $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
         Session::getInstance()->flash('success', sprintf(
-            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.',
+            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s',
             $synced,
             $total,
             (int) ($stats['imported'] ?? 0),
             (int) ($stats['updated'] ?? 0),
             (int) ($stats['missing'] ?? 0),
-            (int) ($stats['restored'] ?? 0)
+            (int) ($stats['restored'] ?? 0),
+            $recovered
         ));
 
         return $this->redirect('/media-users');
+    }
+
+    /** Restaura email/telegram desde customers si un sync previo los dejó vacíos. */
+    private function recoverPanelFieldsAfterSync(int $tenantId): string
+    {
+        $emails = 0;
+        $telegrams = 0;
+        try {
+            $emails = $this->mediaUsers->backfillEmailsFromCustomers($tenantId);
+            $telegrams = $this->mediaUsers->backfillTelegramChatIds($tenantId);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        if ($emails <= 0 && $telegrams <= 0) {
+            return '';
+        }
+
+        return sprintf(' Recuperados: %d emails, %d Telegram desde clientes.', $emails, $telegrams);
     }
 
     public function updateTelegram(Request $request, string $uuid): Response

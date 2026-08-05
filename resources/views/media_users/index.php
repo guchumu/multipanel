@@ -121,13 +121,13 @@ ob_start();
                     <th class="media-users-col-id">ID</th>
                     <th>Usuario</th>
                     <th class="d-none d-md-table-cell">Email</th>
-                    <th class="d-none d-lg-table-cell">Servidor</th>
+                    <th class="d-none d-xl-table-cell">Servidor</th>
                     <th>Estado</th>
                     <th class="d-none d-xl-table-cell" title="Biblioteca">Bibl.</th>
                     <th class="d-none d-xl-table-cell" title="Streams">Str.</th>
-                    <th class="d-none d-lg-table-cell">Expira</th>
+                    <th title="Fecha de expiración">Expira</th>
                     <th title="Vence en">Vence</th>
-                    <th class="d-none d-xl-table-cell">TG</th>
+                    <th title="Telegram Chat ID">Telegram</th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
@@ -146,7 +146,7 @@ ob_start();
                         <div class="small text-muted d-md-none text-truncate media-users-name"><?= e($u->email ?? '-') ?></div>
                     </td>
                     <td class="small d-none d-md-table-cell text-truncate media-users-email"><?= e($u->email ?? '-') ?></td>
-                    <td class="small d-none d-lg-table-cell">
+                    <td class="small d-none d-xl-table-cell">
                         <?php if ($u->server_name): ?>
                         <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge"><?= e($u->server_name) ?></span>
                         <?php else: ?>
@@ -164,7 +164,7 @@ ob_start();
                         </span>
                     </td>
                     <td class="d-none d-xl-table-cell small"><?= (int) $u->max_streams ?></td>
-                    <td class="small d-none d-lg-table-cell">
+                    <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
                     </td>
@@ -172,9 +172,13 @@ ob_start();
                         <?php $dl = days_left_badge($u->expires_at); ?>
                         <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
                     </td>
-                    <td class="small d-none d-xl-table-cell">
+                    <td class="small">
+                        <?php $tg = trim((string) ($u->telegram_chat_id ?? '')); ?>
                         <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="<?= e($u->uuid) ?>"
-                               value="<?= e($u->telegram_chat_id ?? '') ?>" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
+                               value="<?= e($tg) ?>" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
+                        <?php if ($tg !== ''): ?>
+                        <div class="small text-success mt-1">Vinculado</div>
+                        <?php endif; ?>
                     </td>
                     <td class="text-end">
                         <div class="btn-group btn-group-sm">

@@ -462,4 +462,23 @@ class MediaUserRepository
 
         return (int) $stmt->rowCount();
     }
+
+    /**
+     * Restaura emails borrados por sync (API sin email) desde customers vinculados.
+     */
+    public function backfillEmailsFromCustomers(int $tenantId): int
+    {
+        $stmt = Database::getInstance()->query(
+            'UPDATE media_users mu
+             INNER JOIN customers c ON c.media_user_id = mu.id AND c.tenant_id = mu.tenant_id
+             SET mu.email = c.email
+             WHERE mu.tenant_id = ?
+               AND mu.deleted_at IS NULL
+               AND (mu.email IS NULL OR mu.email = \'\')
+               AND c.email IS NOT NULL AND c.email != \'\'',
+            [$tenantId]
+        );
+
+        return (int) $stmt->rowCount();
+    }
 }

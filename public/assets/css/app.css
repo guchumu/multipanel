@@ -187,7 +187,10 @@ body {
 }
 
 .media-users-table {
-    min-width: 0;
+    /* min-width real: evita que Expira/Vence/TG/Email se colapsen a 0px
+       (bug visual tras e7b9b53 con min-width:0). El scroll queda en .media-users-table-wrap. */
+    min-width: 920px;
+    width: 100%;
     --bs-table-bg: transparent;
 }
 

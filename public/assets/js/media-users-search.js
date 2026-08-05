@@ -53,7 +53,9 @@
         if (!expiresAt) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const expires = new Date(expiresAt + 'T00:00:00');
+        // Acepta "YYYY-MM-DD" o datetime completo "YYYY-MM-DD HH:MM:SS"
+        const datePart = String(expiresAt).slice(0, 10);
+        const expires = new Date(datePart + 'T00:00:00');
         if (Number.isNaN(expires.getTime())) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
         const days = Math.floor((expires.getTime() - today.getTime()) / 86400000);
 
@@ -79,9 +81,11 @@
             const actionBtn = active
                 ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')"><i class="bi bi-pause"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
-            const dl = daysLeftBadge(u.expires_at);
+            const expiresDate = u.expires_at ? String(u.expires_at).slice(0, 10) : '';
+            const dl = daysLeftBadge(expiresDate);
             const mb = membershipBadge(u.on_server);
             const username = escapeHtml(u.display_name || u.username || '');
+            const tg = String(u.telegram_chat_id || '').trim();
 
             return `<tr>
                 <td class="small text-muted media-users-col-id">${Number(u.id || 0)}</td>
@@ -90,20 +94,21 @@
                     <div class="small text-muted d-md-none text-truncate media-users-name">${escapeHtml(u.email || '-')}</div>
                 </td>
                 <td class="small d-none d-md-table-cell text-truncate media-users-email">${escapeHtml(u.email || '-')}</td>
-                <td class="small d-none d-lg-table-cell">${serverBadge}</td>
+                <td class="small d-none d-xl-table-cell">${serverBadge}</td>
                 <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>
                 <td class="d-none d-xl-table-cell">
                     <span class="badge text-truncate d-inline-block media-users-membership-badge ${mb.cls}" title="${escapeHtml(mb.label)}">${escapeHtml(mb.label)}</span>
                 </td>
                 <td class="d-none d-xl-table-cell small">${Number(u.max_streams || 0)}</td>
-                <td class="small d-none d-lg-table-cell">
+                <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="${escapeHtml(u.uuid)}"
-                           value="${escapeHtml(u.expires_at || '')}">
+                           value="${escapeHtml(expiresDate)}">
                 </td>
                 <td class="small text-nowrap"><span class="badge ${dl.cls}">${escapeHtml(dl.label)}</span></td>
-                <td class="small d-none d-xl-table-cell">
+                <td class="small">
                     <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="${escapeHtml(u.uuid)}"
-                           value="${escapeHtml(u.telegram_chat_id || '')}" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
+                           value="${escapeHtml(tg)}" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
+                    ${tg ? '<div class="small text-success mt-1">Vinculado</div>' : ''}
                 </td>
                 <td class="text-end">
                     <div class="btn-group btn-group-sm">

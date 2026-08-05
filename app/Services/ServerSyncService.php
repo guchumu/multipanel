@@ -245,18 +245,16 @@ final class ServerSyncService
 
             $existing = $db->fetchOne(
                 $hasMembershipCols
-                    ? 'SELECT id, on_server FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1'
-                    : 'SELECT id FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1',
+                    ? 'SELECT id, on_server, email, display_name, avatar FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1'
+                    : 'SELECT id, email, display_name, avatar FROM media_users WHERE server_id = ? AND external_id = ? AND deleted_at IS NULL LIMIT 1',
                 [$server->id, $externalId]
             );
 
             if ($existing) {
-                $payload = [
-                    'username' => $username,
-                    'email' => $remoteUser['email'] ?? null,
-                    'display_name' => $username,
-                    'avatar' => $remoteUser['thumb'] ?? null,
-                ];
+                // Nunca pisar email/display_name/avatar/expires/telegram locales con
+                // valores vacíos de la API (Jellyfin no devuelve email → antes lo
+                // dejaba a NULL en cada "Forzar sincronización").
+                $payload = self::mergeRemoteIntoLocalUser($remoteUser, $existing, $username);
                 if ($hasMembershipCols) {
                     if ((int) ($existing['on_server'] ?? -1) === 0) {
                         $restored++;
@@ -264,7 +262,9 @@ final class ServerSyncService
                     $payload['on_server'] = 1;
                     $payload['membership_synced_at'] = $now;
                 }
-                $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
+                if ($payload !== []) {
+                    $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
+                }
                 $updated++;
                 continue;
             }
@@ -283,13 +283,17 @@ final class ServerSyncService
             ) : null;
 
             if ($pending) {
-                $payload = [
-                    'external_id' => $externalId,
-                    'username' => $username,
-                    'display_name' => $username,
-                    'avatar' => $remoteUser['thumb'] ?? null,
-                    'status' => 'active',
-                ];
+                $pendingRow = $db->fetchOne(
+                    'SELECT id, email, display_name, avatar FROM media_users WHERE id = ? LIMIT 1',
+                    [$pending['id']]
+                ) ?: ['id' => $pending['id'], 'email' => $email, 'display_name' => null, 'avatar' => null];
+                $payload = array_merge(
+                    [
+                        'external_id' => $externalId,
+                        'status' => 'active',
+                    ],
+                    self::mergeRemoteIntoLocalUser($remoteUser, $pendingRow, $username)
+                );
                 if ($hasMembershipCols) {
                     $payload['on_server'] = 1;
                     $payload['membership_synced_at'] = $now;
@@ -300,13 +304,14 @@ final class ServerSyncService
                 continue;
             }
 
+            $remoteEmail = trim((string) ($remoteUser['email'] ?? ''));
             $insert = [
                 'tenant_id' => $server->tenant_id,
                 'uuid' => Uuid::uuid4()->toString(),
                 'server_id' => $server->id,
                 'external_id' => $externalId,
                 'username' => $username,
-                'email' => $remoteUser['email'] ?? null,
+                'email' => $remoteEmail !== '' ? $remoteEmail : null,
                 'display_name' => $username,
                 'avatar' => $remoteUser['thumb'] ?? null,
                 'status' => 'active',
@@ -697,5 +702,36 @@ final class ServerSyncService
         $this->forgetSoftSyncCache($tenantId);
 
         return $synced;
+    }
+
+    /**
+     * Campos seguros para UPDATE al sincronizar con Plex/Jellyfin.
+     * Solo escribe email/avatar cuando la API trae un valor real; no toca
+     * expires_at ni telegram_chat_id (datos del panel).
+     *
+     * @param array<string, mixed> $remoteUser
+     * @param array<string, mixed> $localUser
+     * @return array<string, mixed>
+     */
+    public static function mergeRemoteIntoLocalUser(array $remoteUser, array $localUser, string $username): array
+    {
+        $payload = ['username' => $username];
+
+        $remoteEmail = trim((string) ($remoteUser['email'] ?? ''));
+        if ($remoteEmail !== '') {
+            $payload['email'] = $remoteEmail;
+        }
+
+        $localDisplay = trim((string) ($localUser['display_name'] ?? ''));
+        if ($localDisplay === '') {
+            $payload['display_name'] = $username;
+        }
+
+        $remoteThumb = $remoteUser['thumb'] ?? null;
+        if (is_string($remoteThumb) && trim($remoteThumb) !== '') {
+            $payload['avatar'] = trim($remoteThumb);
+        }
+
+        return $payload;
     }
 }
