@@ -305,6 +305,8 @@ $content = ob_get_clean();
 // escribas un cierre de PHP dentro de un comentario como este: PHP lo honra
 // incluso dentro de comentarios de una línea y saca el resto del archivo como
 // texto plano al navegador. Pre-codifica los datos con json_encode e interpólalos.
+// En heredoc sin comillas, los template literals JS `${...}` se interpretan como
+// PHP: escríbelos como \${...} (igual que en activity/index.php).
 $usersChartData = json_encode([
     (int) $stats['users_active'],
     (int) $stats['users_suspended'],
@@ -400,12 +402,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     tbody.innerHTML = byServer.map(s => `
                         <tr>
-                            <td class="fw-medium">${esc(s.server_name)}</td>
-                            <td><span class="badge bg-secondary">${esc(String(s.server_type || '').toUpperCase())}</span></td>
-                            <td class="text-end">${Number(s.sessions) || 0}</td>
+                            <td class="fw-medium">\${esc(s.server_name)}</td>
+                            <td><span class="badge bg-secondary">\${esc(String(s.server_type || '').toUpperCase())}</span></td>
+                            <td class="text-end">\${Number(s.sessions) || 0}</td>
                             <td class="text-end">
-                                ${Number(s.transcode) > 0
-                                    ? `<span class="badge bg-warning text-dark">${Number(s.transcode)}</span>`
+                                \${Number(s.transcode) > 0
+                                    ? `<span class="badge bg-warning text-dark">\${Number(s.transcode)}</span>`
                                     : '0'}
                             </td>
                         </tr>
@@ -428,17 +430,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         const user = s.user || '—';
                         const server = s.server_name || '—';
                         const thumb = s.thumb_url
-                            ? `<img src="${esc(s.thumb_url)}" alt="" class="rounded me-2" width="40" height="60" style="object-fit:cover" loading="lazy">`
+                            ? `<img src="\${esc(s.thumb_url)}" alt="" class="rounded me-2" width="40" height="60" style="object-fit:cover" loading="lazy">`
                             : `<div class="bg-secondary bg-opacity-25 rounded me-2 d-inline-flex align-items-center justify-content-center" style="width:40px;height:60px"><i class="bi bi-film text-muted"></i></div>`;
                         return `
                             <div class="list-group-item d-flex align-items-start gap-2 py-2">
-                                ${thumb}
+                                \${thumb}
                                 <div class="flex-grow-1 min-w-0">
-                                    <div class="fw-medium text-truncate">${esc(title)}</div>
-                                    ${sub ? `<div class="small text-muted text-truncate">${esc(sub)}</div>` : ''}
+                                    <div class="fw-medium text-truncate">\${esc(title)}</div>
+                                    \${sub ? `<div class="small text-muted text-truncate">\${esc(sub)}</div>` : ''}
                                     <div class="small text-muted text-truncate">
-                                        ${esc(user)} · ${esc(server)}
-                                        <span class="badge bg-${badge} ms-1">${esc(label)}</span>
+                                        \${esc(user)} · \${esc(server)}
+                                        <span class="badge bg-\${badge} ms-1">\${esc(label)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -453,7 +455,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setText('live-modal-updated', 'Actualizado a las ' + stamp);
             setText('dash-live-hint', streams === 1
                 ? '1 reproducción activa · clic para detalle'
-                : `${streams} reproducciones activas · clic para detalle`);
+                : `\${streams} reproducciones activas · clic para detalle`);
         }
 
         async function refresh() {

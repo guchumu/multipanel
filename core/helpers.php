@@ -161,6 +161,14 @@ if (!function_exists('e')) {
     }
 }
 
+if (!function_exists('esc')) {
+    /** Alias de e() para escape HTML en vistas. */
+    function esc(?string $value): string
+    {
+        return e($value);
+    }
+}
+
 if (!function_exists('event')) {
     function event(string $name, mixed $payload = null): mixed
     {
