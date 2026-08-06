@@ -186,26 +186,35 @@
                         <h6 class="d-flex align-items-center gap-2">
                             <i class="bi bi-credit-card-2-front text-primary"></i>Conexión con Stripe
                             <?php if ($stripeHasSecretKey): ?>
-                            <span class="badge bg-success">Configurado</span>
+                            <span class="badge bg-success">Configurado<?= $stripeMode ? ' · ' . e($stripeMode) : '' ?></span>
                             <?php else: ?>
                             <span class="badge bg-warning text-dark">Sin configurar</span>
                             <?php endif; ?>
                         </h6>
                         <p class="form-text mt-0">
                             Pega aquí tus claves de <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">dashboard.stripe.com/apikeys</a>.
-                            Sin esto, los botones de "Cobro con Stripe" de las fichas de usuario no podrán generar enlaces de pago.
+                            Sin la <strong>Secret key</strong>, los botones de «Cobro con Stripe» no pueden generar enlaces de pago.
+                            Usa siempre el mismo modo: <code>sk_test_</code> + <code>pk_test_</code> (pruebas) o <code>sk_live_</code> + <code>pk_live_</code> (producción).
                         </p>
+                        <?php if (!empty($appUrlLooksLocal)): ?>
+                        <div class="alert alert-warning py-2 small mb-3">
+                            <strong>APP_URL parece localhost</strong> (<code><?= e($appUrl !== '' ? $appUrl : '(vacío)') ?></code>).
+                            En el servidor pon en <code>.env</code> tu dominio real con HTTPS, por ejemplo
+                            <code>APP_URL=https://tudominio.com</code>, y reinicia PHP-FPM. Si no, Stripe puede rechazar el checkout (sobre todo con claves live).
+                        </div>
+                        <?php endif; ?>
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label small">Clave secreta (Secret key, empieza por <code>sk_</code>)</label>
                                 <input type="password" name="stripe_secret_key" class="form-control" autocomplete="off"
-                                       placeholder="<?= $stripeHasSecretKey ? e($stripeSecretKeyMasked) : 'sk_live_...' ?>">
-                                <div class="form-text">Déjalo en blanco para no cambiar la clave ya guardada.</div>
+                                       placeholder="<?= $stripeHasSecretKey ? e($stripeSecretKeyMasked) : 'sk_live_... o sk_test_...' ?>">
+                                <div class="form-text">Obligatoria para crear pagos. Déjala en blanco para no cambiar la ya guardada. <em>No</em> pegues aquí la <code>pk_</code>.</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">Clave pública (Publishable key, empieza por <code>pk_</code>)</label>
                                 <input type="text" name="stripe_publishable_key" class="form-control" autocomplete="off"
-                                       value="<?= e($stripePublishableKey) ?>" placeholder="pk_live_...">
+                                       value="<?= e($stripePublishableKey) ?>" placeholder="pk_live_... o pk_test_...">
+                                <div class="form-text">Opcional en este panel (el checkout lo crea el servidor con la secret). Debe ser del mismo modo que la secret.</div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label small">
@@ -215,11 +224,18 @@
                                 <input type="password" name="stripe_webhook_secret" class="form-control" autocomplete="off"
                                        placeholder="<?= $stripeHasWebhookSecret ? '••••••••••' : 'whsec_...' ?>">
                                 <div class="form-text">
-                                    Configura en Stripe un webhook a <code><?= e(rtrim(config('app.url', ''), '/')) ?>/webhooks/payment/stripe</code>
-                                    escuchando el evento <code>checkout.session.completed</code>, y pega aquí su firma.
+                                    <strong>Necesario para renovar automáticamente</strong> tras el pago (sumar días al usuario).
+                                    Crear el enlace de pago no lo requiere; confirmar el cobro sí.
+                                    En Stripe → Developers → Webhooks, endpoint
+                                    <code><?= e(($appUrl !== '' ? rtrim($appUrl, '/') : 'https://TU-DOMINIO')) ?>/webhooks/payment/stripe</code>
+                                    escuchando <code>checkout.session.completed</code>, y pega aquí el «Signing secret».
                                 </div>
                             </div>
                         </div>
+                        <p class="form-text mb-0 mt-2">
+                            Si al generar el enlace falla, el panel mostrará el mensaje real de Stripe (clave inválida, URL, importe, etc.).
+                            También puedes revisar <code>storage/logs/multipanel.log</code>.
+                        </p>
                     </div>
 
                     <div class="mb-4">

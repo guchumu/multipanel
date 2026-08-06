@@ -212,12 +212,14 @@
 
         try {
             const data = await post(`/media-users/${uuid}/stripe-checkout`, { amount, days, currency: 'EUR' });
-            if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
+            if (data.success === false || !data.__httpOk) {
+                throw new Error(data.message || data.error || 'No se pudo generar el enlace de pago');
+            }
             document.getElementById('stripeLink').value = data.checkout_url || '';
             document.getElementById('stripeLinkBox').classList.remove('d-none');
             toast(data.message || 'Enlace generado');
         } catch (err) {
-            toast(err.message);
+            toast(err.message || 'Error al generar el pago con Stripe');
         } finally {
             btn.disabled = false;
             btn.innerHTML = original;

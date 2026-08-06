@@ -50,22 +50,46 @@ final class PaymentService
         return $gw->createCheckoutSession($amount, $currency, $metadata);
     }
 
-    public function processWebhook(string $gateway, string $payload, array $headers = [], int $tenantId = 1): bool
+    /**
+     * @return array{ok: bool, ignored?: bool, error?: string}
+     */
+    public function processWebhook(string $gateway, string $payload, array $headers = [], int $tenantId = 1): array
     {
         $gw = $this->makeGateway($gateway, $tenantId);
         if (!$gw) {
-            return false;
+            return ['ok' => false, 'error' => 'Gateway no soportado'];
         }
 
         $result = $gw->handleWebhook($payload, $headers);
-        if (!$result || ($result['event'] ?? '') !== 'payment.completed') {
-            return false;
+        if ($result === null) {
+            return ['ok' => false, 'error' => 'Firma de webhook inválida o payload ilegible'];
+        }
+
+        // Eventos que no nos interesan: OK para Stripe (no reintentar).
+        if (($result['event'] ?? '') === 'ignored') {
+            return ['ok' => true, 'ignored' => true];
+        }
+
+        if (($result['event'] ?? '') !== 'payment.completed') {
+            return ['ok' => true, 'ignored' => true];
         }
 
         $subscriptionId = (int) ($result['metadata']['subscription_id'] ?? 0);
+        $metaTenantId = (int) ($result['metadata']['tenant_id'] ?? 0);
+        $resolvedTenantId = $metaTenantId > 0 ? $metaTenantId : $tenantId;
+
+        if ($subscriptionId > 0) {
+            $sub = Database::getInstance()->fetchOne(
+                'SELECT tenant_id FROM subscriptions WHERE id = ?',
+                [$subscriptionId]
+            );
+            if ($sub) {
+                $resolvedTenantId = (int) $sub['tenant_id'];
+            }
+        }
 
         Database::getInstance()->insert('payment_transactions', [
-            'tenant_id' => 1,
+            'tenant_id' => $resolvedTenantId,
             'subscription_id' => $subscriptionId ?: null,
             'gateway' => $gateway,
             'gateway_id' => $result['gateway_id'],
@@ -90,6 +114,6 @@ final class PaymentService
         }
 
         Logger::info('Payment processed', ['gateway' => $gateway, 'amount' => $result['amount']]);
-        return true;
+        return ['ok' => true];
     }
 }

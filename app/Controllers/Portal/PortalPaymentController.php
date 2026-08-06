@@ -75,10 +75,22 @@ class PortalPaymentController extends Controller
     public function webhook(Request $request, string $gateway): Response
     {
         $payload = file_get_contents('php://input') ?: '';
-        $headers = getallheaders() ?: [];
+        $headers = function_exists('getallheaders') ? (getallheaders() ?: []) : [];
 
-        $this->payments->processWebhook($gateway, $payload, $headers);
+        // Fallback cuando getallheaders() no existe (algunos SAPIs CGI).
+        if ($headers === [] && isset($_SERVER['HTTP_STRIPE_SIGNATURE'])) {
+            $headers['Stripe-Signature'] = (string) $_SERVER['HTTP_STRIPE_SIGNATURE'];
+        }
 
-        return $this->json(['received' => true]);
+        $result = $this->payments->processWebhook($gateway, $payload, $headers);
+
+        if (empty($result['ok'])) {
+            return $this->json([
+                'received' => false,
+                'error' => $result['error'] ?? 'webhook_failed',
+            ], 400);
+        }
+
+        return $this->json(['received' => true, 'ignored' => !empty($result['ignored'])]);
     }
 }

@@ -36,6 +36,12 @@ class SettingsController extends Controller
         $appUrl = rtrim((string) config('app.url', ''), '/');
         $cronToken = trim((string) ($settings['cron_token'] ?? env('CRON_TOKEN', '')));
         $cronBase = ($appUrl !== '' ? $appUrl : '') . '/cron/run';
+        $appUrlLooksLocal = $appUrl === ''
+            || str_contains($appUrl, 'localhost')
+            || str_contains($appUrl, '127.0.0.1');
+        $stripeMode = str_starts_with($stripeSecretKey, 'sk_live_') || str_starts_with($stripeSecretKey, 'rk_live_')
+            ? 'live'
+            : (str_starts_with($stripeSecretKey, 'sk_test_') || str_starts_with($stripeSecretKey, 'rk_test_') ? 'test' : null);
 
         return $this->view('settings.index', [
             'title' => 'Configuración',
@@ -47,6 +53,9 @@ class SettingsController extends Controller
             'stripeHasSecretKey' => trim($stripeSecretKey) !== '',
             'stripePublishableKey' => $this->billingSettings->getStripePublishableKey($tenantId),
             'stripeHasWebhookSecret' => trim($this->billingSettings->getStripeWebhookSecret($tenantId)) !== '',
+            'stripeMode' => $stripeMode,
+            'appUrl' => $appUrl,
+            'appUrlLooksLocal' => $appUrlLooksLocal,
             'cronCatalog' => CronService::catalog(),
             'cronCliBase' => base_path('cron/run.php'),
             'cronHttpBase' => $cronBase,
@@ -76,12 +85,17 @@ class SettingsController extends Controller
 
         $this->billingSettings->saveRenewalPresets($tenantId, $presets);
 
-        $this->billingSettings->saveStripeKeys(
+        $stripeErrors = $this->billingSettings->saveStripeKeys(
             $tenantId,
             $request->input('stripe_secret_key') ? (string) $request->input('stripe_secret_key') : null,
             $request->input('stripe_publishable_key') ? (string) $request->input('stripe_publishable_key') : null,
             $request->input('stripe_webhook_secret') ? (string) $request->input('stripe_webhook_secret') : null,
         );
+
+        if ($stripeErrors !== []) {
+            Session::getInstance()->flash('error', implode(' ', $stripeErrors));
+            return $this->redirect('/settings#billing');
+        }
 
         Session::getInstance()->flash('success', 'Configuración de facturación guardada.');
         return $this->redirect('/settings#billing');

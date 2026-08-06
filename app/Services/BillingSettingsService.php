@@ -68,10 +68,11 @@ final class BillingSettingsService
      * Claves de Stripe configurables desde Facturación. Si el tenant no ha
      * guardado las suyas, se cae a las variables de entorno / config/payments.php
      * (útil para no romper instalaciones que ya las tenían solo en .env).
+     * Los secretos se cifran en reposo con SecretCrypt cuando es posible.
      */
     public function getStripeSecretKey(int $tenantId): string
     {
-        $value = $this->get($tenantId, 'stripe_secret_key');
+        $value = $this->getDecrypted($tenantId, 'stripe_secret_key');
 
         return $value !== null && trim($value) !== ''
             ? trim($value)
@@ -89,7 +90,7 @@ final class BillingSettingsService
 
     public function getStripeWebhookSecret(int $tenantId): string
     {
-        $value = $this->get($tenantId, 'stripe_webhook_secret');
+        $value = $this->getDecrypted($tenantId, 'stripe_webhook_secret');
 
         return $value !== null && trim($value) !== ''
             ? trim($value)
@@ -98,7 +99,7 @@ final class BillingSettingsService
 
     public function hasTenantStripeSecretKey(int $tenantId): bool
     {
-        $value = $this->get($tenantId, 'stripe_secret_key');
+        $value = $this->getDecrypted($tenantId, 'stripe_secret_key');
 
         return $value !== null && trim($value) !== '';
     }
@@ -107,20 +108,48 @@ final class BillingSettingsService
      * Guarda las claves de Stripe. Un campo vacío deja intacta la clave ya
      * guardada (para no obligar a repegar el secret key cada vez que se
      * cambia el concepto de pago u otro ajuste del mismo formulario).
+     *
+     * @return list<string> Errores de validación (vacío = OK)
      */
-    public function saveStripeKeys(int $tenantId, ?string $secretKey, ?string $publishableKey, ?string $webhookSecret): void
+    public function saveStripeKeys(int $tenantId, ?string $secretKey, ?string $publishableKey, ?string $webhookSecret): array
     {
+        $errors = [];
+        $crypt = new SecretCrypt();
+
         if ($secretKey !== null && trim($secretKey) !== '') {
-            $this->set($tenantId, 'stripe_secret_key', trim($secretKey), 'string');
+            $secretKey = trim($secretKey);
+            if (str_starts_with($secretKey, 'pk_')) {
+                $errors[] = 'La clave secreta no puede ser la publishable (pk_...). Usa sk_test_... o sk_live_....';
+            } elseif (str_starts_with($secretKey, 'whsec_')) {
+                $errors[] = 'Has pegado el webhook secret (whsec_...) en la clave secreta. La secreta empieza por sk_.';
+            } elseif (!preg_match('/^(sk|rk)_(test|live)_/', $secretKey)) {
+                $errors[] = 'La clave secreta de Stripe no parece válida (debe empezar por sk_test_, sk_live_ o rk_...).';
+            } else {
+                $this->set($tenantId, 'stripe_secret_key', $crypt->encrypt($secretKey), 'encrypted');
+            }
         }
 
         if ($publishableKey !== null && trim($publishableKey) !== '') {
-            $this->set($tenantId, 'stripe_publishable_key', trim($publishableKey), 'string');
+            $publishableKey = trim($publishableKey);
+            if (str_starts_with($publishableKey, 'sk_') || str_starts_with($publishableKey, 'rk_')) {
+                $errors[] = 'La clave pública debe empezar por pk_..., no por sk_.';
+            } elseif (!str_starts_with($publishableKey, 'pk_')) {
+                $errors[] = 'La clave pública de Stripe no parece válida (debe empezar por pk_test_ o pk_live_).';
+            } else {
+                $this->set($tenantId, 'stripe_publishable_key', $publishableKey, 'string');
+            }
         }
 
         if ($webhookSecret !== null && trim($webhookSecret) !== '') {
-            $this->set($tenantId, 'stripe_webhook_secret', trim($webhookSecret), 'string');
+            $webhookSecret = trim($webhookSecret);
+            if (!str_starts_with($webhookSecret, 'whsec_')) {
+                $errors[] = 'El webhook signing secret debe empezar por whsec_....';
+            } else {
+                $this->set($tenantId, 'stripe_webhook_secret', $crypt->encrypt($webhookSecret), 'encrypted');
+            }
         }
+
+        return $errors;
     }
 
     /** @return array<int, array{label: string, days: int, price: float}> */
@@ -144,6 +173,20 @@ final class BillingSettingsService
         return $row ? (string) $row['value'] : null;
     }
 
+    /**
+     * Lee un setting y lo descifra si está guardado con SecretCrypt.
+     * Los valores legacy en texto plano siguen funcionando.
+     */
+    private function getDecrypted(int $tenantId, string $key): ?string
+    {
+        $value = $this->get($tenantId, $key);
+        if ($value === null) {
+            return null;
+        }
+
+        return (new SecretCrypt())->decrypt($value);
+    }
+
     private function set(int $tenantId, string $key, string $value, string $type): void
     {
         $db = Database::getInstance();
@@ -153,7 +196,7 @@ final class BillingSettingsService
         );
 
         if ($existing) {
-            $db->update('settings', ['value' => $value], 'id = ?', [$existing['id']]);
+            $db->update('settings', ['value' => $value, 'type' => $type], 'id = ?', [$existing['id']]);
         } else {
             $db->insert('settings', [
                 'tenant_id' => $tenantId,

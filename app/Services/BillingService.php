@@ -237,10 +237,17 @@ final class BillingService
             'plan_name' => $concept,
             'subscription_id' => $subscriptionId,
             'customer_id' => $customerId,
+            'media_user_id' => (int) $user->id,
+            'tenant_id' => $tenantId,
         ], $tenantId);
 
         if (empty($result['checkout_url'])) {
-            return ['success' => false, 'message' => 'No se pudo generar el enlace de pago: ' . ($result['error'] ?? 'error desconocido')];
+            $detail = trim((string) ($result['error'] ?? ''));
+            if ($detail === '') {
+                $detail = 'error desconocido (revisa storage/logs/multipanel.log y que APP_URL / claves Stripe sean correctas)';
+            }
+
+            return ['success' => false, 'message' => 'No se pudo generar el enlace de pago: ' . $detail];
         }
 
         AuditService::log('media_user.payment_link_created', 'media_user', (int) $user->id, null, [
