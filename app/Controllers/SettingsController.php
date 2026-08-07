@@ -7,12 +7,16 @@ namespace App\Controllers;
 use App\Services\AuthService;
 use App\Services\BillingSettingsService;
 use App\Services\CronService;
+use App\Services\TelegramConfig;
 use App\Services\TwoFactorService;
 use Core\Controller;
 use Core\Database;
 use Core\Request;
 use Core\Response;
 use Core\Session;
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 
 /**
  * Application settings controller.
@@ -62,6 +66,75 @@ class SettingsController extends Controller
             'cronTokenConfigured' => $cronToken !== '',
             'cronTokenMasked' => $cronToken !== '' ? $this->maskKey($cronToken) : '',
         ]);
+    }
+
+    /**
+     * Envía un mensaje de prueba al chat sandbox (si está activo) o al chat admin.
+     */
+    public function testTelegram(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $cfg = TelegramConfig::forTenant($tenantId);
+        $botToken = $cfg['bot_token'];
+
+        if ($botToken === '') {
+            Session::getInstance()->flash('error', 'Configura el Bot Token de Telegram antes de enviar la prueba.');
+            return $this->redirect('/settings#telegram');
+        }
+
+        $useSandbox = $cfg['sandbox_enabled'] && $cfg['sandbox_chat_id'] !== '';
+        $chatId = $useSandbox ? $cfg['sandbox_chat_id'] : $cfg['admin_chat_id'];
+        $destLabel = $useSandbox ? 'sandbox' : 'admin';
+
+        if ($chatId === '') {
+            Session::getInstance()->flash(
+                'error',
+                'No hay destino: activa sandbox con Sandbox Chat ID, o indica el Chat ID del admin.'
+            );
+            return $this->redirect('/settings#telegram');
+        }
+
+        $text = "MultiPanel — mensaje de prueba\n\n"
+            . 'Destino: ' . $destLabel . ' (' . $chatId . ")\n"
+            . 'Hora: ' . date('Y-m-d H:i:s');
+
+        try {
+            $client = new Client(['timeout' => 15]);
+            $client->post("https://api.telegram.org/bot{$botToken}/sendMessage", [
+                'json' => [
+                    'chat_id' => $chatId,
+                    'text' => $text,
+                ],
+            ]);
+            Session::getInstance()->flash(
+                'success',
+                'Mensaje de prueba enviado a Telegram (' . $destLabel . ': ' . $chatId . '). Revisa tu chat.'
+            );
+        } catch (GuzzleException $e) {
+            Session::getInstance()->flash('error', 'Telegram: ' . $this->formatTelegramApiError($e));
+        }
+
+        return $this->redirect('/settings#telegram');
+    }
+
+    private function formatTelegramApiError(\Throwable $e): string
+    {
+        if ($e instanceof RequestException && $e->hasResponse()) {
+            $body = (string) $e->getResponse()->getBody();
+            $json = json_decode($body, true);
+            if (is_array($json)) {
+                $description = isset($json['description']) ? trim((string) $json['description']) : '';
+                $code = isset($json['error_code']) ? (int) $json['error_code'] : 0;
+                if ($description !== '') {
+                    return ($code > 0 ? "[{$code}] " : '') . $description;
+                }
+            }
+            if ($body !== '') {
+                return substr($body, 0, 300);
+            }
+        }
+
+        return $e->getMessage();
     }
 
     public function updateBilling(Request $request): Response

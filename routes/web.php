@@ -192,6 +192,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Settings
     $router->get('/settings', [SettingsController::class, 'index'], 'settings.index');
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
+    $router->post('/settings/telegram/test', [SettingsController::class, 'testTelegram'], 'settings.telegram.test', [CsrfMiddleware::class]);
     $router->post('/settings/billing', [SettingsController::class, 'updateBilling'], 'settings.billing.update', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/enable', [SettingsController::class, 'enable2fa'], 'settings.2fa.enable', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/confirm', [SettingsController::class, 'confirm2fa'], 'settings.2fa.confirm', [CsrfMiddleware::class]);

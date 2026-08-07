@@ -109,6 +109,19 @@
                     </div>
                     <button class="btn btn-primary">Guardar Telegram</button>
                 </form>
+
+                <hr class="my-4">
+                <h6 class="mb-2"><i class="bi bi-send me-1"></i>Probar envío</h6>
+                <p class="small text-muted mb-3">
+                    Envía un mensaje corto con el bot configurado al chat sandbox (si sandbox está activo)
+                    o al Chat ID del admin. Útil para comprobar token y que Telegram llega a tu móvil.
+                </p>
+                <form method="POST" action="/settings/telegram/test" class="d-inline">
+                    <?= csrf_field() ?>
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-telegram me-1"></i>Enviar mensaje de prueba
+                    </button>
+                </form>
             </div>
         </div>
     </div>
