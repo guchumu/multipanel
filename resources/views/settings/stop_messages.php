@@ -7,6 +7,12 @@
     <a href="/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-broadcast-pin me-1"></i>Ir a En directo</a>
 </div>
 
+<p class="text-muted small">
+    <strong>Probar en sandbox</strong> envía el texto guardado a tu Sandbox Chat ID por Telegram (solo para ver cómo queda;
+    no afecta al reproductor). Requiere Bot Token + Sandbox Chat ID en
+    <a href="/settings#telegram">Configuración → Telegram</a>. Guarda antes si editaste.
+</p>
+
 <div class="row g-4">
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm">
@@ -73,6 +79,12 @@
                             </div>
                         </form>
                         <div class="d-flex flex-wrap gap-2 mt-2">
+                            <form method="POST" action="/settings/stop-messages/<?= (int) $msg['id'] ?>/test">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-telegram me-1"></i>Probar en sandbox
+                                </button>
+                            </form>
                             <?php if ((int) $msg['is_default'] !== 1): ?>
                             <form method="POST" action="/settings/stop-messages/<?= (int) $msg['id'] ?>/default">
                                 <?= csrf_field() ?>

@@ -14,8 +14,8 @@
 <div class="alert alert-light border mb-4">
     <div class="fw-semibold mb-1">Mensajes</div>
     <ul class="small mb-0">
-        <li><a href="/settings/notifications">Mensajes a los usuarios</a> — plantillas Telegram/WhatsApp de caducidad y avisos enviados a clientes.</li>
-        <li><a href="/settings/stop-messages">Mensajes al detener</a> — textos que ve el reproductor al cortar una sesión en En directo (Plex/Jellyfin).</li>
+        <li><a href="/settings/notifications">Mensajes a los usuarios</a> — plantillas Telegram de caducidad; cada una tiene <strong>Probar</strong> al sandbox.</li>
+        <li><a href="/settings/stop-messages">Mensajes al detener</a> — textos al cortar una sesión en En directo; también con <strong>Probar en sandbox</strong>.</li>
     </ul>
 </div>
 

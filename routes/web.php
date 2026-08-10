@@ -198,10 +198,12 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/settings/2fa/confirm', [SettingsController::class, 'confirm2fa'], 'settings.2fa.confirm', [CsrfMiddleware::class]);
     $router->get('/settings/notifications', [NotificationSettingsController::class, 'index'], 'settings.notifications');
     $router->post('/settings/notifications', [NotificationSettingsController::class, 'update'], 'settings.notifications.update', [CsrfMiddleware::class]);
+    $router->post('/settings/notifications/test', [NotificationSettingsController::class, 'test'], 'settings.notifications.test', [CsrfMiddleware::class]);
     $router->get('/settings/stop-messages', [PlaybackStopMessageController::class, 'index'], 'settings.stop_messages');
     $router->post('/settings/stop-messages', [PlaybackStopMessageController::class, 'store'], 'settings.stop_messages.store', [CsrfMiddleware::class]);
     $router->put('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'update'], 'settings.stop_messages.update', [CsrfMiddleware::class]);
     $router->post('/settings/stop-messages/{id}/default', [PlaybackStopMessageController::class, 'setDefault'], 'settings.stop_messages.default', [CsrfMiddleware::class]);
+    $router->post('/settings/stop-messages/{id}/test', [PlaybackStopMessageController::class, 'test'], 'settings.stop_messages.test', [CsrfMiddleware::class]);
     $router->delete('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'destroy'], 'settings.stop_messages.destroy', [CsrfMiddleware::class]);
     $router->get('/settings/stream-limits', [StreamLimitController::class, 'settings'], 'settings.stream_limits');
     $router->post('/settings/stream-limits', [StreamLimitController::class, 'updateSettings'], 'settings.stream_limits.update', [CsrfMiddleware::class]);

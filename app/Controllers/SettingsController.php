@@ -8,6 +8,7 @@ use App\Services\AuthService;
 use App\Services\BillingSettingsService;
 use App\Services\CronService;
 use App\Services\TelegramConfig;
+use App\Services\TelegramSandboxSender;
 use App\Services\TwoFactorService;
 use Core\Controller;
 use Core\Database;
@@ -16,7 +17,6 @@ use Core\Response;
 use Core\Session;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Exception\RequestException;
 
 /**
  * Application settings controller.
@@ -111,30 +111,10 @@ class SettingsController extends Controller
                 'Mensaje de prueba enviado a Telegram (' . $destLabel . ': ' . $chatId . '). Revisa tu chat.'
             );
         } catch (GuzzleException $e) {
-            Session::getInstance()->flash('error', 'Telegram: ' . $this->formatTelegramApiError($e));
+            Session::getInstance()->flash('error', 'Telegram: ' . TelegramSandboxSender::formatApiError($e));
         }
 
         return $this->redirect('/settings#telegram');
-    }
-
-    private function formatTelegramApiError(\Throwable $e): string
-    {
-        if ($e instanceof RequestException && $e->hasResponse()) {
-            $body = (string) $e->getResponse()->getBody();
-            $json = json_decode($body, true);
-            if (is_array($json)) {
-                $description = isset($json['description']) ? trim((string) $json['description']) : '';
-                $code = isset($json['error_code']) ? (int) $json['error_code'] : 0;
-                if ($description !== '') {
-                    return ($code > 0 ? "[{$code}] " : '') . $description;
-                }
-            }
-            if ($body !== '') {
-                return substr($body, 0, 300);
-            }
-        }
-
-        return $e->getMessage();
     }
 
     public function updateBilling(Request $request): Response
