@@ -403,7 +403,7 @@
             });
             if (data.success === false || !data.__httpOk) throw new Error(data.error || data.message || 'Error');
             toast(data.message || 'Reproducción detenida');
-            btn.closest('.session-card')?.closest('.col-12, .col-sm-6')?.remove();
+            btn.closest('.session-card')?.closest('.session-col')?.remove();
         } catch (err) {
             toast(err.message);
             btn.disabled = false;

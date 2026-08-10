@@ -233,7 +233,10 @@
                     if (typeof bootstrap !== 'undefined') {
                         bootstrap.Modal.getOrCreateInstance(modalEl).hide();
                     }
-                    document.querySelector(`.session-card[data-session-id="${CSS.escape(sessionId)}"]`)?.remove();
+                    const killed = document.querySelector(`.session-card[data-session-id="${CSS.escape(sessionId)}"]`);
+                    const killedCol = killed?.closest('.session-col');
+                    if (killedCol) killedCol.remove();
+                    else killed?.remove();
                     if (typeof window.MP_REFRESH_SESSIONS === 'function') {
                         window.MP_REFRESH_SESSIONS();
                     }

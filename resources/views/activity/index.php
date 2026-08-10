@@ -133,7 +133,7 @@ ob_start();
 
 <div id="sessions-container">
 <?php if ($currentServerId): ?>
-    <div class="row g-2" id="sessions-grid">
+    <div class="row g-2 g-xl-3" id="sessions-grid">
         <?php if (empty($sessions)): ?>
         <div class="col-12">
             <div class="card border-0 shadow-sm">
@@ -167,7 +167,7 @@ ob_start();
                 <span class="badge bg-primary group-count"><?= count($group['sessions']) ?> streams</span>
                 <a href="<?= e($buildFilterUrl((int) $group['server_id'])) ?>" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
             </div>
-            <div class="row g-2">
+            <div class="row g-2 g-xl-3">
                 <?php foreach ($group['sessions'] as $session): ?>
                 <?php $renderSessionCard($session); ?>
                 <?php endforeach; ?>
@@ -398,7 +398,7 @@ function sessionCardHtml(s) {
         : `<span class="session-pct">\${progress}%</span>`;
     const sms = posterSmsBtnHtml(s);
 
-    return `<div class="col-12">
+    return `<div class="col-12 col-sm-6 col-lg-4 col-xl-3 session-col">
         <div class="session-card session-row\${s.over_limit ? ' session-row--over-limit' : ''}" data-session-id="\${sid}" data-server-id="\${Number(s.server_id || 0)}" data-play-method="\${escapeHtml(method)}">
             <div class="session-poster">\${thumb}</div>
             <div class="session-main">
@@ -446,10 +446,10 @@ function renderFlat(sessions) {
     const container = document.getElementById('sessions-container');
     captureSessionUiState();
     if (!sessions.length) {
-        container.innerHTML = `<div class="row g-2" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
+        container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
         return;
     }
-    container.innerHTML = `<div class="row g-2" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
     restoreSessionUiState();
 }
 
@@ -469,7 +469,7 @@ function renderGrouped(grouped) {
                 <span class="badge bg-primary group-count">\${group.sessions.length} streams</span>
                 <a href="/activity?server_id=\${group.server_id}" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
             </div>
-            <div class="row g-2">\${group.sessions.map(sessionCardHtml).join('')}</div>
+            <div class="row g-2 g-xl-3">\${group.sessions.map(sessionCardHtml).join('')}</div>
         </div>`).join('')}</div>`;
     restoreSessionUiState();
 }

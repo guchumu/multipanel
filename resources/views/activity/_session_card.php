@@ -71,7 +71,7 @@ foreach ($streamRows as [, , $value]) {
 $streamInfoClass = 'session-stream-info'
     . ($isTranscode ? ' session-stream-info--transcode expanded' : '');
 ?>
-<div class="col-12">
+<div class="col-12 col-sm-6 col-lg-4 col-xl-3 session-col">
     <div class="session-card session-row<?= !empty($session['over_limit']) ? ' session-row--over-limit' : '' ?>"
          data-session-id="<?= e($sessionKey) ?>"
          data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
