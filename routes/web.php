@@ -65,6 +65,11 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
 $router->get('/registro', [RegistroController::class, 'store'], 'registro.store');
 $router->post('/registro', [RegistroController::class, 'store'], 'registro.store.post');
+// Alias compatibles con SERVEROLD/guarda-registro.php
+$router->get('/guarda-registro', [RegistroController::class, 'store'], 'registro.guarda');
+$router->post('/guarda-registro', [RegistroController::class, 'store'], 'registro.guarda.post');
+$router->get('/guarda-registro.php', [RegistroController::class, 'store'], 'registro.guarda.php');
+$router->post('/guarda-registro.php', [RegistroController::class, 'store'], 'registro.guarda.php.post');
 
 // Cron HTTP (público, protegido por CRON_TOKEN)
 $router->get('/cron/run', [CronController::class, 'run'], 'cron.run');

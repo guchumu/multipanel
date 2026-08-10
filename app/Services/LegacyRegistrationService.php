@@ -102,8 +102,9 @@ final class LegacyRegistrationService
             }
 
             return [
-                'status' => 'ok',
-                'message' => 'Proceso completado.',
+                // SERVEROLD/guarda-registro.php devolvía status=success
+                'status' => 'success',
+                'message' => 'Todos los emails procesados correctamente',
                 'total_emails' => count($emails),
                 'processed_emails' => array_column($results, 'email', 'email'),
                 'results' => $results,
@@ -246,11 +247,20 @@ final class LegacyRegistrationService
             $this->audit->log('media_user.legacy_renewed', 'media_user', $mediaUserId);
         }
 
+        // SERVEROLD solo invitaba en altas nuevas; en renovación no fallaba si Plex fallaba.
+        // MultiPanel intenta reinvitar también al renovar (restaurar share), pero solo
+        // aborta la transacción si falla la invitación de un usuario nuevo.
         $libraryKeys = $this->librarySectionIds((int) $server->id);
         if ($server->isPlex()) {
             $plex = MediaServerFactory::make($server);
             if ($plex instanceof PlexService && !$plex->inviteUserByEmail($email, $libraryKeys)) {
-                throw new \RuntimeException("Error al enviar invitación a Plex para: {$email}");
+                if ($action === 'created') {
+                    throw new \RuntimeException("Error al enviar invitación a Plex para: {$email}");
+                }
+                Logger::warning('Plex invite failed on renew; subscription updated anyway', [
+                    'email' => $email,
+                    'server_id' => $server->id,
+                ]);
             }
         }
 
