@@ -235,7 +235,7 @@ ob_start();
                 <span class="badge bg-success"><?= count($nowPlaying) ?> activa(s)</span>
             </div>
             <div class="card-body">
-                <div class="row g-3">
+                <div class="row g-2">
                     <?php foreach ($nowPlaying as $session): ?>
                     <?php
                     // getSessionsForUser no pasa por ConcurrentStreamLimitService;

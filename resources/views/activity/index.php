@@ -133,7 +133,7 @@ ob_start();
 
 <div id="sessions-container">
 <?php if ($currentServerId): ?>
-    <div class="row g-3" id="sessions-grid">
+    <div class="row g-2" id="sessions-grid">
         <?php if (empty($sessions)): ?>
         <div class="col-12">
             <div class="card border-0 shadow-sm">
@@ -160,14 +160,14 @@ ob_start();
         </div>
         <?php else: ?>
         <?php foreach ($grouped as $group): ?>
-        <div class="mb-4 server-group" data-server-id="<?= (int) $group['server_id'] ?>">
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <h5 class="mb-0"><?= e($group['server_name']) ?></h5>
+        <div class="mb-3 server-group" data-server-id="<?= (int) $group['server_id'] ?>">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <h5 class="mb-0 fs-6"><?= e($group['server_name']) ?></h5>
                 <span class="badge bg-<?= $group['server_type'] === 'plex' ? 'warning' : 'info' ?>"><?= e(strtoupper($group['server_type'])) ?></span>
                 <span class="badge bg-primary group-count"><?= count($group['sessions']) ?> streams</span>
                 <a href="<?= e($buildFilterUrl((int) $group['server_id'])) ?>" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
             </div>
-            <div class="row g-3">
+            <div class="row g-2">
                 <?php foreach ($group['sessions'] as $session): ?>
                 <?php $renderSessionCard($session); ?>
                 <?php endforeach; ?>
@@ -286,9 +286,9 @@ function sessionThumbUrl(s) {
 }
 
 const thumbFallbackSrc = 'data:image/svg+xml,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">'
-    + '<rect width="200" height="300" fill="#2b2f36"/>'
-    + '<text x="100" y="150" fill="#9aa0a6" text-anchor="middle" font-family="sans-serif" font-size="14">Sin carátula</text>'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120" viewBox="0 0 80 120">'
+    + '<rect width="80" height="120" fill="#2b2f36"/>'
+    + '<text x="40" y="64" fill="#9aa0a6" text-anchor="middle" font-family="sans-serif" font-size="9">N/A</text>'
     + '</svg>'
 );
 
@@ -304,17 +304,17 @@ function posterSmsBtnHtml(s) {
 
 function thumbHtml(s) {
     const url = sessionThumbUrl(s);
-    const sms = posterSmsBtnHtml(s);
     if (!url) {
-        return `<div class="session-poster-fallback"><i class="bi bi-film fs-1"></i></div>\${sms}`;
+        return `<div class="session-poster-fallback"><i class="bi bi-film"></i></div>`;
     }
-    return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">\${sms}`;
+    return `<img src="\${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">`;
 }
 
 function streamInfoHtml(s) {
     const info = s.stream_info || {};
-    const isTranscode = (s.play_method || '') === 'transcode';
-    // Iniciales cortas; el title del <dt> conserva el nombre completo.
+    const method = s.play_method || '';
+    const isTranscode = method === 'transcode';
+    const methodLabel = playLabels[method] || method;
     const rows = [
         ['Q', 'Quality', info.quality],
         ['S', 'Stream', info.stream],
@@ -323,74 +323,100 @@ function streamInfoHtml(s) {
         ['A', 'Audio', info.audio || s.audio_label || s.audio_decision],
         ['Sub', 'Subtitle', info.subtitle || 'None'],
     ];
-    const body = rows
+    const detail = rows
         .filter(([, , v]) => String(v ?? '').trim() !== '')
-        .map(([short, full, v]) => `<div class="session-stream-row"><dt title="\${escapeHtml(full)}">\${escapeHtml(short)}</dt><dd title="\${escapeHtml(v)}">\${escapeHtml(v)}</dd></div>`)
+        .map(([short, full, v]) => `<div class="session-stream-row"><span class="session-stream-key" title="\${escapeHtml(full)}">\${escapeHtml(short)}</span><span class="session-stream-val" title="\${escapeHtml(v)}">\${escapeHtml(v)}</span></div>`)
         .join('');
-    if (!body) return '';
-    const cls = 'session-stream-info small mb-2' + (isTranscode ? ' session-stream-info--transcode expanded' : '');
+    const summaryParts = [
+        (info.stream && String(info.stream).trim()) || methodLabel,
+        info.quality,
+        info.video || s.video_label || s.video_decision,
+        info.audio || s.audio_label || s.audio_decision,
+        info.subtitle,
+    ].filter(v => {
+        const t = String(v ?? '').trim();
+        return t !== '' && t !== '—';
+    });
+    const summary = summaryParts.map(escapeHtml).join(' · ');
+    if (!detail && !summary) return '';
+    const cls = 'session-stream-info' + (isTranscode ? ' session-stream-info--transcode expanded' : '');
     const aria = isTranscode ? 'true' : 'false';
     const title = isTranscode ? 'Detalle de Transcode' : 'Clic para ver el detalle completo';
     const toggle = isTranscode ? '' : '<span class="stream-info-toggle" aria-hidden="true">Ver más</span>';
-    return `<dl class="\${cls}" role="button" tabindex="0" aria-expanded="\${aria}" title="\${title}">\${body}\${toggle}</dl>`;
+    const summaryHtml = summary
+        ? `<div class="session-stream-summary" title="\${summary}">\${summary}</div>`
+        : '';
+    return `<div class="\${cls}" role="button" tabindex="0" aria-expanded="\${aria}" title="\${title}">\${summaryHtml}<div class="session-stream-detail">\${detail}</div>\${toggle}</div>`;
 }
 
 function overLimitBadgeHtml(s) {
     if (!s.over_limit) return '';
     const count = Number(s.user_stream_count || 0);
     const limit = Number(s.stream_limit || 0);
-    return `<div class="mb-2"><span class="badge bg-danger" title="Supera el límite (IPs/sesiones: \${count}/\${limit})"><i class="bi bi-exclamation-octagon me-1"></i>Límite \${count}/\${limit}</span></div>`;
+    return `<span class="badge bg-danger session-limit-badge" title="Supera el límite (IPs/sesiones: \${count}/\${limit})">Límite \${count}/\${limit}</span>`;
 }
 
 function sessionUserDeviceHtml(s) {
     const name = escapeHtml(s.user || '-');
     const uuid = String(s.media_user_uuid || '').trim();
     const player = escapeHtml(s.player || '-');
-    const platform = s.platform ? ` <span class="text-muted">(\${escapeHtml(s.platform)})</span>` : '';
+    const platform = s.platform
+        ? ` <span class="session-meta-platform">(\${escapeHtml(s.platform)})</span>`
+        : '';
     const userPart = uuid
         ? `<a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a>`
-        : name;
-    return `<p class="small mb-1 session-meta-line"><i class="bi bi-person me-1"></i>\${userPart}<span class="text-muted"> · </span><span class="session-meta-device">\${player}\${platform}</span></p>`;
+        : `<span class="session-user-name">\${name}</span>`;
+    return `\${userPart}<span class="session-meta-sep">·</span><span class="session-meta-device">\${player}\${platform}</span>`;
 }
 
-function sessionMetaHtml(s) {
-    const server = escapeHtml(s.server_name || '-');
-    const serverMb = s.client_ip ? '1' : '2';
-    const ip = s.client_ip
-        ? `<p class="small mb-2"><i class="bi bi-geo-alt me-1"></i><code>\${escapeHtml(s.client_ip)}</code></p>`
-        : '';
-    return `\${sessionUserDeviceHtml(s)}<p class="small mb-\${serverMb}"><i class="bi bi-hdd-network me-1"></i>\${server}</p>\${ip}`;
+function sessionFootHtml(s) {
+    const parts = [];
+    if (s.client_ip) {
+        parts.push(`<code class="session-ip">\${escapeHtml(s.client_ip)}</code>`);
+    }
+    parts.push(`<span class="session-server">\${escapeHtml(s.server_name || '-')}</span>`);
+    if (s.server_type) {
+        parts.push(`<span class="session-server-type">\${escapeHtml(String(s.server_type).toUpperCase())}</span>`);
+    }
+    return parts.join('<span class="session-meta-sep">·</span>');
 }
-
 
 function sessionCardHtml(s) {
     const method = s.play_method || '';
     const badge = playBadges[method] || 'secondary';
     const label = playLabels[method] || method;
     const progress = Number(s.progress || 0);
+    const isTranscode = method === 'transcode';
     const thumb = thumbHtml(s);
     const streamBlock = streamInfoHtml(s);
     const overLimit = overLimitBadgeHtml(s);
     const title = escapeHtml(s.title || 'Sin título');
     const sid = escapeHtml(String(s.session_id || ''));
+    const state = String(s.state || '');
+    const progressMeta = state
+        ? `<span class="session-state">\${escapeHtml(state)}</span><span class="session-meta-sep">·</span><span class="session-pct">\${progress}%</span>`
+        : `<span class="session-pct">\${progress}%</span>`;
+    const sms = posterSmsBtnHtml(s);
 
-    return `<div class="col-12 col-md-6 col-xxl-4">
-        <div class="card border-0 shadow-sm h-100 session-card session-card-horizontal\${s.over_limit ? ' border border-danger' : ''}" data-session-id="\${sid}" data-server-id="\${Number(s.server_id || 0)}" data-play-method="\${escapeHtml(method)}">
-            <div class="session-card-inner">
-                <div class="session-poster">\${thumb}</div>
-                <div class="card-body session-card-body">
-                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2 flex-wrap">
-                        <span class="badge bg-\${badge}">\${escapeHtml(label)}</span>
-                        <span class="badge bg-secondary">\${escapeHtml((s.server_type || '').toUpperCase())}</span>
-</div>
-\${overLimit}
-\${sessionMetaHtml(s)}
-<h6 class="card-title session-title mb-1 text-truncate" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
-\${s.subtitle ? `<p class="small text-muted mb-2 text-truncate">\${escapeHtml(s.subtitle)}</p>` : ''}
-\${streamBlock}
-<div class="progress mb-1" style="height:4px;"><div class="progress-bar" style="width:\${progress}%"></div></div>
-                    <div class="d-flex justify-content-between small text-muted"><span>\${escapeHtml(s.state || '')}</span><span>\${progress}%</span></div>
+    return `<div class="col-12">
+        <div class="session-card session-row\${s.over_limit ? ' session-row--over-limit' : ''}" data-session-id="\${sid}" data-server-id="\${Number(s.server_id || 0)}" data-play-method="\${escapeHtml(method)}">
+            <div class="session-poster">\${thumb}</div>
+            <div class="session-main">
+                <div class="session-head">
+                    <p class="session-meta-line mb-0">\${sessionUserDeviceHtml(s)}\${overLimit}</p>
+                    <div class="session-head-actions">
+                        <span class="badge bg-\${badge} session-method-badge">\${escapeHtml(label)}</span>
+                        \${sms}
+                    </div>
                 </div>
+                <h6 class="session-title text-truncate mb-0" role="button" tabindex="0" aria-expanded="false" title="\${title} — clic para ver completo">\${title}</h6>
+                \${s.subtitle ? `<p class="session-subtitle text-truncate mb-0">\${escapeHtml(s.subtitle)}</p>` : ''}
+                <div class="session-progress-row">
+                    <div class="progress session-progress"><div class="progress-bar\${isTranscode ? ' session-progress-bar--transcode' : ''}" style="width:\${progress}%"></div></div>
+                    <span class="session-progress-meta">\${progressMeta}</span>
+                </div>
+                \${streamBlock}
+                <p class="session-foot mb-0">\${sessionFootHtml(s)}</p>
             </div>
         </div>
     </div>`;
@@ -420,10 +446,10 @@ function renderFlat(sessions) {
     const container = document.getElementById('sessions-container');
     captureSessionUiState();
     if (!sessions.length) {
-        container.innerHTML = `<div class="row g-3" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
+        container.innerHTML = `<div class="row g-2" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
         return;
     }
-    container.innerHTML = `<div class="row g-3" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="row g-2" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
     restoreSessionUiState();
 }
 
@@ -436,14 +462,14 @@ function renderGrouped(grouped) {
     }
 
     container.innerHTML = `<div id="sessions-grouped">\${grouped.map(group => `
-        <div class="mb-4 server-group" data-server-id="\${group.server_id}">
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <h5 class="mb-0">\${escapeHtml(group.server_name)}</h5>
+        <div class="mb-3 server-group" data-server-id="\${group.server_id}">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <h5 class="mb-0 fs-6">\${escapeHtml(group.server_name)}</h5>
                 <span class="badge bg-\${group.server_type === 'plex' ? 'warning' : 'info'}">\${escapeHtml((group.server_type || '').toUpperCase())}</span>
                 <span class="badge bg-primary group-count">\${group.sessions.length} streams</span>
                 <a href="/activity?server_id=\${group.server_id}" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
             </div>
-            <div class="row g-3">\${group.sessions.map(sessionCardHtml).join('')}</div>
+            <div class="row g-2">\${group.sessions.map(sessionCardHtml).join('')}</div>
         </div>`).join('')}</div>`;
     restoreSessionUiState();
 }

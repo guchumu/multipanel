@@ -102,42 +102,41 @@ body {
     font-weight: 500;
 }
 
-/* En directo: tarjeta horizontal — carátula izq., info der. */
-.session-card-horizontal .session-card-inner {
+/* En directo: filas compactas estilo Tautulli */
+.session-row {
     display: flex;
     flex-direction: row;
     align-items: stretch;
-    min-height: 200px;
-    height: 100%;
+    gap: 0.65rem;
+    padding: 0.4rem 0.55rem;
+    min-height: 0;
+    background-color: var(--bs-body-bg, #fff);
+    border: 1px solid var(--bs-border-color-translucent, rgba(0, 0, 0, 0.08));
+    border-radius: 0.35rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.session-card-horizontal .session-poster {
-    flex: 0 0 156px;
-    width: 156px;
-    max-width: 156px;
-    min-height: 200px;
-    aspect-ratio: auto;
-    max-height: none;
+.session-row:hover {
+    border-color: var(--bs-border-color, rgba(0, 0, 0, 0.18));
+    box-shadow: none !important;
+}
+
+.session-row--over-limit {
+    border-color: rgba(220, 53, 69, 0.65);
+    background: rgba(220, 53, 69, 0.04);
+}
+
+.session-row .session-poster {
+    flex: 0 0 68px;
+    width: 68px;
+    max-width: 68px;
+    align-self: stretch;
+    min-height: 96px;
+    max-height: 110px;
     background-color: #212529;
     overflow: hidden;
     position: relative;
-    border-radius: 0.375rem 0 0 0.375rem;
-    align-self: stretch;
-}
-
-@media (min-width: 576px) {
-    .session-card-horizontal .session-poster {
-        flex-basis: 180px;
-        width: 180px;
-        max-width: 180px;
-        min-height: 240px;
-    }
-}
-
-.session-card-horizontal .session-card-body {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 0.75rem 0.85rem;
+    border-radius: 0.25rem;
 }
 
 .session-poster > img {
@@ -154,43 +153,108 @@ body {
     justify-content: center;
     width: 100%;
     height: 100%;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 1.15rem;
 }
 
-/* X sobre la carátula → modal mensaje / detener */
+.session-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+    padding: 0.05rem 0;
+}
+
+.session-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.session-meta-line {
+    font-size: 0.78rem;
+    line-height: 1.25;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-meta-sep {
+    margin: 0 0.28rem;
+    color: var(--bs-secondary-color, #6c757d);
+    opacity: 0.85;
+}
+
+.session-meta-device,
+.session-meta-platform {
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.session-user-link,
+.session-user-name {
+    font-weight: 600;
+    color: var(--bs-body-color, #212529);
+}
+
+.session-user-link:hover {
+    text-decoration: underline !important;
+}
+
+.session-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.session-method-badge {
+    font-size: 0.65rem;
+    padding: 0.2em 0.45em;
+    font-weight: 600;
+}
+
+.session-limit-badge {
+    font-size: 0.62rem;
+    padding: 0.15em 0.4em;
+    margin-left: 0.35rem;
+    vertical-align: 0.05em;
+}
+
+/* X compacto → modal mensaje / detener */
 .session-poster-sms {
-    position: absolute;
-    top: 0.4rem;
-    right: 0.4rem;
-    z-index: 2;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.85rem;
-    height: 1.85rem;
+    width: 1.45rem;
+    height: 1.45rem;
     padding: 0;
     border: 0;
-    border-radius: 0.35rem;
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
+    border-radius: 0.25rem;
+    background: rgba(33, 37, 41, 0.08);
+    color: var(--bs-secondary-color, #6c757d);
     line-height: 1;
     cursor: pointer;
-    transition: background-color 0.15s ease, transform 0.1s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .session-poster-sms:hover,
 .session-poster-sms:focus-visible {
     background: rgba(220, 53, 69, 0.9);
+    color: #fff;
     outline: none;
-    transform: scale(1.05);
 }
 
 .session-poster-sms .bi {
-    font-size: 0.95rem;
+    font-size: 0.78rem;
 }
 
-/* Título truncado; clic muestra el texto completo */
 .session-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.25;
     cursor: pointer;
     user-select: none;
 }
@@ -203,19 +267,51 @@ body {
     word-break: break-word;
 }
 
-.session-user-link:hover {
-    text-decoration: underline !important;
+.session-subtitle {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color, #6c757d);
+    line-height: 1.2;
 }
 
-/* Detalle de calidad / transcode estilo Plex en tarjetas En directo */
+.session-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.05rem;
+}
+
+.session-progress {
+    flex: 1 1 auto;
+    height: 3px;
+    min-width: 0;
+    background-color: rgba(33, 37, 41, 0.1);
+}
+
+.session-progress .progress-bar {
+    background-color: var(--bs-primary, #0d6efd);
+}
+
+.session-progress-bar--transcode {
+    background-color: #fd7e14 !important;
+}
+
+.session-progress-meta {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    color: var(--bs-secondary-color, #6c757d);
+    white-space: nowrap;
+    line-height: 1;
+}
+
 .session-stream-info {
-    margin: 0;
-    padding: 0.45rem 0.55rem;
-    border-radius: 0.35rem;
+    margin: 0.05rem 0 0;
+    padding: 0.28rem 0.4rem;
+    border-radius: 0.25rem;
     background: rgba(33, 37, 41, 0.04);
+    border: 1px solid transparent;
     cursor: pointer;
     user-select: none;
-    transition: background-color 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .session-stream-info:hover,
@@ -224,51 +320,64 @@ body {
     outline: none;
 }
 
+.session-stream-summary {
+    font-size: 0.72rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--bs-body-color, #212529);
+}
+
+.session-stream-info.expanded .session-stream-summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.session-stream-detail {
+    display: none;
+    margin-top: 0.25rem;
+}
+
+.session-stream-info.expanded .session-stream-detail {
+    display: grid;
+    gap: 0.1rem;
+}
+
 .session-stream-row {
     display: grid;
-    grid-template-columns: 2.1rem 1fr;
-    gap: 0.35rem 0.45rem;
+    grid-template-columns: 2rem 1fr;
+    gap: 0.25rem 0.4rem;
     align-items: baseline;
 }
 
-.session-stream-row + .session-stream-row {
-    margin-top: 0.15rem;
-}
-
-.session-stream-info dt {
+.session-stream-info .session-stream-key {
     margin: 0;
     font-weight: 600;
-    color: #6c757d;
-    font-size: 0.72rem;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.02em;
 }
 
-.session-stream-info dd {
+.session-stream-info .session-stream-val {
     margin: 0;
-    color: #212529;
-    font-size: 0.78rem;
+    color: var(--bs-body-color, #212529);
+    font-size: 0.72rem;
     line-height: 1.25;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Compacto por defecto; clic en el bloque muestra el texto completo */
-.session-stream-info.expanded dd {
-    overflow: visible;
-    text-overflow: unset;
-    white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
 
 .session-stream-info .stream-info-toggle {
     display: block;
-    margin-top: 0.3rem;
-    font-size: 0.7rem;
+    margin-top: 0.15rem;
+    font-size: 0.65rem;
     font-weight: 600;
-    color: #6c757d;
+    color: var(--bs-secondary-color, #6c757d);
     text-align: right;
     letter-spacing: 0.01em;
 }
@@ -277,10 +386,14 @@ body {
     color: var(--bs-primary, #0d6efd);
 }
 
-/* Transcode / convirtiendo: texto completo + caja naranja */
 .session-stream-info--transcode {
-    border: 1px solid rgba(253, 126, 20, 0.55);
+    border-color: rgba(253, 126, 20, 0.55);
     background: rgba(253, 126, 20, 0.12);
+}
+
+.session-stream-info--transcode .session-stream-summary,
+.session-stream-info--transcode .session-stream-val {
+    color: #c05600;
 }
 
 .session-stream-info--transcode:hover,
@@ -288,22 +401,53 @@ body {
     background: rgba(253, 126, 20, 0.18);
 }
 
-.session-stream-info--transcode dd,
-.session-stream-info--transcode.expanded dd {
-    overflow: visible;
-    text-overflow: unset;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+.session-foot {
+    font-size: 0.7rem;
+    line-height: 1.2;
+    color: var(--bs-secondary-color, #6c757d);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-foot .session-ip {
+    font-size: 0.68rem;
+    color: inherit;
+    background: transparent;
+    padding: 0;
+}
+
+[data-bs-theme="dark"] .session-row {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-bs-theme="dark"] .session-row:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background-color: rgba(255, 255, 255, 0.045);
+}
+
+[data-bs-theme="dark"] .session-row--over-limit {
+    border-color: rgba(220, 53, 69, 0.7);
+    background: rgba(220, 53, 69, 0.08);
+}
+
+[data-bs-theme="dark"] .session-poster-sms {
+    background: rgba(255, 255, 255, 0.08);
+    color: #adb5bd;
+}
+
+[data-bs-theme="dark"] .session-progress {
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 [data-bs-theme="dark"] .session-stream-info {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 [data-bs-theme="dark"] .session-stream-info:hover,
 [data-bs-theme="dark"] .session-stream-info:focus-visible {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.09);
 }
 
 [data-bs-theme="dark"] .session-stream-info--transcode {
@@ -316,8 +460,31 @@ body {
     background: rgba(253, 126, 20, 0.22);
 }
 
-[data-bs-theme="dark"] .session-stream-info dd {
+[data-bs-theme="dark"] .session-stream-info--transcode .session-stream-summary,
+[data-bs-theme="dark"] .session-stream-info--transcode .session-stream-val {
+    color: #ffb366;
+}
+
+[data-bs-theme="dark"] .session-stream-info .session-stream-val,
+[data-bs-theme="dark"] .session-stream-summary {
     color: #e9ecef;
+}
+
+@media (max-width: 575.98px) {
+    .session-row .session-poster {
+        flex-basis: 56px;
+        width: 56px;
+        max-width: 56px;
+        min-height: 84px;
+    }
+
+    .session-method-badge {
+        display: none;
+    }
+
+    .session-title {
+        font-size: 0.86rem;
+    }
 }
 
 @media (max-width: 991.98px) {
