@@ -132,6 +132,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
     $router->get('/media-users/stream-violations', [StreamLimitController::class, 'violations'], 'media_users.stream_violations');
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
+    $router->get('/media-users/estimacion', [MediaUserController::class, 'estimacion'], 'media_users.estimacion');
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);

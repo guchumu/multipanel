@@ -110,6 +110,49 @@ foreach ($servers as $s) {
     </div>
 </div>
 
+<?php
+$renewalOutlook = $renewalOutlook ?? [
+    'this_month' => ['label' => 'Este mes', 'caducidades' => 0],
+    'next_month' => ['label' => 'Próximo mes', 'caducidades' => 0],
+];
+$thisMonthLabel = (string) ($renewalOutlook['this_month']['label'] ?? 'Este mes');
+$nextMonthLabel = (string) ($renewalOutlook['next_month']['label'] ?? 'Próximo mes');
+$thisMonthCount = (int) ($renewalOutlook['this_month']['caducidades'] ?? 0);
+$nextMonthCount = (int) ($renewalOutlook['next_month']['caducidades'] ?? 0);
+?>
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <a href="/media-users/estimacion" class="card border-0 shadow-sm text-decoration-none text-body d-block">
+            <div class="card-body py-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-3 min-w-0">
+                        <div class="bg-warning bg-opacity-10 rounded p-2 flex-shrink-0">
+                            <i class="bi bi-calendar3 text-warning fs-4"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-muted mb-1 small">Caducidades previstas</p>
+                            <div class="d-flex flex-wrap align-items-baseline gap-3 gap-md-4">
+                                <div>
+                                    <span class="fs-4 fw-semibold"><?= $thisMonthCount ?></span>
+                                    <span class="text-muted small ms-1"><?= e($thisMonthLabel) ?></span>
+                                </div>
+                                <div class="vr d-none d-sm-block"></div>
+                                <div>
+                                    <span class="fs-4 fw-semibold"><?= $nextMonthCount ?></span>
+                                    <span class="text-muted small ms-1"><?= e($nextMonthLabel) ?></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="text-primary small fw-medium flex-shrink-0">
+                        Ver estimación mensual <i class="bi bi-chevron-right"></i>
+                    </span>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
 <div class="modal fade" id="liveActivityModal" tabindex="-1" aria-labelledby="liveActivityModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">

@@ -21,6 +21,7 @@ use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
 use App\Services\MediaUserProvisioningService;
+use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\ServerSyncService;
 use App\Services\SubscriptionPeriod;
@@ -55,6 +56,7 @@ class MediaUserController extends Controller
         private IptvCleanupService $iptvCleanup = new IptvCleanupService(),
         private MediaUserWipeService $wipe = new MediaUserWipeService(),
         private ServerSyncService $serverSync = new ServerSyncService(),
+        private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
     ) {
     }
 
@@ -127,6 +129,24 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'currentDays' => $days,
             'currentServerId' => $serverId,
+        ]);
+    }
+
+    /** Estimación mensual de caducidades / renovaciones previstas por servidor. */
+    public function estimacion(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $monthsAhead = max(0, min(24, (int) $request->input('months', 12)));
+
+        $estimate = $this->monthlyEstimate->estimate($tenantId, $monthsAhead, $serverId);
+
+        return $this->view('media_users.estimacion', [
+            'title' => 'Estimación mensual',
+            'estimate' => $estimate,
+            'servers' => $this->servers->allByTenant($tenantId),
+            'currentServerId' => $serverId,
+            'monthsAhead' => $monthsAhead,
         ]);
     }
 

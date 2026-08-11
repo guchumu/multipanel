@@ -8,6 +8,7 @@ use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\MediaUserBulkService;
+use App\Services\MonthlyRenewalEstimateService;
 use App\Services\ServerSyncService;
 use Core\Cache;
 use Core\Controller;
@@ -26,6 +27,7 @@ class DashboardController extends Controller
         private AuthService $auth = new AuthService(),
         private ServerSyncService $sync = new ServerSyncService(),
         private MediaUserBulkService $bulk = new MediaUserBulkService(),
+        private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
     ) {
     }
 
@@ -54,6 +56,15 @@ class DashboardController extends Controller
         $plex = $this->servers->findDefaultByTenant($tenantId, 'plex');
         $jelly = $this->servers->findDefaultByTenant($tenantId, 'jellyfin');
 
+        try {
+            $renewalOutlook = $this->monthlyEstimate->upcomingTwoMonths($tenantId);
+        } catch (\Throwable) {
+            $renewalOutlook = [
+                'this_month' => ['key' => '', 'label' => 'Este mes', 'caducidades' => 0],
+                'next_month' => ['key' => '', 'label' => 'Próximo mes', 'caducidades' => 0],
+            ];
+        }
+
         return $this->view('dashboard.index', [
             'title' => 'Dashboard',
             'stats' => $stats,
@@ -62,6 +73,7 @@ class DashboardController extends Controller
             'preferredServerId' => $preferred?->id ? (int) $preferred->id : null,
             'defaultPlexServerId' => $plex?->id ? (int) $plex->id : null,
             'defaultJellyfinServerId' => $jelly?->id ? (int) $jelly->id : null,
+            'renewalOutlook' => $renewalOutlook,
         ]);
     }
 
