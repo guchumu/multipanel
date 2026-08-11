@@ -24,7 +24,11 @@ final class Updater
         '002_integrations_payments.sql' => ['table' => 'integrations'],
         '004_oauth_events.sql' => ['table' => 'oauth_accounts'],
         '005_crm_webhooks_gdpr.sql' => ['table' => 'webhook_endpoints'],
-        '006_expiry_notifications.sql' => ['column' => ['media_users', 'telegram_chat_id']],
+        // Require notices table (not only telegram_chat_id) so partial 006 applies are repaired.
+        '006_expiry_notifications.sql' => [
+            'table' => 'media_user_expiry_notices',
+            'column' => ['media_users', 'telegram_chat_id'],
+        ],
         '007_payments_history.sql' => ['table' => 'payments_history'],
         '008_user_messages_and_registro.sql' => ['table' => 'media_user_messages'],
         '009_server_is_default.sql' => ['column' => ['servers', 'is_default']],
@@ -33,6 +37,7 @@ final class Updater
         '012_playback_stop_messages.sql' => ['table' => 'playback_stop_messages'],
         '013_stream_limit_enforcement.sql' => ['table' => 'stream_limit_violations'],
         '014_stream_limit_distinct_ip.sql' => ['column' => ['stream_limit_violations', 'client_ips']],
+        '015_media_user_expiry_notices.sql' => ['table' => 'media_user_expiry_notices'],
     ];
 
     public function __construct()
@@ -223,8 +228,10 @@ final class Updater
     {
         try {
             $db = Database::getInstance();
+            $verified = false;
 
             if (isset($check['table'])) {
+                $verified = true;
                 $row = $db->fetchOne(
                     'SELECT COUNT(*) AS total
                      FROM information_schema.TABLES
@@ -233,10 +240,13 @@ final class Updater
                     [$check['table']]
                 );
 
-                return ((int) ($row['total'] ?? 0)) > 0;
+                if (((int) ($row['total'] ?? 0)) <= 0) {
+                    return false;
+                }
             }
 
             if (isset($check['column'])) {
+                $verified = true;
                 [$table, $column] = $check['column'];
                 $row = $db->fetchOne(
                     'SELECT COUNT(*) AS total
@@ -247,13 +257,15 @@ final class Updater
                     [$table, $column]
                 );
 
-                return ((int) ($row['total'] ?? 0)) > 0;
+                if (((int) ($row['total'] ?? 0)) <= 0) {
+                    return false;
+                }
             }
+
+            return $verified;
         } catch (\Throwable) {
             return true; // Avoid infinite re-run loops if information_schema is unavailable.
         }
-
-        return true;
     }
 
     /** @return array<int, string> */

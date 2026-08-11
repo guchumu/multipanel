@@ -8,6 +8,7 @@ use App\Models\MediaUser;
 use App\Services\NotificationTemplateService;
 use Core\Database;
 use Core\Logger;
+use Core\Updater;
 use DateTimeImmutable;
 use DateTimeZone;
 
@@ -28,6 +29,8 @@ final class ExpiryNotificationService
         if (!config('expiry_notifications.enabled', true)) {
             return ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
         }
+
+        self::ensureExpiryNoticesTable();
 
         $milestones = $this->templates->getMilestones($tenantId);
         $messages = $this->templates->getExpiryMessages($tenantId);
@@ -129,18 +132,101 @@ final class ExpiryNotificationService
         return $stats;
     }
 
+    /**
+     * Prefer Updater/migrations; fall back to CREATE IF NOT EXISTS when the table is still missing.
+     */
+    public static function ensureExpiryNoticesTable(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+
+        if (self::tableExists('media_user_expiry_notices')) {
+            $ensured = true;
+            return;
+        }
+
+        try {
+            (new Updater())->runMigrations();
+        } catch (\Throwable) {
+            // Fall through to direct CREATE.
+        }
+
+        if (self::tableExists('media_user_expiry_notices')) {
+            $ensured = true;
+            return;
+        }
+
+        try {
+            Database::getInstance()->pdo()->exec(
+                'CREATE TABLE IF NOT EXISTS `media_user_expiry_notices` (
+                    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `media_user_id` BIGINT UNSIGNED NOT NULL,
+                    `milestone` VARCHAR(10) NOT NULL COMMENT \'Days before expiry: 10,5,3,2,1,0,-1\',
+                    `sent_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (`id`),
+                    UNIQUE KEY `uk_expiry_notice_user_milestone` (`media_user_id`, `milestone`),
+                    CONSTRAINT `fk_expiry_notice_user` FOREIGN KEY (`media_user_id`) REFERENCES `media_users` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+            );
+        } catch (\Throwable) {
+            try {
+                Database::getInstance()->pdo()->exec(
+                    'CREATE TABLE IF NOT EXISTS `media_user_expiry_notices` (
+                        `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                        `media_user_id` BIGINT UNSIGNED NOT NULL,
+                        `milestone` VARCHAR(10) NOT NULL,
+                        `sent_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (`id`),
+                        UNIQUE KEY `uk_expiry_notice_user_milestone` (`media_user_id`, `milestone`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+                );
+            } catch (\Throwable) {
+                return;
+            }
+        }
+
+        $ensured = true;
+    }
+
+    private static function tableExists(string $table): bool
+    {
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS total
+                 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?',
+                [$table]
+            );
+
+            return ((int) ($row['total'] ?? 0)) > 0;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     private function alreadySent(int $mediaUserId, string $milestone): bool
     {
-        $row = Database::getInstance()->fetchOne(
-            'SELECT id FROM media_user_expiry_notices WHERE media_user_id = ? AND milestone = ? LIMIT 1',
-            [$mediaUserId, $milestone]
-        );
+        self::ensureExpiryNoticesTable();
 
-        return $row !== null;
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT id FROM media_user_expiry_notices WHERE media_user_id = ? AND milestone = ? LIMIT 1',
+                [$mediaUserId, $milestone]
+            );
+
+            return $row !== null;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function recordSent(int $mediaUserId, string $milestone): void
     {
+        self::ensureExpiryNoticesTable();
+
         Database::getInstance()->insert('media_user_expiry_notices', [
             'media_user_id' => $mediaUserId,
             'milestone' => $milestone,
