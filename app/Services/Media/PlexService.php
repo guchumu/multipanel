@@ -474,10 +474,13 @@ final class PlexService
                 isset($sessionMeta['location']) ? (string) $sessionMeta['location'] : null,
             ),
             'player' => (string) ($player['title'] ?? ''),
+            'product' => (string) ($player['product'] ?? ''),
             'platform' => (string) ($player['platform'] ?? $player['device'] ?? ''),
             'state' => (string) ($player['state'] ?? 'playing'),
             'media_type' => $type,
             'year' => (string) ($session['year'] ?? ''),
+            'location' => strtoupper((string) ($sessionMeta['location'] ?? '')),
+            'bandwidth' => self::formatBandwidthKbps($sessionMeta['bandwidth'] ?? $session['bandwidth'] ?? null),
             'play_method' => $playMethod,
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
@@ -561,10 +564,13 @@ final class PlexService
                 isset($session->Session['location']) ? (string) $session->Session['location'] : null,
             ),
             'player' => (string) ($session->Player['title'] ?? ''),
+            'product' => (string) ($session->Player['product'] ?? ''),
             'platform' => (string) ($session->Player['platform'] ?? $session->Player['device'] ?? ''),
             'state' => (string) ($session->Player['state'] ?? 'playing'),
             'media_type' => $type,
             'year' => (string) ($session['year'] ?? ''),
+            'location' => strtoupper((string) ($session->Session['location'] ?? '')),
+            'bandwidth' => self::formatBandwidthKbps($sessionMeta['bandwidth'] ?? $session['bandwidth'] ?? null),
             'play_method' => $playMethod,
             'video_decision' => $videoDecision,
             'audio_decision' => $audioDecision,
@@ -573,6 +579,30 @@ final class PlexService
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
+    }
+
+    /** Formato estilo Tautulli: kbps / Mbps / Gbps. */
+    private static function formatBandwidthKbps(mixed $value): string
+    {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            return '';
+        }
+        $bw = (float) $value;
+        if ($bw <= 0) {
+            return '';
+        }
+        // Plex Session.bandwidth suele ir en kbps; valores enormes = bps.
+        if ($bw >= 1000000) {
+            $bw = $bw / 1000;
+        }
+        if ($bw > 1000000) {
+            return round($bw / 1000000, 1) . ' Gbps';
+        }
+        if ($bw > 1000) {
+            return round($bw / 1000, 1) . ' Mbps';
+        }
+
+        return ((int) round($bw)) . ' kbps';
     }
 
     private function resolveSessionArtPath(
