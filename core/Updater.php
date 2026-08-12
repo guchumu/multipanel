@@ -38,6 +38,7 @@ final class Updater
         '013_stream_limit_enforcement.sql' => ['table' => 'stream_limit_violations'],
         '014_stream_limit_distinct_ip.sql' => ['column' => ['stream_limit_violations', 'client_ips']],
         '015_media_user_expiry_notices.sql' => ['table' => 'media_user_expiry_notices'],
+        '016_payment_links.sql' => ['table' => 'payment_links'],
     ];
 
     public function __construct()

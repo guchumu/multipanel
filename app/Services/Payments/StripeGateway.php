@@ -96,9 +96,15 @@ final class StripeGateway implements PaymentGatewayInterface
                 return ['error' => 'Stripe no devolvió la URL de pago. Revisa la clave secreta y los permisos de la cuenta.'];
             }
 
+            $expiresAt = null;
+            if (isset($data['expires_at']) && is_numeric($data['expires_at'])) {
+                $expiresAt = (int) $data['expires_at'];
+            }
+
             return [
                 'checkout_url' => $url,
                 'session_id' => $sessionId,
+                'expires_at' => $expiresAt,
             ];
         } catch (GuzzleException $e) {
             $message = $this->formatStripeError($e);

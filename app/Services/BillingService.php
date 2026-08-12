@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\MediaUser;
+use App\Services\Payments\PaymentLinkService;
 use App\Services\Payments\PaymentService;
 use Core\Database;
 use Core\Logger;
@@ -205,7 +206,7 @@ final class BillingService
      * Genera un enlace de pago (checkout) para renovar manualmente a un usuario media,
      * sumándole automáticamente los días indicados en cuanto Stripe confirme el cobro.
      *
-     * @return array{success: bool, message: string, checkout_url?: string}
+     * @return array{success: bool, message: string, checkout_url?: string, stripe_checkout_url?: string, short_code?: string|null}
      */
     public function createRenewalCheckout(
         MediaUser $user,
@@ -250,17 +251,43 @@ final class BillingService
             return ['success' => false, 'message' => 'No se pudo generar el enlace de pago: ' . $detail];
         }
 
+        $stripeUrl = (string) $result['checkout_url'];
+        $sessionId = isset($result['session_id']) ? (string) $result['session_id'] : null;
+        $expiresAt = null;
+        if (isset($result['expires_at']) && is_numeric($result['expires_at'])) {
+            $expiresAt = (new \DateTimeImmutable('@' . (int) $result['expires_at']))
+                ->setTimezone(new \DateTimeZone(date_default_timezone_get() ?: 'UTC'));
+        } elseif ($gateway === 'stripe') {
+            // Stripe Checkout Session caduca por defecto a las ~24h.
+            $expiresAt = new \DateTimeImmutable('+24 hours');
+        }
+
+        $shareUrl = $stripeUrl;
+        $short = (new PaymentLinkService())->create(
+            $tenantId,
+            $stripeUrl,
+            (int) $user->id,
+            $sessionId,
+            $expiresAt,
+        );
+        if (!empty($short['success']) && !empty($short['short_url'])) {
+            $shareUrl = (string) $short['short_url'];
+        }
+
         AuditService::log('media_user.payment_link_created', 'media_user', (int) $user->id, null, [
             'amount' => $amount,
             'currency' => strtoupper($currency),
             'days' => $days,
             'gateway' => $gateway,
+            'short_url' => $shareUrl !== $stripeUrl ? $shareUrl : null,
         ]);
 
         return [
             'success' => true,
             'message' => 'Enlace de pago generado.',
-            'checkout_url' => $result['checkout_url'],
+            'checkout_url' => $shareUrl,
+            'stripe_checkout_url' => $stripeUrl,
+            'short_code' => $short['code'] ?? null,
         ];
     }
 

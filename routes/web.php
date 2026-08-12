@@ -37,6 +37,7 @@ use App\Controllers\ApiKeyController;
 use App\Controllers\InvoiceController;
 use App\Controllers\SecurityController;
 use App\Controllers\CronController;
+use App\Controllers\PaymentLinkController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
 use App\Controllers\Portal\PortalPaymentController;
@@ -60,6 +61,9 @@ $router->post('/logout', [AuthController::class, 'logout'], 'logout', [AuthMiddl
 // API docs (public)
 $router->get('/api/docs', [DocsController::class, 'swagger'], 'docs.swagger');
 $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs.openapi');
+
+// Short payment links (public redirect to Stripe checkout)
+$router->get('/p/{code}', [PaymentLinkController::class, 'show'], 'payment_link.show');
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);

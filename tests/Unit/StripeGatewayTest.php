@@ -82,6 +82,7 @@ final class StripeGatewayTest extends TestCase
             new Response(200, [], json_encode([
                 'id' => 'cs_test_123',
                 'url' => 'https://checkout.stripe.com/c/pay/cs_test_123',
+                'expires_at' => 1_700_000_000,
             ], JSON_THROW_ON_ERROR)),
         ]);
         $client = new Client(['handler' => HandlerStack::create($mock), 'http_errors' => true]);
@@ -94,6 +95,7 @@ final class StripeGatewayTest extends TestCase
 
         $this->assertSame('https://checkout.stripe.com/c/pay/cs_test_123', $result['checkout_url']);
         $this->assertSame('cs_test_123', $result['session_id']);
+        $this->assertSame(1_700_000_000, $result['expires_at']);
     }
 
     public function testConnectionSucceedsWithValidKey(): void
