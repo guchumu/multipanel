@@ -96,6 +96,33 @@ final class StripeGatewayTest extends TestCase
         $this->assertSame('cs_test_123', $result['session_id']);
     }
 
+    public function testConnectionSucceedsWithValidKey(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'object' => 'balance',
+                'available' => [],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $client = new Client(['handler' => HandlerStack::create($mock), 'http_errors' => true]);
+
+        $gateway = new StripeGateway('sk_test_' . str_repeat('d', 24), '', $client);
+        $result = $gateway->testConnection();
+
+        $this->assertTrue($result['ok']);
+        $this->assertSame('test', $result['mode']);
+        $this->assertStringContainsString('Conexión OK', $result['message']);
+    }
+
+    public function testConnectionRejectsInvalidKeyFormat(): void
+    {
+        $gateway = new StripeGateway('pk_test_wrong', '', $this->unusedClient());
+        $result = $gateway->testConnection();
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('clave pública', $result['message']);
+    }
+
     private function unusedClient(): Client
     {
         $mock = new MockHandler([

@@ -249,6 +249,13 @@
                             Si al generar el enlace falla, el panel mostrará el mensaje real de Stripe (clave inválida, URL, importe, etc.).
                             También puedes revisar <code>storage/logs/multipanel.log</code>.
                         </p>
+                        <div class="mt-3">
+                            <button type="submit" class="btn btn-outline-primary btn-sm" formaction="/settings/stripe/test"
+                                    title="Comprueba la secret key contra la API de Stripe (no crea cobros)">
+                                <i class="bi bi-plug me-1"></i>Probar conexión Stripe
+                            </button>
+                            <span class="form-text ms-2">Usa la clave ya guardada, o la que hayas pegado arriba sin guardar aún.</span>
+                        </div>
                     </div>
 
                     <div class="mb-4">

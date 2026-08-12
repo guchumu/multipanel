@@ -147,6 +147,42 @@ final class StripeGateway implements PaymentGatewayInterface
     }
 
     /**
+     * Comprueba que la secret key es aceptada por Stripe (GET /v1/balance).
+     * No crea cobros ni sesiones de checkout.
+     *
+     * @return array{ok: bool, message: string, mode?: string}
+     */
+    public function testConnection(): array
+    {
+        $keyError = $this->validateSecretKey();
+        if ($keyError !== null) {
+            return ['ok' => false, 'message' => $keyError];
+        }
+
+        $mode = str_starts_with($this->secretKey, 'sk_live_') || str_starts_with($this->secretKey, 'rk_live_')
+            ? 'live'
+            : 'test';
+
+        try {
+            $response = $this->client->get('balance');
+            $data = json_decode($response->getBody()->getContents(), true);
+            if (!is_array($data)) {
+                return ['ok' => false, 'message' => 'Stripe respondió de forma inesperada al comprobar la clave.'];
+            }
+
+            return [
+                'ok' => true,
+                'mode' => $mode,
+                'message' => 'Conexión OK con Stripe (modo ' . $mode . '). La clave secreta es válida.',
+            ];
+        } catch (GuzzleException $e) {
+            return ['ok' => false, 'message' => $this->formatStripeError($e)];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'message' => 'Error al contactar con Stripe: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Valida el formato de la secret key antes de llamar a la API.
      */
     private function validateSecretKey(): ?string

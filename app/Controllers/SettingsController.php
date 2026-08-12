@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Services\AuthService;
 use App\Services\BillingSettingsService;
 use App\Services\CronService;
+use App\Services\Payments\StripeGateway;
 use App\Services\TelegramConfig;
 use App\Services\TelegramSandboxSender;
 use App\Services\TwoFactorService;
@@ -115,6 +116,36 @@ class SettingsController extends Controller
         }
 
         return $this->redirect('/settings#telegram');
+    }
+
+    /**
+     * Ping a la API de Stripe con la secret key guardada (o la pegada en el formulario).
+     * No guarda claves ni crea cobros.
+     */
+    public function testStripe(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $posted = trim((string) $request->input('stripe_secret_key', ''));
+        $secret = $posted !== ''
+            ? $posted
+            : $this->billingSettings->getStripeSecretKey($tenantId);
+
+        if (trim($secret) === '') {
+            Session::getInstance()->flash(
+                'error',
+                'No hay clave secreta de Stripe. Pégala arriba y pulsa Guardar facturación, o rellénala y vuelve a probar.'
+            );
+            return $this->redirect('/settings#billing');
+        }
+
+        $result = (new StripeGateway($secret))->testConnection();
+        if (!empty($result['ok'])) {
+            Session::getInstance()->flash('success', (string) $result['message']);
+        } else {
+            Session::getInstance()->flash('error', (string) ($result['message'] ?? 'No se pudo conectar con Stripe.'));
+        }
+
+        return $this->redirect('/settings#billing');
     }
 
     public function updateBilling(Request $request): Response
