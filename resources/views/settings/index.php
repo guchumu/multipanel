@@ -23,6 +23,7 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#general">General</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">Email / SMTP</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegram">Telegram</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#whatsapp">WhatsApp / Alertas admin</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Facturación</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cron">Cron / Tareas</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#security">Seguridad</button></li>
@@ -86,8 +87,8 @@
                         <label class="form-label">Chat ID del admin (alertas)</label>
                         <input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>" placeholder="Ej. 123456789">
                         <div class="form-text">
-                            Donde llegan avisos del panel (servidor caído, automatizaciones admin). No es el chat de cada cliente.
-                            Al caer un servidor también se envía email (ver pestaña Cron) y WhatsApp si CallMeBot está configurado.
+                            Donde llegan avisos del panel (servidor caído, altas/renovaciones, automatizaciones admin). No es el chat de cada cliente.
+                            Al caer un servidor también se envía email (pestaña Cron) y WhatsApp (pestaña WhatsApp / Alertas admin) si CallMeBot está configurado.
                         </div>
                     </div>
 
@@ -125,6 +126,69 @@
                         <i class="bi bi-telegram me-1"></i>Enviar mensaje de prueba
                     </button>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="whatsapp">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-whatsapp me-1"></i>Alertas WhatsApp (admin)</h6>
+                <p class="small text-muted mb-3">
+                    Canal CallMeBot para avisos al admin: <strong>altas</strong>, <strong>renovaciones</strong> y
+                    <strong>servidor caído</strong> (este último también por Telegram + email).
+                    Si acabas de pedir el apikey a CallMeBot, la espera de ~24&nbsp;h es normal: pega el apikey aquí cuando llegue.
+                </p>
+                <form method="POST" action="/settings" class="row g-3" id="whatsappAlertsForm">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="group" value="whatsapp">
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="whatsapp_enabled" value="1" id="waAlerts"
+                                   <?= !empty($settings['whatsapp_enabled']) && $settings['whatsapp_enabled'] !== '0' ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="waAlerts">Activar alertas WhatsApp (CallMeBot)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Teléfono WhatsApp (con prefijo país)</label>
+                        <input name="whatsapp_phone" class="form-control" autocomplete="off"
+                               value="<?= e($settings['whatsapp_phone'] ?? '') ?>" placeholder="346xxxxxxxx">
+                        <div class="form-text">Sin espacios. Ejemplo España: <code>34612345678</code>. .env: <code>WHATSAPP_CALLMEBOT_PHONE</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">API key CallMeBot</label>
+                        <input type="password" name="whatsapp_apikey" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($settings['whatsapp_apikey']) ? '••••••••••' : 'apikey de CallMeBot' ?>">
+                        <div class="form-text">Déjala en blanco para no cambiar la guardada. .env: <code>WHATSAPP_CALLMEBOT_APIKEY</code></div>
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-light border small mb-0">
+                            <strong>Cómo obtener el apikey (gratis):</strong>
+                            <ol class="mb-0 mt-1 ps-3">
+                                <li>Añade el contacto de CallMeBot (ver <a href="https://www.callmebot.com/blog/free-api-whatsapp-messages/" target="_blank" rel="noopener">instrucciones</a>).</li>
+                                <li>Envíale el mensaje: <em>I allow callmebot to send me messages</em>.</li>
+                                <li>Te responden con el apikey (a veces tarda hasta ~24&nbsp;h). Pégalo arriba y guarda.</li>
+                            </ol>
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-primary">Guardar WhatsApp</button>
+                        <button type="submit" class="btn btn-outline-success" formaction="/settings/whatsapp/test">
+                            <i class="bi bi-whatsapp me-1"></i>Probar WhatsApp
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="mb-2">Qué avisos llegan aquí</h6>
+                <ul class="small text-muted mb-0">
+                    <li><strong>Alta:</strong> registro <code>/registro</code>, crear usuario en el panel, invitación rápida del dashboard.</li>
+                    <li><strong>Renovación:</strong> registro (usuario existente), pago Stripe OK, extensión manual (+días).</li>
+                    <li><strong>Servidor caído:</strong> mismo CallMeBot; email de alertas se configura en Cron.</li>
+                    <li>Un mensaje por evento (sin spam de reintentos en altas/renovaciones).</li>
+                </ul>
             </div>
         </div>
     </div>
@@ -188,51 +252,25 @@
 
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
-                <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Alertas servidor caído</h6>
+                <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Alertas servidor caído (email)</h6>
                 <p class="small text-muted mb-3">
-                    Al detectar un servidor offline (automatización): diagnóstico HTTP/DNS + Telegram admin + email + WhatsApp opcional.
+                    Al detectar un servidor offline: diagnóstico HTTP/DNS + Telegram admin + este email + WhatsApp opcional.
                     Reavisos a los 5 / 15 / 30 minutos si sigue caído (luego no spam).
+                    Teléfono y API key de WhatsApp están en la pestaña
+                    <a href="#whatsapp" data-bs-toggle="tab" data-bs-target="#whatsapp">WhatsApp / Alertas admin</a>.
                 </p>
                 <form method="POST" action="/settings" class="row g-3">
                     <?= csrf_field() ?>
                     <input type="hidden" name="group" value="alerts">
-                    <div class="col-md-6">
+                    <div class="col-md-8">
                         <label class="form-label">Email de alertas admin</label>
                         <input type="email" name="alert_email" class="form-control"
                                value="<?= e($settings['alert_email'] ?? (string) config('alerts.email', 'alex@masquecero.es')) ?>"
                                placeholder="alex@masquecero.es">
                         <div class="form-text">Default / .env: <code>ALERT_EMAIL</code>. Requiere SMTP en la pestaña Email.</div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="form-check form-switch mt-4">
-                            <input class="form-check-input" type="checkbox" name="whatsapp_enabled" value="1" id="waAlerts"
-                                   <?= !empty($settings['whatsapp_enabled']) && $settings['whatsapp_enabled'] !== '0' ? 'checked' : '' ?>>
-                            <label class="form-check-label" for="waAlerts">Activar WhatsApp (CallMeBot)</label>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Teléfono WhatsApp (con prefijo país)</label>
-                        <input name="whatsapp_phone" class="form-control" autocomplete="off"
-                               value="<?= e($settings['whatsapp_phone'] ?? '') ?>" placeholder="346xxxxxxxx">
-                        <div class="form-text">.env: <code>WHATSAPP_CALLMEBOT_PHONE</code></div>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">API key CallMeBot</label>
-                        <input type="password" name="whatsapp_apikey" class="form-control" autocomplete="off"
-                               placeholder="<?= !empty($settings['whatsapp_apikey']) ? '••••••••••' : 'apikey de CallMeBot' ?>">
-                        <div class="form-text">Déjala en blanco para no cambiar. .env: <code>WHATSAPP_CALLMEBOT_APIKEY</code></div>
-                    </div>
                     <div class="col-12">
-                        <div class="alert alert-light border small mb-0">
-                            <strong>WhatsApp gratis (CallMeBot):</strong>
-                            1) Añade el contacto de CallMeBot y envía <em>I allow callmebot to send me messages</em>.
-                            2) Te responden con el apikey.
-                            3) Guarda teléfono + apikey aquí.
-                            Alternativa de pago: Twilio / Meta Cloud API (no cableada; si no hay CallMeBot se omite WhatsApp sin fallar).
-                        </div>
-                    </div>
-                    <div class="col-12">
-                        <button class="btn btn-primary">Guardar alertas</button>
+                        <button class="btn btn-primary">Guardar email de alertas</button>
                     </div>
                 </form>
             </div>

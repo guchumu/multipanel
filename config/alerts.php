@@ -10,9 +10,8 @@ return [
     'email' => env('ALERT_EMAIL', 'alex@masquecero.es'),
 
     // CallMeBot WhatsApp (gratis / barato): https://www.callmebot.com/blog/free-api-whatsapp-messages/
-    // 1) Añade +34 644 21 90 70 (o el número de CallMeBot) a contactos
-    // 2) Envíale: I allow callmebot to send me messages
-    // 3) Recibirás el apikey; guárdalo aquí o en Configuración → Cron
+    // 1) Añade el contacto de CallMeBot y envía: I allow callmebot to send me messages
+    // 2) Recibirás el apikey (a veces ~24h); guárdalo en Configuración → WhatsApp / Alertas admin
     'whatsapp_enabled' => env('WHATSAPP_ALERTS_ENABLED', false),
     'whatsapp_phone' => env('WHATSAPP_CALLMEBOT_PHONE', env('WHATSAPP_PHONE', '')),
     'whatsapp_apikey' => env('WHATSAPP_CALLMEBOT_APIKEY', env('WHATSAPP_APIKEY', '')),

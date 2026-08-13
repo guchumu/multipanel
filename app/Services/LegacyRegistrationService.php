@@ -8,6 +8,7 @@ use App\Models\MediaUser;
 use App\Repositories\ServerRepository;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Notifications\TelegramChannel;
 use Core\Database;
 use Core\Logger;
@@ -24,6 +25,7 @@ final class LegacyRegistrationService
         private AuditService $audit = new AuditService(),
         private TelegramChannel $telegram = new TelegramChannel(),
         private MediaUserMessageService $messageLog = new MediaUserMessageService(),
+        private NotificationService $adminAlerts = new NotificationService(),
     ) {
     }
 
@@ -99,6 +101,34 @@ final class LegacyRegistrationService
                     'telegram',
                     true
                 );
+            }
+
+            // Un aviso admin (Telegram + WhatsApp) por email procesado.
+            foreach ($results as $result) {
+                $email = (string) ($result['email'] ?? '');
+                $serverName = (string) ($result['server'] ?? '');
+                $endDate = (string) ($result['end_date'] ?? '');
+                $action = (string) ($result['action'] ?? '');
+                if ($email === '') {
+                    continue;
+                }
+                if ($action === 'created') {
+                    $this->adminAlerts->notifyMediaUserCreated(
+                        $email,
+                        $serverName,
+                        $addDays,
+                        $endDate,
+                        $tenantId
+                    );
+                } elseif ($action === 'renewed') {
+                    $this->adminAlerts->notifyMediaUserRenewed(
+                        $email,
+                        $serverName,
+                        $addDays,
+                        $endDate,
+                        $tenantId
+                    );
+                }
             }
 
             return [

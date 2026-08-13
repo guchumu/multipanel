@@ -203,6 +203,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/settings', [SettingsController::class, 'index'], 'settings.index');
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
     $router->post('/settings/telegram/test', [SettingsController::class, 'testTelegram'], 'settings.telegram.test', [CsrfMiddleware::class]);
+    $router->post('/settings/whatsapp/test', [SettingsController::class, 'testWhatsApp'], 'settings.whatsapp.test', [CsrfMiddleware::class]);
     $router->post('/settings/stripe/test', [SettingsController::class, 'testStripe'], 'settings.stripe.test', [CsrfMiddleware::class]);
     $router->post('/settings/billing', [SettingsController::class, 'updateBilling'], 'settings.billing.update', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/enable', [SettingsController::class, 'enable2fa'], 'settings.2fa.enable', [CsrfMiddleware::class]);

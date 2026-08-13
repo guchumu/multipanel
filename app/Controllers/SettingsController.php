@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Services\AlertSettingsService;
 use App\Services\AuthService;
 use App\Services\BillingSettingsService;
 use App\Services\CronService;
@@ -119,6 +120,73 @@ class SettingsController extends Controller
     }
 
     /**
+     * Envía un WhatsApp de prueba vía CallMeBot (valores del formulario o los guardados).
+     */
+    public function testWhatsApp(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $alerts = new AlertSettingsService();
+
+        $phone = preg_replace('/[^\d+]/', '', trim((string) $request->input('whatsapp_phone', ''))) ?? '';
+        if ($phone === '') {
+            $phone = $alerts->whatsappPhone($tenantId);
+        }
+
+        $apikey = trim((string) $request->input('whatsapp_apikey', ''));
+        if ($apikey === '') {
+            $apikey = $alerts->whatsappApiKey($tenantId);
+        }
+
+        if ($phone === '' || $apikey === '') {
+            Session::getInstance()->flash(
+                'error',
+                'Falta teléfono o API key de CallMeBot. Pégalos arriba (aunque aún no hayas guardado) y vuelve a probar.'
+            );
+            return $this->redirect('/settings#whatsapp');
+        }
+
+        // Guardado temporal en memoria vía override: usamos el canal con settings ya persistidos
+        // si coinciden; si no, llamada directa a CallMeBot con los valores del formulario.
+        $apiUrl = (string) config('alerts.whatsapp_api_url', 'https://api.callmebot.com/whatsapp.php');
+        $text = "MultiPanel — prueba WhatsApp admin\n\n"
+            . 'Tel: ' . $phone . "\n"
+            . 'Hora: ' . date('Y-m-d H:i:s') . "\n"
+            . 'Si recibes esto, CallMeBot ya está listo.';
+
+        try {
+            $client = new Client(['timeout' => 20, 'http_errors' => false]);
+            $response = $client->get($apiUrl, [
+                'query' => [
+                    'phone' => ltrim($phone, '+'),
+                    'text' => $text,
+                    'apikey' => $apikey,
+                ],
+            ]);
+            $code = $response->getStatusCode();
+            $body = trim((string) $response->getBody());
+            $ok = $code >= 200 && $code < 300 && !str_contains(strtolower($body), 'error');
+
+            if ($ok) {
+                Session::getInstance()->flash(
+                    'success',
+                    'WhatsApp de prueba enviado a ' . $phone . '. Revisa tu móvil (a veces tarda unos segundos).'
+                );
+            } else {
+                Session::getInstance()->flash(
+                    'error',
+                    'CallMeBot no aceptó el envío (HTTP ' . $code . '). '
+                    . 'Si aún esperas el apikey (24h), es normal. Respuesta: '
+                    . mb_substr($body !== '' ? $body : 'vacía', 0, 160)
+                );
+            }
+        } catch (GuzzleException $e) {
+            Session::getInstance()->flash('error', 'Error al contactar CallMeBot: ' . $e->getMessage());
+        }
+
+        return $this->redirect('/settings#whatsapp');
+    }
+
+    /**
      * Ping a la API de Stripe con la secret key guardada (o la pegada en el formulario).
      * No guarda claves ni crea cobros.
      */
@@ -218,6 +286,9 @@ class SettingsController extends Controller
             ],
             'alerts' => [
                 'alert_email',
+            ],
+            // UI group "whatsapp"; se persiste en settings.group = alerts (AlertSettingsService).
+            'whatsapp' => [
                 'whatsapp_enabled',
                 'whatsapp_phone',
                 'whatsapp_apikey',
@@ -233,9 +304,11 @@ class SettingsController extends Controller
             $this->saveSetting($tenantId, 'telegram', 'telegram_sandbox_copy_real', $request->input('telegram_sandbox_copy_real') ? '1' : '0');
         }
 
-        if ($group === 'alerts') {
+        if ($group === 'whatsapp') {
             $this->saveSetting($tenantId, 'alerts', 'whatsapp_enabled', $request->input('whatsapp_enabled') ? '1' : '0');
         }
+
+        $persistGroup = $group === 'whatsapp' ? 'alerts' : $group;
 
         foreach ($fields as $field) {
             if (in_array($field, ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real', 'whatsapp_enabled'], true)) {
@@ -247,7 +320,7 @@ class SettingsController extends Controller
             }
             $value = $request->input($field);
             if ($value !== null && $value !== '') {
-                $this->saveSetting($tenantId, $group, $field, (string) $value);
+                $this->saveSetting($tenantId, $persistGroup, $field, (string) $value);
             }
         }
 
@@ -256,6 +329,8 @@ class SettingsController extends Controller
             'cron' => '#cron',
             'smtp' => '#smtp',
             'alerts' => '#cron',
+            'whatsapp' => '#whatsapp',
+            'billing' => '#billing',
             default => '',
         };
 

@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\MediaUser;
 use App\Models\Server;
 use App\Repositories\MediaUserRepository;
+use App\Services\Notifications\NotificationService;
 use Core\Database;
 use Ramsey\Uuid\Uuid;
 
@@ -20,6 +21,7 @@ final class MediaUserBulkService
         private MediaUserProvisioningService $provisioning = new MediaUserProvisioningService(),
         private PasswordService $passwords = new PasswordService(),
         private MediaUserRepository $mediaUsers = new MediaUserRepository(),
+        private NotificationService $adminAlerts = new NotificationService(),
     ) {
     }
 
@@ -68,7 +70,8 @@ final class MediaUserBulkService
             $tenantId,
             $serverId,
             SubscriptionPeriod::daysToExpiresAt($days),
-            $email
+            $email,
+            $days
         );
 
         $errors = $result['errors'];
@@ -140,11 +143,17 @@ final class MediaUserBulkService
      *   last_username?: ?string
      * }
      */
-    private function addEmailsWithExpiresAt(int $tenantId, int $serverId, ?string $expiresAt, string $rawEmails): array
-    {
+    private function addEmailsWithExpiresAt(
+        int $tenantId,
+        int $serverId,
+        ?string $expiresAt,
+        string $rawEmails,
+        ?int $notifyDays = null,
+    ): array {
         $emails = $this->parseEmails($rawEmails);
         $db = Database::getInstance();
         $server = Server::find($serverId);
+        $serverName = $server ? (string) $server->name : '';
         $created = 0;
         $updated = 0;
         $skipped = 0;
@@ -172,6 +181,14 @@ final class MediaUserBulkService
                     ], 'id = ?', [$existing['id']]);
                     $updated++;
                     $lastUsername = (string) ($existing['username'] ?? $username);
+
+                    $this->adminAlerts->notifyMediaUserRenewed(
+                        $email,
+                        $serverName,
+                        $notifyDays,
+                        $expiresAt,
+                        $tenantId
+                    );
 
                     if ($server !== null) {
                         $existingUser = MediaUser::find((int) $existing['id']);
@@ -222,6 +239,15 @@ final class MediaUserBulkService
                 $this->audit->log('media_user.bulk_created', 'media_user', (int) $user->id);
                 $created++;
                 $lastUsername = $username;
+
+                $this->adminAlerts->notifyMediaUserCreated(
+                    $email,
+                    $serverName,
+                    $notifyDays,
+                    $expiresAt,
+                    $tenantId,
+                    $username
+                );
 
                 if ($server !== null) {
                     $result = $this->provisioning->provision($user, $server, $plainForHash);

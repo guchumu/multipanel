@@ -500,7 +500,24 @@ class MediaUserController extends Controller
 
         $user->save();
         $this->audit->log('media_user.created', 'media_user', (int) $user->id);
-        $this->notifications->notifyUserCreated($user->username, $user->email ?? 'N/A');
+
+        $serverName = $server !== null ? (string) $server->name : '';
+        $expiresAt = $user->expires_at ? (string) $user->expires_at : null;
+        $days = null;
+        if ($expiresAt !== null) {
+            $daysTs = strtotime(substr($expiresAt, 0, 10) . ' 12:00:00');
+            if ($daysTs !== false) {
+                $days = max(0, (int) ceil(($daysTs - time()) / 86400));
+            }
+        }
+        $this->notifications->notifyMediaUserCreated(
+            (string) ($user->email ?: $user->username ?: 'N/A'),
+            $serverName,
+            $days > 0 ? $days : null,
+            $expiresAt,
+            $tenantId,
+            (string) $user->username
+        );
 
         $flash = 'Usuario creado. Contraseña: ' . $password;
         $session = Session::getInstance();

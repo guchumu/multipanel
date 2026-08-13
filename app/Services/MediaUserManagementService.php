@@ -10,6 +10,7 @@ use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\PlexService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Notifications\TelegramChannel;
 
 /**
@@ -22,6 +23,7 @@ final class MediaUserManagementService
         private ServerRepository $servers = new ServerRepository(),
         private AuditService $audit = new AuditService(),
         private TelegramChannel $telegram = new TelegramChannel(),
+        private NotificationService $adminAlerts = new NotificationService(),
     ) {
     }
 
@@ -121,6 +123,20 @@ final class MediaUserManagementService
             'expires_at' => $newDate,
             'days_added' => $days,
         ]);
+
+        $serverName = '';
+        if (!empty($user->server_id)) {
+            $server = Server::find((int) $user->server_id);
+            $serverName = $server ? (string) $server->name : '';
+        }
+        $this->adminAlerts->notifyMediaUserRenewed(
+            (string) ($user->email ?: $user->username ?: ''),
+            $serverName,
+            $days,
+            $newDate,
+            (int) ($user->tenant_id ?? 1),
+            (string) ($user->username ?? '')
+        );
 
         return [
             'success' => true,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Notifications;
 
+use App\Services\AlertSettingsService;
 use Core\Database;
 use Core\Logger;
 use Core\Session;
@@ -16,14 +17,15 @@ final class NotificationService
     /** @var array<string, NotificationChannelInterface> */
     private array $channels = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        private AlertSettingsService $alerts = new AlertSettingsService(),
+    ) {
         $this->channels = [
             'email' => new EmailChannel(),
             'telegram' => new TelegramChannel(),
             'discord' => new DiscordChannel(),
             'webhook' => new WebhookChannel(),
-            'whatsapp' => new WhatsAppChannel(),
+            'whatsapp' => new WhatsAppChannel($this->alerts),
         ];
     }
 
@@ -42,7 +44,7 @@ final class NotificationService
         ?int $tenantId = null,
     ): array {
         $results = [];
-        $tenantId ??= Session::getInstance()->get('tenant_id', 1);
+        $tenantId ??= (int) (Session::getInstance()->get('tenant_id') ?? 1);
 
         foreach ($channels as $channelName) {
             $channel = $this->channels[$channelName] ?? null;
@@ -50,33 +52,146 @@ final class NotificationService
                 continue;
             }
 
-            $sent = $channel->send($title, $message, array_merge($data, ['event' => $type]));
+            $sent = $channel->send($title, $message, array_merge($data, [
+                'event' => $type,
+                'tenant_id' => $tenantId,
+            ]));
             $results[$channelName] = $sent;
 
-            Database::getInstance()->insert('notifications', [
-                'tenant_id' => $tenantId,
-                'user_id' => $userId,
-                'type' => $type,
-                'title' => $title,
-                'message' => $message,
-                'data' => json_encode($data),
-                'status' => $sent ? 'sent' : 'failed',
-                'sent_at' => $sent ? date('Y-m-d H:i:s') : null,
-            ]);
+            try {
+                Database::getInstance()->insert('notifications', [
+                    'tenant_id' => $tenantId,
+                    'user_id' => $userId,
+                    'type' => $type,
+                    'title' => $title,
+                    'message' => $message,
+                    'data' => json_encode($data),
+                    'status' => $sent ? 'sent' : 'failed',
+                    'sent_at' => $sent ? date('Y-m-d H:i:s') : null,
+                ]);
+            } catch (\Throwable) {
+                // Tabla notifications puede no existir aún; no bloquear el envío.
+            }
         }
 
         Logger::info("Notification dispatched: {$type}", $results);
         return $results;
     }
 
+    /**
+     * Canales admin para altas/renovaciones: Telegram + WhatsApp (si CallMeBot está listo).
+     * El email queda reservado a alertas de servidor caído.
+     *
+     * @return array<int, string>
+     */
+    public function adminLifecycleChannels(?int $tenantId = null): array
+    {
+        $channels = ['telegram'];
+        if ($this->alerts->whatsappConfigured($tenantId)) {
+            $channels[] = 'whatsapp';
+        }
+
+        return $channels;
+    }
+
     public function notifyUserCreated(string $username, string $email): void
     {
-        $this->notify(
-            'user.created',
-            'Nuevo usuario creado',
-            "Usuario: {$username}\nEmail: {$email}",
-            ['telegram', 'email']
+        $this->notifyMediaUserCreated(
+            email: $email !== '' ? $email : $username,
+            serverName: '',
+            days: null,
+            expiresAt: null,
+            tenantId: null,
+            username: $username,
         );
+    }
+
+    /**
+     * Aviso admin: alta de usuario media (panel, registro, quick-invite).
+     */
+    public function notifyMediaUserCreated(
+        string $email,
+        string $serverName = '',
+        ?int $days = null,
+        ?string $expiresAt = null,
+        ?int $tenantId = null,
+        string $username = '',
+    ): void {
+        $tenantId ??= (int) (Session::getInstance()->get('tenant_id') ?? 1);
+        $who = trim($email) !== '' ? trim($email) : (trim($username) !== '' ? trim($username) : 'sin email');
+        $bits = ["Alta: {$who}"];
+        if (trim($serverName) !== '') {
+            $bits[] = 'servidor ' . trim($serverName);
+        }
+        if ($days !== null && $days > 0) {
+            $bits[] = $days . ' días';
+        }
+        if ($expiresAt !== null && trim($expiresAt) !== '') {
+            $bits[] = 'hasta ' . substr(trim($expiresAt), 0, 10);
+        }
+
+        try {
+            $this->notify(
+                'media_user.created',
+                'Alta usuario',
+                implode(' · ', $bits),
+                $this->adminLifecycleChannels($tenantId),
+                [
+                    'email' => $who,
+                    'server' => $serverName,
+                    'days' => $days,
+                    'expires_at' => $expiresAt,
+                ],
+                null,
+                $tenantId
+            );
+        } catch (\Throwable $e) {
+            Logger::warning('Admin create alert failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Aviso admin: renovación (registro, Stripe, extensión manual, quick-invite update).
+     */
+    public function notifyMediaUserRenewed(
+        string $email,
+        string $serverName = '',
+        ?int $days = null,
+        ?string $expiresAt = null,
+        ?int $tenantId = null,
+        string $username = '',
+    ): void {
+        $tenantId ??= (int) (Session::getInstance()->get('tenant_id') ?? 1);
+        $who = trim($email) !== '' ? trim($email) : (trim($username) !== '' ? trim($username) : 'sin email');
+        $bits = ["Renovación: {$who}"];
+        if ($days !== null && $days > 0) {
+            $bits[] = '+' . $days . ' días';
+        }
+        if (trim($serverName) !== '') {
+            $bits[] = 'servidor ' . trim($serverName);
+        }
+        if ($expiresAt !== null && trim($expiresAt) !== '') {
+            $bits[] = 'nuevo vencimiento ' . substr(trim($expiresAt), 0, 10);
+        }
+
+        try {
+            $this->notify(
+                'media_user.renewed',
+                'Renovación usuario',
+                implode(' · ', $bits),
+                $this->adminLifecycleChannels($tenantId),
+                [
+                    'email' => $who,
+                    'server' => $serverName,
+                    'days' => $days,
+                    'expires_at' => $expiresAt,
+                ],
+                null,
+                $tenantId
+            );
+        } catch (\Throwable $e) {
+            Logger::warning('Admin renew alert failed', ['error' => $e->getMessage()]);
+        }
     }
 
     public function notifyServerDown(string $serverName): void
