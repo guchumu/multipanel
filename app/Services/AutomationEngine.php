@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\MediaUser;
 use App\Repositories\MediaUserRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Notifications\ServerDownAlertService;
 use Core\Database;
 use Core\Logger;
 
@@ -244,17 +245,12 @@ final class AutomationEngine
             }
         }
 
-        // Aviso servidor caído: solo si la regla "server.offline" está activa.
+        // Aviso servidor caído: diagnóstico + Telegram + email + WhatsApp (CallMeBot opcional)
+        // con escalado 0/5/15/30 min. Solo si la regla server.offline/down está activa.
         if ($this->hasActiveTrigger($tenantId, ['server.offline', 'server.down'])) {
-            $offlineServers = Database::getInstance()->fetchAll(
-                "SELECT name FROM servers
-                 WHERE tenant_id = ? AND status = 'offline'
-                   AND last_check_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
-                [$tenantId]
-            );
-
-            foreach ($offlineServers as $server) {
-                $this->notifications->notifyServerDown($server['name']);
+            $stats = (new ServerDownAlertService($this->notifications))->processOfflineServers($tenantId);
+            if (($stats['alerted'] ?? 0) > 0 || ($stats['cleared'] ?? 0) > 0) {
+                Logger::info('Built-in: server down alerts', $stats);
             }
         }
     }

@@ -38,13 +38,13 @@ final class CronService
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Ejecuta reglas activas (p. ej. aviso servidor caído) y acciones asociadas.',
+                'description' => 'Reglas activas; servidor caído: Telegram + email + WhatsApp (CallMeBot opcional), con diagnóstico y escalado 5/15/30 min.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
                 'title' => 'Avisos de caducidad',
-                'description' => 'Envía plantillas Telegram según días restantes y puede desactivar caducados.',
-                'schedule' => '1 vez al día (mañana)',
+                'description' => 'Envía plantillas Telegram según días restantes (solo ~09:00 Europe/Madrid; fuera de hora no marca enviado). Puede desactivar caducados.',
+                'schedule' => 'Incluido en all; solo envía a las 09:00 Madrid',
             ],
             'billing' => [
                 'title' => 'Facturación',
@@ -176,6 +176,12 @@ final class CronService
         $out('Sending expiry notifications...');
         try {
             $stats = (new ExpiryNotificationService())->run($tenantId);
+            if (!empty($stats['deferred'])) {
+                $sched = (new AlertSettingsService())->expiryNotifySchedule($tenantId);
+                $hh = str_pad((string) $sched['hour'], 2, '0', STR_PAD_LEFT);
+                $out("  Deferred: skipped until {$hh}:00 {$sched['timezone']} (no se marca como enviado).");
+                return;
+            }
             $out(sprintf(
                 '  Checked: %d, sent: %d, skipped: %d, errors: %d, deactivated: %d',
                 $stats['checked'],

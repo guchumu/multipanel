@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Notifications;
 
 use App\Models\MediaUser;
+use App\Services\AlertSettingsService;
 use App\Services\NotificationTemplateService;
 use Core\Database;
 use Core\Logger;
@@ -14,20 +15,37 @@ use DateTimeZone;
 
 /**
  * Sends Telegram reminders before/after media user expiry.
+ * Solo envía en la ventana horaria configurada (por defecto ~09:00 Europe/Madrid).
  */
 final class ExpiryNotificationService
 {
     public function __construct(
         private TelegramChannel $telegram = new TelegramChannel(),
         private NotificationTemplateService $templates = new NotificationTemplateService(),
+        private AlertSettingsService $alertSettings = new AlertSettingsService(),
     ) {
     }
 
-    /** @return array{sent: int, skipped: int, errors: int, checked: int, deactivated: int} */
+    /** @return array{sent: int, skipped: int, errors: int, checked: int, deactivated: int, deferred?: int} */
     public function run(int $tenantId = 1): array
     {
         if (!config('expiry_notifications.enabled', true)) {
             return ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
+        }
+
+        $schedule = $this->alertSettings->expiryNotifySchedule($tenantId);
+        if (!$this->isWithinNotifyWindow($schedule)) {
+            $tzLabel = $schedule['timezone'];
+            $hour = str_pad((string) $schedule['hour'], 2, '0', STR_PAD_LEFT);
+            Logger::info("Expiry notifications skipped until {$hour}:00 {$tzLabel} (no se marca como enviado)");
+            return [
+                'sent' => 0,
+                'skipped' => 0,
+                'errors' => 0,
+                'checked' => 0,
+                'deactivated' => 0,
+                'deferred' => 1,
+            ];
         }
 
         self::ensureExpiryNoticesTable();
@@ -37,7 +55,7 @@ final class ExpiryNotificationService
         $title = (string) config('expiry_notifications.title', 'Aviso de caducidad');
         $notifyAdmin = (bool) config('expiry_notifications.notify_admin', true);
         $deactivateOnExpiry = (bool) config('expiry_notifications.deactivate_on_expiry', true);
-        $tz = new DateTimeZone((string) config('app.timezone', 'Europe/Madrid'));
+        $tz = new DateTimeZone($schedule['timezone']);
         $today = new DateTimeImmutable('today', $tz);
 
         $stats = ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
@@ -130,6 +148,30 @@ final class ExpiryNotificationService
         }
 
         return $stats;
+    }
+
+    /**
+     * Ventana: hora configurada y minutos 0..(window-1), O toda la hora si aún no se envió el milestone
+     * (el dedup alreadySent evita reenvíos). Fuera de esa hora no se marca como enviado.
+     *
+     * @param array{hour: int, timezone: string, window_minutes: int} $schedule
+     */
+    private function isWithinNotifyWindow(array $schedule): bool
+    {
+        try {
+            $tz = new DateTimeZone($schedule['timezone']);
+        } catch (\Throwable) {
+            $tz = new DateTimeZone('Europe/Madrid');
+        }
+
+        $now = new DateTimeImmutable('now', $tz);
+        $hour = (int) $now->format('G');
+        $targetHour = (int) $schedule['hour'];
+
+        // Solo la hora objetivo (p. ej. 09:00–09:59 Europe/Madrid).
+        // window_minutes documenta la franja ideal del cron */5; el dedup por milestone
+        // evita reenvíos si el cron cae varias veces dentro de la hora.
+        return $hour === $targetHour;
     }
 
     /**

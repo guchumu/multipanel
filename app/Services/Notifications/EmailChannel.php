@@ -4,40 +4,56 @@ declare(strict_types=1);
 
 namespace App\Services\Notifications;
 
+use App\Services\MailConfig;
 use Core\Logger;
+use Core\Session;
 use PHPMailer\PHPMailer\Exception as MailException;
 use PHPMailer\PHPMailer\PHPMailer;
 
 /**
- * SMTP email notification channel.
+ * SMTP email notification channel (settings UI smtp + .env fallback).
  */
 final class EmailChannel implements NotificationChannelInterface
 {
     public function __construct(
         private ?string $to = null,
     ) {
-        $this->to ??= config('mail.from.address');
     }
 
     public function send(string $title, string $message, array $data = []): bool
     {
-        $recipient = $data['to'] ?? $this->to;
-        if (!$recipient) {
+        $tenantId = isset($data['tenant_id'])
+            ? (int) $data['tenant_id']
+            : (int) (Session::getInstance()->get('tenant_id') ?? 1);
+        $mailCfg = MailConfig::forTenant($tenantId);
+
+        $recipient = trim((string) ($data['to'] ?? $this->to ?? ''));
+        if ($recipient === '') {
+            $recipient = trim((string) $mailCfg['from_address']);
+        }
+        if ($recipient === '' || $mailCfg['host'] === '') {
+            Logger::debug('Email notification skipped: missing recipient or SMTP host');
             return false;
         }
 
         try {
             $mail = new PHPMailer(true);
             $mail->isSMTP();
-            $mail->Host = config('mail.host');
-            $mail->Port = config('mail.port');
-            $mail->SMTPAuth = (bool) config('mail.username');
-            $mail->Username = config('mail.username');
-            $mail->Password = config('mail.password');
-            $mail->SMTPSecure = config('mail.encryption') ?: PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Host = $mailCfg['host'];
+            $mail->Port = $mailCfg['port'];
+            $mail->SMTPAuth = $mailCfg['username'] !== '';
+            $mail->Username = $mailCfg['username'];
+            $mail->Password = $mailCfg['password'];
+            $encryption = strtolower($mailCfg['encryption']);
+            $mail->SMTPSecure = match ($encryption) {
+                'ssl' => PHPMailer::ENCRYPTION_SMTPS,
+                'none', '' => '',
+                default => PHPMailer::ENCRYPTION_STARTTLS,
+            };
             $mail->CharSet = 'UTF-8';
 
-            $mail->setFrom(config('mail.from.address'), config('mail.from.name'));
+            $from = $mailCfg['from_address'] !== '' ? $mailCfg['from_address'] : $recipient;
+            $mail->setFrom($from, $mailCfg['from_name'] !== '' ? $mailCfg['from_name'] : 'MultiPanel');
             $mail->addAddress($recipient);
             $mail->isHTML(true);
             $mail->Subject = $title;

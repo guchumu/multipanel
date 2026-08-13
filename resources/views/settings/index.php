@@ -85,7 +85,10 @@
                     <div class="mb-3">
                         <label class="form-label">Chat ID del admin (alertas)</label>
                         <input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>" placeholder="Ej. 123456789">
-                        <div class="form-text">Donde llegan avisos del panel (servidor caído, automatizaciones admin). No es el chat de cada cliente.</div>
+                        <div class="form-text">
+                            Donde llegan avisos del panel (servidor caído, automatizaciones admin). No es el chat de cada cliente.
+                            Al caer un servidor también se envía email (ver pestaña Cron) y WhatsApp si CallMeBot está configurado.
+                        </div>
                     </div>
 
                     <hr class="my-4">
@@ -149,10 +152,98 @@
 
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-clock-history me-1"></i>Avisos de caducidad (hora)</h6>
+                <p class="small text-muted">
+                    Aunque el cron <code>all</code> corra cada 5 minutos, los mensajes de caducidad a usuarios
+                    <strong>solo se envían</strong> en la hora local configurada (por defecto 09:00 Europe/Madrid).
+                    Fuera de esa hora se omite el envío y <em>no</em> se marca como enviado.
+                </p>
+                <form method="POST" action="/settings" class="row g-3">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="group" value="cron">
+                    <div class="col-md-3">
+                        <label class="form-label">Hora (0–23)</label>
+                        <input type="number" min="0" max="23" name="expiry_notify_hour" class="form-control"
+                               value="<?= e($settings['expiry_notify_hour'] ?? (string) config('expiry_notifications.notify_hour', 9)) ?>">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Zona horaria</label>
+                        <input name="expiry_notify_timezone" class="form-control"
+                               value="<?= e($settings['expiry_notify_timezone'] ?? (string) config('expiry_notifications.notify_timezone', 'Europe/Madrid')) ?>"
+                               placeholder="Europe/Madrid">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Ventana (minutos)</label>
+                        <input type="number" min="1" max="60" name="expiry_notify_window_minutes" class="form-control"
+                               value="<?= e($settings['expiry_notify_window_minutes'] ?? (string) config('expiry_notifications.notify_window_minutes', 15)) ?>">
+                        <div class="form-text">Preferido 15 → 09:00–09:14 con cron */5.</div>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary">Guardar hora de caducidad</button>
+                        <span class="form-text ms-2"><code>EXPIRY_NOTIFY_HOUR</code> / <code>EXPIRY_NOTIFY_TIMEZONE</code> en .env</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Alertas servidor caído</h6>
+                <p class="small text-muted mb-3">
+                    Al detectar un servidor offline (automatización): diagnóstico HTTP/DNS + Telegram admin + email + WhatsApp opcional.
+                    Reavisos a los 5 / 15 / 30 minutos si sigue caído (luego no spam).
+                </p>
+                <form method="POST" action="/settings" class="row g-3">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="group" value="alerts">
+                    <div class="col-md-6">
+                        <label class="form-label">Email de alertas admin</label>
+                        <input type="email" name="alert_email" class="form-control"
+                               value="<?= e($settings['alert_email'] ?? (string) config('alerts.email', 'alex@masquecero.es')) ?>"
+                               placeholder="alex@masquecero.es">
+                        <div class="form-text">Default / .env: <code>ALERT_EMAIL</code>. Requiere SMTP en la pestaña Email.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch mt-4">
+                            <input class="form-check-input" type="checkbox" name="whatsapp_enabled" value="1" id="waAlerts"
+                                   <?= !empty($settings['whatsapp_enabled']) && $settings['whatsapp_enabled'] !== '0' ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="waAlerts">Activar WhatsApp (CallMeBot)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Teléfono WhatsApp (con prefijo país)</label>
+                        <input name="whatsapp_phone" class="form-control" autocomplete="off"
+                               value="<?= e($settings['whatsapp_phone'] ?? '') ?>" placeholder="346xxxxxxxx">
+                        <div class="form-text">.env: <code>WHATSAPP_CALLMEBOT_PHONE</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">API key CallMeBot</label>
+                        <input type="password" name="whatsapp_apikey" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($settings['whatsapp_apikey']) ? '••••••••••' : 'apikey de CallMeBot' ?>">
+                        <div class="form-text">Déjala en blanco para no cambiar. .env: <code>WHATSAPP_CALLMEBOT_APIKEY</code></div>
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-light border small mb-0">
+                            <strong>WhatsApp gratis (CallMeBot):</strong>
+                            1) Añade el contacto de CallMeBot y envía <em>I allow callmebot to send me messages</em>.
+                            2) Te responden con el apikey.
+                            3) Guarda teléfono + apikey aquí.
+                            Alternativa de pago: Twilio / Meta Cloud API (no cableada; si no hay CallMeBot se omite WhatsApp sin fallar).
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary">Guardar alertas</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
                 <h6 class="mb-2">CLI (recomendado en VPS)</h6>
                 <pre class="bg-light p-3 small mb-2">*/5 * * * * php <?= e($cronCliBase) ?> all >> /var/log/multipanel-cron.log 2>&amp;1
 0 3 * * * php <?= e($cronCliBase) ?> backup
-0 9 * * * php <?= e($cronCliBase) ?> expiry</pre>
+# expiry va en «all»; solo envía ~09:00 Europe/Madrid (no hace falta cron aparte)</pre>
                 <p class="small text-muted mb-0">Ruta absoluta del script: <code><?= e($cronCliBase) ?></code></p>
             </div>
         </div>

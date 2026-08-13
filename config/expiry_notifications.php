@@ -15,6 +15,14 @@ return [
     'notify_admin' => env('EXPIRY_NOTIFY_ADMIN', true),
     'deactivate_on_expiry' => env('EXPIRY_DEACTIVATE_USER', true),
 
+    // Solo enviar avisos a usuarios en esta hora local (p. ej. 9 = 09:00–09:59).
+    // Así el cron */5 all no dispara caducidades a medianoche.
+    'notify_hour' => (int) env('EXPIRY_NOTIFY_HOUR', 9),
+    'notify_timezone' => env('EXPIRY_NOTIFY_TIMEZONE', 'Europe/Madrid'),
+    // Ventana en minutos desde XX:00 (09:00–09:14 con cron */5 ≈ un solo disparo).
+    // Si el cron cae más tarde dentro de la misma hora, también se permite (dedup por milestone).
+    'notify_window_minutes' => (int) env('EXPIRY_NOTIFY_WINDOW_MINUTES', 15),
+
     'milestones' => [10, 7, 5, 4, 3, 2, 1, 0, -1],
 
     'messages' => [

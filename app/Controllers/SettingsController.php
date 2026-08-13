@@ -210,7 +210,18 @@ class SettingsController extends Controller
                 'telegram_sandbox_chat_id',
                 'telegram_sandbox_copy_real',
             ],
-            'cron' => ['cron_token'],
+            'cron' => [
+                'cron_token',
+                'expiry_notify_hour',
+                'expiry_notify_timezone',
+                'expiry_notify_window_minutes',
+            ],
+            'alerts' => [
+                'alert_email',
+                'whatsapp_enabled',
+                'whatsapp_phone',
+                'whatsapp_apikey',
+            ],
             'discord' => ['discord_webhook_url'],
             'security' => ['rate_limit_max', 'session_lifetime'],
             default => ['app_name', 'app_timezone', 'app_locale'],
@@ -222,8 +233,16 @@ class SettingsController extends Controller
             $this->saveSetting($tenantId, 'telegram', 'telegram_sandbox_copy_real', $request->input('telegram_sandbox_copy_real') ? '1' : '0');
         }
 
+        if ($group === 'alerts') {
+            $this->saveSetting($tenantId, 'alerts', 'whatsapp_enabled', $request->input('whatsapp_enabled') ? '1' : '0');
+        }
+
         foreach ($fields as $field) {
-            if (in_array($field, ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real'], true)) {
+            if (in_array($field, ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real', 'whatsapp_enabled'], true)) {
+                continue;
+            }
+            // cron_token / whatsapp_apikey: vacío = no cambiar
+            if (in_array($field, ['cron_token', 'whatsapp_apikey'], true) && ($request->input($field) === null || $request->input($field) === '')) {
                 continue;
             }
             $value = $request->input($field);
@@ -236,6 +255,7 @@ class SettingsController extends Controller
             'telegram' => '#telegram',
             'cron' => '#cron',
             'smtp' => '#smtp',
+            'alerts' => '#cron',
             default => '',
         };
 

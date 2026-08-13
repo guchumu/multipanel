@@ -23,6 +23,7 @@ final class NotificationService
             'telegram' => new TelegramChannel(),
             'discord' => new DiscordChannel(),
             'webhook' => new WebhookChannel(),
+            'whatsapp' => new WhatsAppChannel(),
         ];
     }
 
@@ -80,7 +81,8 @@ final class NotificationService
 
     public function notifyServerDown(string $serverName): void
     {
-        // Solo Telegram admin (chat de Configuración). Discord opcional si está configurado.
+        // Compat: alerta mínima. El cron de automatización usa ServerDownAlertService
+        // (diagnóstico + email + WhatsApp + escalado 5/15/30).
         $this->notify(
             'server.down',
             'Servidor caído',
