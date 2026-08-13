@@ -31,7 +31,7 @@ final class PaymentService
         return match ($gateway) {
             'stripe' => new StripeGateway(
                 $this->billingSettings->getStripeSecretKey($tenantId),
-                $this->billingSettings->getStripeWebhookSecret($tenantId)
+                $this->billingSettings->getStripeWebhookSecretsForVerification($tenantId)
             ),
             'paypal' => new PayPalGateway(),
             'bizum' => new BizumGateway(),

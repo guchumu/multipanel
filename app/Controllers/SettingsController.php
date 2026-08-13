@@ -37,7 +37,9 @@ class SettingsController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $settings = $this->loadSettings($tenantId);
 
-        $stripeSecretKey = $this->billingSettings->getStripeSecretKey($tenantId);
+        $stripe = $this->billingSettings->getStripeUiState($tenantId);
+        $stripeMode = $stripe['mode'];
+        $activeStripe = $stripeMode === 'live' ? $stripe['live'] : $stripe['test'];
 
         $appUrl = rtrim((string) config('app.url', ''), '/');
         $cronToken = trim((string) ($settings['cron_token'] ?? env('CRON_TOKEN', '')));
@@ -45,9 +47,6 @@ class SettingsController extends Controller
         $appUrlLooksLocal = $appUrl === ''
             || str_contains($appUrl, 'localhost')
             || str_contains($appUrl, '127.0.0.1');
-        $stripeMode = str_starts_with($stripeSecretKey, 'sk_live_') || str_starts_with($stripeSecretKey, 'rk_live_')
-            ? 'live'
-            : (str_starts_with($stripeSecretKey, 'sk_test_') || str_starts_with($stripeSecretKey, 'rk_test_') ? 'test' : null);
 
         return $this->view('settings.index', [
             'title' => 'Configuración',
@@ -55,11 +54,13 @@ class SettingsController extends Controller
             'user' => $this->auth->user(),
             'paymentConcept' => $this->billingSettings->getPaymentConcept($tenantId),
             'renewalPresets' => $this->billingSettings->getRenewalPresets($tenantId),
-            'stripeSecretKeyMasked' => $this->maskKey($stripeSecretKey),
-            'stripeHasSecretKey' => trim($stripeSecretKey) !== '',
-            'stripePublishableKey' => $this->billingSettings->getStripePublishableKey($tenantId),
-            'stripeHasWebhookSecret' => trim($this->billingSettings->getStripeWebhookSecret($tenantId)) !== '',
             'stripeMode' => $stripeMode,
+            'stripeHasSecretKey' => $stripe['active_configured'],
+            'stripeSecretKeyMasked' => (string) $activeStripe['secret_masked'],
+            'stripePublishableKey' => (string) $activeStripe['publishable'],
+            'stripeHasWebhookSecret' => (bool) $activeStripe['has_webhook'],
+            'stripeTest' => $stripe['test'],
+            'stripeLive' => $stripe['live'],
             'appUrl' => $appUrl,
             'appUrlLooksLocal' => $appUrlLooksLocal,
             'cronCatalog' => CronService::catalog(),
@@ -187,13 +188,31 @@ class SettingsController extends Controller
     }
 
     /**
-     * Ping a la API de Stripe con la secret key guardada (o la pegada en el formulario).
+     * Ping a la API de Stripe con la secret key del modo activo (o la pegada en el formulario).
      * No guarda claves ni crea cobros.
      */
     public function testStripe(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $posted = trim((string) $request->input('stripe_secret_key', ''));
+        $mode = $this->billingSettings->getStripeMode($tenantId);
+
+        $postedTest = trim((string) $request->input('stripe_secret_key_test', ''));
+        $postedLive = trim((string) $request->input('stripe_secret_key_live', ''));
+        // Compatibilidad con el campo antiguo de una sola clave.
+        $postedLegacy = trim((string) $request->input('stripe_secret_key', ''));
+
+        $posted = $mode === 'live'
+            ? ($postedLive !== '' ? $postedLive : $postedLegacy)
+            : ($postedTest !== '' ? $postedTest : $postedLegacy);
+
+        // Si el usuario pegó la clave del otro modo en el form, úsala (y avisa del modo).
+        if ($posted === '' && $postedTest !== '') {
+            $posted = $postedTest;
+        }
+        if ($posted === '' && $postedLive !== '') {
+            $posted = $postedLive;
+        }
+
         $secret = $posted !== ''
             ? $posted
             : $this->billingSettings->getStripeSecretKey($tenantId);
@@ -201,7 +220,7 @@ class SettingsController extends Controller
         if (trim($secret) === '') {
             Session::getInstance()->flash(
                 'error',
-                'No hay clave secreta de Stripe. Pégala arriba y pulsa Guardar facturación, o rellénala y vuelve a probar.'
+                'No hay clave secreta de Stripe para el modo activo (' . $mode . '). Pégala en la sección correspondiente y pulsa Guardar, o rellénala y vuelve a probar.'
             );
             return $this->redirect('/settings#billing');
         }
@@ -237,19 +256,26 @@ class SettingsController extends Controller
 
         $this->billingSettings->saveRenewalPresets($tenantId, $presets);
 
-        $stripeErrors = $this->billingSettings->saveStripeKeys(
-            $tenantId,
-            $request->input('stripe_secret_key') ? (string) $request->input('stripe_secret_key') : null,
-            $request->input('stripe_publishable_key') ? (string) $request->input('stripe_publishable_key') : null,
-            $request->input('stripe_webhook_secret') ? (string) $request->input('stripe_webhook_secret') : null,
-        );
+        $stripeErrors = $this->billingSettings->saveStripeConfig($tenantId, [
+            'mode' => (string) $request->input('stripe_mode', 'test'),
+            'test_secret' => $request->input('stripe_secret_key_test') ? (string) $request->input('stripe_secret_key_test') : null,
+            'test_publishable' => $request->input('stripe_publishable_key_test') ? (string) $request->input('stripe_publishable_key_test') : null,
+            'test_webhook' => $request->input('stripe_webhook_secret_test') ? (string) $request->input('stripe_webhook_secret_test') : null,
+            'live_secret' => $request->input('stripe_secret_key_live') ? (string) $request->input('stripe_secret_key_live') : null,
+            'live_publishable' => $request->input('stripe_publishable_key_live') ? (string) $request->input('stripe_publishable_key_live') : null,
+            'live_webhook' => $request->input('stripe_webhook_secret_live') ? (string) $request->input('stripe_webhook_secret_live') : null,
+        ]);
 
         if ($stripeErrors !== []) {
             Session::getInstance()->flash('error', implode(' ', $stripeErrors));
             return $this->redirect('/settings#billing');
         }
 
-        Session::getInstance()->flash('success', 'Configuración de facturación guardada.');
+        $mode = $this->billingSettings->getStripeMode($tenantId);
+        Session::getInstance()->flash(
+            'success',
+            'Configuración de facturación guardada. Modo Stripe activo: ' . $mode . '.'
+        );
         return $this->redirect('/settings#billing');
     }
 

@@ -125,6 +125,67 @@ final class StripeGatewayTest extends TestCase
         $this->assertStringContainsString('clave pública', $result['message']);
     }
 
+    public function testWebhookAcceptsActiveSecretFirst(): void
+    {
+        $payload = '{"id":"evt_1","type":"checkout.session.completed","data":{"object":{"id":"cs_1","amount_total":1500,"currency":"eur","metadata":{}}}}';
+        $secret = 'whsec_active_secret_for_tests';
+        $ts = (string) time();
+        $sig = hash_hmac('sha256', $ts . '.' . $payload, $secret);
+
+        $gateway = new StripeGateway(
+            'sk_test_' . str_repeat('e', 24),
+            [$secret, 'whsec_other_unused'],
+            $this->unusedClient()
+        );
+
+        $result = $gateway->handleWebhook($payload, [
+            'Stripe-Signature' => 't=' . $ts . ',v1=' . $sig,
+        ]);
+
+        $this->assertIsArray($result);
+        $this->assertSame('payment.completed', $result['event']);
+    }
+
+    public function testWebhookFallsBackToSecondSecret(): void
+    {
+        $payload = '{"id":"evt_2","type":"checkout.session.completed","data":{"object":{"id":"cs_2","amount_total":990,"currency":"eur","metadata":{}}}}';
+        $active = 'whsec_active_wrong';
+        $other = 'whsec_fallback_ok';
+        $ts = (string) time();
+        $sig = hash_hmac('sha256', $ts . '.' . $payload, $other);
+
+        $gateway = new StripeGateway(
+            'sk_test_' . str_repeat('f', 24),
+            [$active, $other],
+            $this->unusedClient()
+        );
+
+        $result = $gateway->handleWebhook($payload, [
+            'Stripe-Signature' => 't=' . $ts . ',v1=' . $sig,
+        ]);
+
+        $this->assertIsArray($result);
+        $this->assertSame('payment.completed', $result['event']);
+    }
+
+    public function testWebhookRejectsBadSignature(): void
+    {
+        $payload = '{"id":"evt_3","type":"checkout.session.completed","data":{"object":{"id":"cs_3"}}}';
+        $ts = (string) time();
+
+        $gateway = new StripeGateway(
+            'sk_test_' . str_repeat('g', 24),
+            ['whsec_only'],
+            $this->unusedClient()
+        );
+
+        $result = $gateway->handleWebhook($payload, [
+            'Stripe-Signature' => 't=' . $ts . ',v1=' . str_repeat('a', 64),
+        ]);
+
+        $this->assertNull($result);
+    }
+
     private function unusedClient(): Client
     {
         $mock = new MockHandler([

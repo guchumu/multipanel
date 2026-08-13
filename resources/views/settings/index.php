@@ -325,18 +325,24 @@
                     <?= csrf_field() ?>
 
                     <div class="mb-4 p-3 border rounded bg-light">
-                        <h6 class="d-flex align-items-center gap-2">
+                        <h6 class="d-flex align-items-center gap-2 flex-wrap">
                             <i class="bi bi-credit-card-2-front text-primary"></i>Conexión con Stripe
                             <?php if ($stripeHasSecretKey): ?>
-                            <span class="badge bg-success">Configurado<?= $stripeMode ? ' · ' . e($stripeMode) : '' ?></span>
+                            <span class="badge bg-success">Configurado · <?= e($stripeMode) ?></span>
                             <?php else: ?>
-                            <span class="badge bg-warning text-dark">Sin configurar</span>
+                            <span class="badge bg-warning text-dark">Sin configurar · <?= e($stripeMode) ?></span>
+                            <?php endif; ?>
+                            <?php if ($stripeMode === 'live'): ?>
+                            <span class="badge bg-danger">Modo Live activo</span>
+                            <?php else: ?>
+                            <span class="badge bg-secondary">Modo Test activo</span>
                             <?php endif; ?>
                         </h6>
                         <p class="form-text mt-0">
-                            Pega aquí tus claves de <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">dashboard.stripe.com/apikeys</a>.
-                            Sin la <strong>Secret key</strong>, los botones de «Cobro con Stripe» no pueden generar enlaces de pago.
-                            Usa siempre el mismo modo: <code>sk_test_</code> + <code>pk_test_</code> (pruebas) o <code>sk_live_</code> + <code>pk_live_</code> (producción).
+                            Guarda las claves de <strong>Test</strong> y <strong>Live</strong> a la vez y cambia el modo sin volver a pegarlas.
+                            Checkout y «Probar conexión» usan siempre el <strong>modo activo</strong>.
+                            Claves en <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">dashboard.stripe.com/apikeys</a>
+                            (cambia el interruptor Test/Live del propio Stripe para copiar cada juego).
                         </p>
                         <?php if (!empty($appUrlLooksLocal)): ?>
                         <div class="alert alert-warning py-2 small mb-3">
@@ -345,45 +351,96 @@
                             <code>APP_URL=https://tudominio.com</code>, y reinicia PHP-FPM. Si no, Stripe puede rechazar el checkout (sobre todo con claves live).
                         </div>
                         <?php endif; ?>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Modo activo</label>
+                            <div class="btn-group" role="group" aria-label="Modo Stripe">
+                                <input type="radio" class="btn-check" name="stripe_mode" id="stripeModeTest" value="test"
+                                       <?= $stripeMode === 'test' ? 'checked' : '' ?> autocomplete="off">
+                                <label class="btn btn-outline-secondary" for="stripeModeTest">Test</label>
+                                <input type="radio" class="btn-check" name="stripe_mode" id="stripeModeLive" value="live"
+                                       <?= $stripeMode === 'live' ? 'checked' : '' ?> autocomplete="off">
+                                <label class="btn btn-outline-danger" for="stripeModeLive">Live</label>
+                            </div>
+                            <div class="form-text">Al guardar, este modo queda activo para nuevos checkouts. Los webhooks aceptan firma de ambos secretos (activo primero).</div>
+                        </div>
+
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label small">Clave secreta (Secret key, empieza por <code>sk_</code>)</label>
-                                <input type="password" name="stripe_secret_key" class="form-control" autocomplete="off"
-                                       placeholder="<?= $stripeHasSecretKey ? e($stripeSecretKeyMasked) : 'sk_live_... o sk_test_...' ?>">
-                                <div class="form-text">Obligatoria para crear pagos. Déjala en blanco para no cambiar la ya guardada. <em>No</em> pegues aquí la <code>pk_</code>.</div>
+                            <div class="col-lg-6">
+                                <div class="border rounded p-3 h-100 <?= $stripeMode === 'test' ? 'border-primary' : '' ?>">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <strong><i class="bi bi-flask me-1"></i>Claves Test</strong>
+                                        <?php if (!empty($stripeTest['has_secret'])): ?>
+                                        <span class="badge bg-success">sk_test guardada</span>
+                                        <?php else: ?>
+                                        <span class="badge bg-light text-dark border">Vacío</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Secret key (<code>sk_test_</code>)</label>
+                                        <input type="password" name="stripe_secret_key_test" class="form-control form-control-sm" autocomplete="off"
+                                               placeholder="<?= !empty($stripeTest['has_secret']) ? e($stripeTest['secret_masked']) : 'sk_test_...' ?>">
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Publishable key (<code>pk_test_</code>)</label>
+                                        <input type="text" name="stripe_publishable_key_test" class="form-control form-control-sm" autocomplete="off"
+                                               value="<?= e($stripeTest['publishable'] ?? '') ?>" placeholder="pk_test_...">
+                                    </div>
+                                    <div>
+                                        <label class="form-label small">
+                                            Webhook secret (<code>whsec_</code>)
+                                            <?php if (!empty($stripeTest['has_webhook'])): ?><span class="badge bg-success ms-1">OK</span><?php endif; ?>
+                                        </label>
+                                        <input type="password" name="stripe_webhook_secret_test" class="form-control form-control-sm" autocomplete="off"
+                                               placeholder="<?= !empty($stripeTest['has_webhook']) ? '••••••••••' : 'whsec_...' ?>">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">Clave pública (Publishable key, empieza por <code>pk_</code>)</label>
-                                <input type="text" name="stripe_publishable_key" class="form-control" autocomplete="off"
-                                       value="<?= e($stripePublishableKey) ?>" placeholder="pk_live_... o pk_test_...">
-                                <div class="form-text">Opcional en este panel (el checkout lo crea el servidor con la secret). Debe ser del mismo modo que la secret.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">
-                                    Webhook signing secret (empieza por <code>whsec_</code>)
-                                    <?php if ($stripeHasWebhookSecret): ?><span class="badge bg-success ms-1">Configurado</span><?php endif; ?>
-                                </label>
-                                <input type="password" name="stripe_webhook_secret" class="form-control" autocomplete="off"
-                                       placeholder="<?= $stripeHasWebhookSecret ? '••••••••••' : 'whsec_...' ?>">
-                                <div class="form-text">
-                                    <strong>Necesario para renovar automáticamente</strong> tras el pago (sumar días al usuario).
-                                    Crear el enlace de pago no lo requiere; confirmar el cobro sí.
-                                    En Stripe → Developers → Webhooks, endpoint
-                                    <code><?= e(($appUrl !== '' ? rtrim($appUrl, '/') : 'https://TU-DOMINIO')) ?>/webhooks/payment/stripe</code>
-                                    escuchando <code>checkout.session.completed</code>, y pega aquí el «Signing secret».
+                            <div class="col-lg-6">
+                                <div class="border rounded p-3 h-100 <?= $stripeMode === 'live' ? 'border-danger' : '' ?>">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <strong><i class="bi bi-lightning-charge me-1"></i>Claves Live</strong>
+                                        <?php if (!empty($stripeLive['has_secret'])): ?>
+                                        <span class="badge bg-success">sk_live guardada</span>
+                                        <?php else: ?>
+                                        <span class="badge bg-light text-dark border">Vacío</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Secret key (<code>sk_live_</code>)</label>
+                                        <input type="password" name="stripe_secret_key_live" class="form-control form-control-sm" autocomplete="off"
+                                               placeholder="<?= !empty($stripeLive['has_secret']) ? e($stripeLive['secret_masked']) : 'sk_live_...' ?>">
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Publishable key (<code>pk_live_</code>)</label>
+                                        <input type="text" name="stripe_publishable_key_live" class="form-control form-control-sm" autocomplete="off"
+                                               value="<?= e($stripeLive['publishable'] ?? '') ?>" placeholder="pk_live_...">
+                                    </div>
+                                    <div>
+                                        <label class="form-label small">
+                                            Webhook secret (<code>whsec_</code>)
+                                            <?php if (!empty($stripeLive['has_webhook'])): ?><span class="badge bg-success ms-1">OK</span><?php endif; ?>
+                                        </label>
+                                        <input type="password" name="stripe_webhook_secret_live" class="form-control form-control-sm" autocomplete="off"
+                                               placeholder="<?= !empty($stripeLive['has_webhook']) ? '••••••••••' : 'whsec_...' ?>">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <p class="form-text mb-0 mt-2">
-                            Si al generar el enlace falla, el panel mostrará el mensaje real de Stripe (clave inválida, URL, importe, etc.).
-                            También puedes revisar <code>storage/logs/multipanel.log</code>.
-                        </p>
+
+                        <div class="form-text mt-3 mb-0">
+                            <strong>Webhooks:</strong> registra el mismo endpoint en el dashboard Test y en el Live:
+                            <code><?= e(($appUrl !== '' ? rtrim($appUrl, '/') : 'https://TU-DOMINIO')) ?>/webhooks/payment/stripe</code>
+                            escuchando <code>checkout.session.completed</code>.
+                            Pega aquí <em>ambos</em> Signing secrets (<code>whsec_</code>); MultiPanel verifica primero el del modo activo y, si falla, el otro.
+                            Campos vacíos no borran la clave ya guardada.
+                        </div>
                         <div class="mt-3">
                             <button type="submit" class="btn btn-outline-primary btn-sm" formaction="/settings/stripe/test"
-                                    title="Comprueba la secret key contra la API de Stripe (no crea cobros)">
+                                    title="Comprueba la secret key del modo activo contra la API de Stripe (no crea cobros)">
                                 <i class="bi bi-plug me-1"></i>Probar conexión Stripe
                             </button>
-                            <span class="form-text ms-2">Usa la clave ya guardada, o la que hayas pegado arriba sin guardar aún.</span>
+                            <span class="form-text ms-2">Usa la secret del modo activo (guardada o pegada arriba sin guardar).</span>
                         </div>
                     </div>
 

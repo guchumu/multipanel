@@ -16,17 +16,37 @@ final class StripeGateway implements PaymentGatewayInterface
 {
     private Client $client;
 
+    /** @var list<string> */
+    private array $webhookSecrets;
+
+    /**
+     * @param string|list<string> $webhookSecret Un secreto o varios (activo primero, luego el otro modo).
+     */
     public function __construct(
         private string $secretKey = '',
-        private string $webhookSecret = '',
+        string|array $webhookSecret = '',
         ?Client $client = null,
     ) {
         $this->secretKey = $secretKey !== ''
             ? trim($secretKey)
             : trim((string) config('payments.stripe.secret_key', env('STRIPE_SECRET_KEY', '')));
-        $this->webhookSecret = $webhookSecret !== ''
-            ? trim($webhookSecret)
-            : trim((string) config('payments.stripe.webhook_secret', env('STRIPE_WEBHOOK_SECRET', '')));
+
+        if (is_array($webhookSecret)) {
+            $secrets = [];
+            foreach ($webhookSecret as $s) {
+                $s = trim((string) $s);
+                if ($s !== '' && !in_array($s, $secrets, true)) {
+                    $secrets[] = $s;
+                }
+            }
+            $this->webhookSecrets = $secrets;
+        } else {
+            $single = trim($webhookSecret);
+            if ($single === '') {
+                $single = trim((string) config('payments.stripe.webhook_secret', env('STRIPE_WEBHOOK_SECRET', '')));
+            }
+            $this->webhookSecrets = $single !== '' ? [$single] : [];
+        }
 
         $this->client = $client ?? new Client([
             'base_uri' => 'https://api.stripe.com/v1/',
@@ -309,7 +329,7 @@ final class StripeGateway implements PaymentGatewayInterface
      */
     private function verifySignature(string $payload, array $headers): bool
     {
-        if ($this->webhookSecret === '') {
+        if ($this->webhookSecrets === []) {
             Logger::warning('STRIPE_WEBHOOK_SECRET no configurado: se acepta el webhook sin verificar la firma');
             return true;
         }
@@ -346,11 +366,16 @@ final class StripeGateway implements PaymentGatewayInterface
             return false;
         }
 
-        $expected = hash_hmac('sha256', $timestamp . '.' . $payload, $this->webhookSecret);
+        $signedPayload = $timestamp . '.' . $payload;
 
-        foreach ($signatures as $sig) {
-            if (hash_equals($expected, $sig)) {
-                return true;
+        // Probar secreto del modo activo primero y, si falla, el del otro modo
+        // (mismo URL en dashboard Test y Live).
+        foreach ($this->webhookSecrets as $secret) {
+            $expected = hash_hmac('sha256', $signedPayload, $secret);
+            foreach ($signatures as $sig) {
+                if (hash_equals($expected, $sig)) {
+                    return true;
+                }
             }
         }
 
