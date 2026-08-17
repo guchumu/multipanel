@@ -145,8 +145,9 @@
             <div class="card-body">
                 <h6 class="mb-2"><i class="bi bi-whatsapp me-1"></i>Alertas WhatsApp (admin)</h6>
                 <p class="small text-muted mb-3">
-                    CallMeBot para el admin. Por defecto: <strong>resumen diario</strong> y <strong>servidor caído</strong> por WhatsApp;
-                    altas/renovaciones solo por Telegram (menos spam). Puedes cambiarlo abajo.
+                    CallMeBot para el admin. Por defecto WhatsApp recibe: <strong>resumen diario</strong>,
+                    <strong>servidor caído</strong> y <strong>altas</strong>; las renovaciones van por Telegram
+                    (salvo que actives WhatsApp abajo). Puedes cambiarlo en los toggles.
                     Si acabas de pedir el apikey a CallMeBot, la espera de ~24&nbsp;h es normal.
                 </p>
                 <form method="POST" action="/settings" class="row g-3" id="whatsappAlertsForm">
@@ -185,7 +186,7 @@
                     <div class="col-12"><hr class="my-1"></div>
                     <div class="col-12">
                         <h6 class="mb-1">Qué avisos enviar</h6>
-                        <p class="small text-muted mb-2">Menos es más: WhatsApp para lo crítico (caídas + resumen); Telegram para el día a día.</p>
+                        <p class="small text-muted mb-2">WhatsApp: digest + caídas + altas; renovaciones por Telegram salvo que actives el toggle.</p>
                     </div>
 
                     <div class="col-md-6">
@@ -233,8 +234,8 @@
                             </div>
                             <div class="form-check form-switch mb-0">
                                 <input class="form-check-input" type="checkbox" name="whatsapp_notify_alta" value="1" id="waAlta"
-                                       <?= $alertOn('whatsapp_notify_alta', false) ? 'checked' : '' ?>>
-                                <label class="form-check-label" for="waAlta">WhatsApp <span class="text-muted">(off por defecto)</span></label>
+                                       <?= $alertOn('whatsapp_notify_alta', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waAlta">WhatsApp <span class="text-muted">(on por defecto)</span></label>
                             </div>
                         </div>
                     </div>

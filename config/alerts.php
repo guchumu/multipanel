@@ -18,8 +18,9 @@ return [
     'whatsapp_api_url' => env('WHATSAPP_CALLMEBOT_URL', 'https://api.callmebot.com/whatsapp.php'),
 
     // Preferencias por evento (DB settings.group=alerts tiene prioridad).
-    // WhatsApp: digest + server-down ON; alta/renovación OFF (menos spam CallMeBot).
-    'whatsapp_notify_alta' => false,
+    // WhatsApp: digest + server-down + alta ON; renovación OFF (menos spam CallMeBot).
+    // Si la clave ya está en DB como 0, se respeta; solo aplica si falta la clave.
+    'whatsapp_notify_alta' => true,
     'whatsapp_notify_renew' => false,
     'whatsapp_notify_server_down' => true,
     'whatsapp_notify_digest' => true,

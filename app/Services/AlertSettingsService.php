@@ -108,12 +108,13 @@ final class AlertSettingsService
 
     /**
      * Preferencias por tipo de aviso admin.
-     * WhatsApp: digest + server-down ON por defecto; alta/renovación OFF.
+     * WhatsApp: digest + server-down + alta ON por defecto; renovación OFF.
      * Telegram: digest + ciclo de vida + server-down ON por defecto.
+     * Clave ausente en DB → default; valor explícito 0/1 se respeta.
      */
     public function whatsappNotifyAlta(?int $tenantId = null): bool
     {
-        return $this->alertFlag('whatsapp_notify_alta', false, $tenantId);
+        return $this->alertFlag('whatsapp_notify_alta', true, $tenantId);
     }
 
     public function whatsappNotifyRenew(?int $tenantId = null): bool

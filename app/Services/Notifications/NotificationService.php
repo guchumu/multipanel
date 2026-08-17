@@ -80,7 +80,7 @@ final class NotificationService
 
     /**
      * Canales admin para altas/renovaciones según toggles.
-     * Telegram ON por defecto; WhatsApp OFF por defecto (CallMeBot no es para spam de altas).
+     * Alta: Telegram + WhatsApp ON por defecto. Renovación: Telegram ON, WhatsApp OFF.
      *
      * @param 'created'|'renewed' $event
      * @return array<int, string>
