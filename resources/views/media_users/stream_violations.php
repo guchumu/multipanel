@@ -9,7 +9,7 @@ ob_start();
         <a href="/media-users" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Usuarios</a>
         <h4 class="mb-0 mt-1">Incumplimientos de streams</h4>
         <p class="text-muted small mb-0">
-            Quién superó el límite de reproducciones simultáneas y qué se cortó.
+            Quién superó el límite de reproducciones simultáneas (se registra aunque el corte automático esté desactivado).
             Límite por defecto del tenant: <?= (int) $defaultMaxStreams ?> ·
             Aplicación automática: <?= !empty($enforcementEnabled) ? 'activa' : 'desactivada' ?>
         </p>
@@ -67,9 +67,13 @@ ob_start();
                         }
                         $ips = array_values(array_unique($ips));
                     }
-                    $actionLabel = (($v['action'] ?? '') === 'kill_newest_ips')
-                        ? 'Cortar IPs más recientes'
-                        : 'Cortar sesiones más recientes';
+                    $action = (string) ($v['action'] ?? '');
+                    $actionLabel = match ($action) {
+                        'kill_newest_ips' => 'Cortar IPs más recientes',
+                        'kill_newest' => 'Cortar sesiones más recientes',
+                        'detected' => 'Detectado (sin corte)',
+                        default => $action !== '' ? $action : 'Detectado',
+                    };
                 ?>
                 <tr>
                     <td class="small text-nowrap"><?= e($v['at'] ?? '') ?></td>
@@ -90,7 +94,7 @@ ob_start();
                         <div class="text-muted">IPs: <code><?= e(implode(', ', $ips)) ?></code></div>
                         <?php endif; ?>
                         <div class="text-muted">
-                            <?= e($actionLabel) ?> (<?= count($killed) ?> sesión/es)
+                            <?= e($actionLabel) ?><?= $killed !== [] ? ' (' . count($killed) . ' sesión/es)' : '' ?>
                         </div>
                     </td>
                     <td>

@@ -26,10 +26,21 @@ use Core\Logger;
  * Policy distinct_ip when over limit: keep the N oldest IPs (first seen in the
  * session list); kill ALL sessions from the newest excess IP(s).
  * Policy sessions: keep highest-progress sessions; kill newest/excess.
+ *
+ * Logging: siempre se registra en stream_limit_violations al superar el límite
+ * (con debounce por huella de sesiones/IPs). El corte solo si enforcement_enabled.
  */
 final class ConcurrentStreamLimitService
 {
     private const KILL_DEBOUNCE_TTL = 60;
+
+    /**
+     * Debounce de log: misma huella (IPs + session_ids + count/limit) no reinserta.
+     * Se limpia al volver bajo el límite; TTL largo solo por higiene de caché.
+     * Preferencia: registrar al cruzar el límite o cuando cambia el set de sesiones/IPs,
+     * no en cada tick del cron (~5 min).
+     */
+    private const VIOLATION_FP_TTL = 86400;
 
     public function __construct(
         private StreamLimitSettingsService $settings = new StreamLimitSettingsService(),
@@ -37,7 +48,8 @@ final class ConcurrentStreamLimitService
     }
 
     /**
-     * Annotate sessions with media_user match / limit info, and kill excess if enabled.
+     * Annotate sessions with media_user match / limit info, log over-limit violations,
+     * and kill excess only if enforcement is enabled.
      *
      * @param array<int, array<string, mixed>> $sessions
      * @return array{sessions: array<int, array<string, mixed>>, killed: int, violations: int}
@@ -103,7 +115,9 @@ final class ConcurrentStreamLimitService
                 $sessions[$idx]['count_mode'] = $countMode;
             }
 
-            if (!$enforce || $excessIndexes === []) {
+            if ($count <= $limit) {
+                $this->clearViolationFingerprint((int) $mediaUserId);
+
                 continue;
             }
 
@@ -127,76 +141,98 @@ final class ConcurrentStreamLimitService
                 ];
             }
 
-            foreach ($excessIndexes as $idx) {
-                $sessionId = trim((string) ($sessions[$idx]['session_id'] ?? ''));
-                $sid = (int) ($sessions[$idx]['server_id'] ?? 0);
-                if ($sessionId === '' || $sid <= 0) {
-                    continue;
-                }
+            $clientIps = array_values(array_keys($allIps));
+            if ($distinctIps !== []) {
+                $clientIps = array_values(array_unique(array_merge($clientIps, $distinctIps)));
+            }
 
-                $debounceKey = 'stream_limit_kill_' . $sid . '_' . $sessionId;
-                if (Cache::get($debounceKey)) {
-                    $killIndexes[$idx] = true;
-                    $killedIds[] = $sessionId;
-                    continue;
-                }
+            // Enforce (kick) solo si está activado; el log de incumplimiento va aparte.
+            if ($enforce && $excessIndexes !== []) {
+                foreach ($excessIndexes as $idx) {
+                    $sessionId = trim((string) ($sessions[$idx]['session_id'] ?? ''));
+                    $sid = (int) ($sessions[$idx]['server_id'] ?? 0);
+                    if ($sessionId === '' || $sid <= 0) {
+                        continue;
+                    }
 
-                $server = Server::find($sid);
-                if ($server === null || (int) $server->tenant_id !== $tenantId) {
-                    continue;
-                }
+                    $debounceKey = 'stream_limit_kill_' . $sid . '_' . $sessionId;
+                    if (Cache::get($debounceKey)) {
+                        $killIndexes[$idx] = true;
+                        $killedIds[] = $sessionId;
+                        continue;
+                    }
 
-                $ok = $this->terminateSession($server, $sessionId, $killMessage);
+                    $server = Server::find($sid);
+                    if ($server === null || (int) $server->tenant_id !== $tenantId) {
+                        continue;
+                    }
 
-                if ($ok) {
-                    Cache::set($debounceKey, 1, self::KILL_DEBOUNCE_TTL);
-                    $killIndexes[$idx] = true;
-                    $killedIds[] = $sessionId;
-                    $killedTotal++;
+                    $ok = $this->terminateSession($server, $sessionId, $killMessage);
+
+                    if ($ok) {
+                        Cache::set($debounceKey, 1, self::KILL_DEBOUNCE_TTL);
+                        $killIndexes[$idx] = true;
+                        $killedIds[] = $sessionId;
+                        $killedTotal++;
+                    }
                 }
             }
 
-            if ($killedIds !== []) {
-                $violations++;
-                $action = $distinctIp ? 'kill_newest_ips' : 'kill_newest';
-                $clientIps = array_values(array_keys($allIps));
-                if ($distinctIps !== []) {
-                    $clientIps = array_values(array_unique(array_merge($clientIps, $distinctIps)));
-                }
+            $fingerprint = $this->violationFingerprint(
+                $allSessionIds,
+                $clientIps,
+                $count,
+                $limit,
+                $distinctIp ? 'distinct_ip' : 'sessions'
+            );
 
-                $this->logViolation(
-                    $tenantId,
-                    $mediaUserId,
-                    $serverId > 0 ? $serverId : null,
-                    $username,
-                    $count,
-                    $limit,
-                    $allSessionIds,
-                    $killedIds,
-                    $titles,
-                    $killMessage,
-                    $action,
-                    $clientIps
-                );
-
-                AuditService::log(
-                    'media_user.stream_limit_enforced',
-                    'media_user',
-                    $mediaUserId,
-                    null,
-                    [
-                        'stream_count' => $count,
-                        'limit' => $limit,
-                        'count_mode' => $countMode,
-                        'client_ips' => $clientIps,
-                        'killed_session_ids' => $killedIds,
-                        'action' => $action,
-                        'server_id' => $serverId,
-                    ],
-                    null,
-                    $tenantId
-                );
+            if (!$this->shouldLogViolation((int) $mediaUserId, $fingerprint)) {
+                continue;
             }
+
+            $violations++;
+            $action = $killedIds !== []
+                ? ($distinctIp ? 'kill_newest_ips' : 'kill_newest')
+                : 'detected';
+            $message = $killedIds !== []
+                ? $killMessage
+                : ($enforce
+                    ? 'Exceso detectado (corte no aplicado o fallido).'
+                    : 'Exceso detectado (aplicación automática desactivada).');
+
+            $this->logViolation(
+                $tenantId,
+                (int) $mediaUserId,
+                $serverId > 0 ? $serverId : null,
+                $username,
+                $count,
+                $limit,
+                $allSessionIds,
+                $killedIds,
+                $titles,
+                $message,
+                $action,
+                $clientIps
+            );
+
+            AuditService::log(
+                $killedIds !== [] ? 'media_user.stream_limit_enforced' : 'media_user.stream_limit_detected',
+                'media_user',
+                (int) $mediaUserId,
+                null,
+                [
+                    'stream_count' => $count,
+                    'limit' => $limit,
+                    'count_mode' => $countMode,
+                    'client_ips' => $clientIps,
+                    'killed_session_ids' => $killedIds,
+                    'action' => $action,
+                    'server_id' => $serverId,
+                    'enforcement_enabled' => $enforce,
+                ],
+                null,
+                $tenantId
+            );
         }
 
         if ($killIndexes !== []) {
@@ -332,16 +368,14 @@ final class ConcurrentStreamLimitService
     }
 
     /**
-     * Cron entry: fetch live sessions and enforce (bypasses snapshot cache).
+     * Cron entry: fetch live sessions, log over-limit violations, kill only if enforce ON.
      *
      * @return array{checked: int, killed: int, violations: int}
      */
     public function runForTenant(int $tenantId): array
     {
-        if (!$this->settings->isEnforcementEnabled($tenantId)) {
-            return ['checked' => 0, 'killed' => 0, 'violations' => 0];
-        }
-
+        // Siempre detectar/registrar incumplimientos; el corte solo ocurre si enforce está ON
+        // (dentro de enforceAndAnnotate → getSnapshot).
         Cache::forget('activity_snapshot_' . $tenantId);
         $snapshot = (new StreamingActivityService())->getSnapshot($tenantId);
 
@@ -466,6 +500,51 @@ final class ConcurrentStreamLimitService
      * @param array<int, array<string, string>> $titles
      * @param array<int, string> $clientIps
      */
+
+    /**
+     * Huella estable del incumplimiento actual (ordenada).
+     *
+     * @param array<int, string> $sessionIds
+     * @param array<int, string> $clientIps
+     */
+    private function violationFingerprint(
+        array $sessionIds,
+        array $clientIps,
+        int $count,
+        int $limit,
+        string $countMode,
+    ): string {
+        $sessions = array_values(array_filter(array_map('strval', $sessionIds), static fn (string $s): bool => $s !== ''));
+        $ips = array_values(array_filter(array_map('strval', $clientIps), static fn (string $s): bool => $s !== ''));
+        sort($sessions);
+        sort($ips);
+
+        return hash('sha256', json_encode([
+            'sessions' => $sessions,
+            'ips' => $ips,
+            'count' => $count,
+            'limit' => $limit,
+            'mode' => $countMode,
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    private function shouldLogViolation(int $mediaUserId, string $fingerprint): bool
+    {
+        $key = 'stream_limit_vio_fp_' . $mediaUserId;
+        $prev = Cache::get($key);
+        if (is_string($prev) && $prev === $fingerprint) {
+            return false;
+        }
+        Cache::set($key, $fingerprint, self::VIOLATION_FP_TTL);
+
+        return true;
+    }
+
+    private function clearViolationFingerprint(int $mediaUserId): void
+    {
+        Cache::forget('stream_limit_vio_fp_' . $mediaUserId);
+    }
+
     private function logViolation(
         int $tenantId,
         int $mediaUserId,

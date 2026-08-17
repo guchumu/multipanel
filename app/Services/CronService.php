@@ -89,7 +89,7 @@ final class CronService
             ],
             'streams' => [
                 'title' => 'Límite de streams',
-                'description' => 'Cuenta sesiones activas por usuario media y corta las que superan el límite.',
+                'description' => 'Detecta excesos de streams, los registra en Incumplimientos y corta solo si la aplicación automática está activa.',
                 'schedule' => 'Cada 5–15 minutos (o con En directo abierto)',
             ],
         ];
@@ -146,11 +146,11 @@ final class CronService
     /** @param callable(string): void $out */
     private function runStreamLimits(int $tenantId, callable $out): void
     {
-        $out('Enforcing concurrent stream limits...');
+        $out('Checking concurrent stream limits...');
         try {
             $stats = (new ConcurrentStreamLimitService())->runForTenant($tenantId);
             $out(sprintf(
-                '  Checked sessions: %d, killed: %d, violations: %d',
+                '  Checked sessions: %d, killed: %d, violations logged: %d',
                 $stats['checked'],
                 $stats['killed'],
                 $stats['violations']

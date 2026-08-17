@@ -111,7 +111,7 @@ final class StreamingActivityService
                 $allSessions = array_merge($allSessions, $serverSessions);
             }
 
-            // Anotar media_user / límite y cortar excesos si la aplicación está activa.
+            // Anotar media_user / límite, registrar incumplimientos y cortar solo si enforce está activo.
             $limitResult = (new ConcurrentStreamLimitService())->enforceAndAnnotate($tenantId, $allSessions);
             $allSessions = $limitResult['sessions'];
             $streamLimitKilled = (int) $limitResult['killed'];

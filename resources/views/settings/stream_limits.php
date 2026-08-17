@@ -8,7 +8,7 @@ ob_start();
     <h4 class="mb-0 mt-1">Límite de streams simultáneos</h4>
     <p class="text-muted small mb-0">
         Por defecto cuenta <strong>IPs distintas</strong> (varias pantallas en casa = 1).
-        Si se supera el límite, se cortan las sesiones de las IPs más recientes.
+        Los excesos se registran siempre en Incumplimientos; el corte solo si «Aplicar límite» está activo.
     </p>
 </div>
 
@@ -25,7 +25,7 @@ ob_start();
                                <?= !empty($settings['enforcement_enabled']) ? 'checked' : '' ?>>
                         <label class="form-check-label" for="enforcement_enabled">
                             <strong>Aplicar límite automáticamente</strong>
-                            <div class="small text-muted">Si está desactivado solo se registra/visualiza el exceso en En directo (badge), sin cortar.</div>
+                            <div class="small text-muted">Si está desactivado se registra en Incumplimientos y se marca en En directo, sin cortar sesiones.</div>
                         </label>
                     </div>
 
@@ -78,8 +78,9 @@ ob_start();
                 <h6 class="mb-2">Cómo funciona</h6>
                 <ul class="small text-muted mb-3 ps-3">
                     <li>Match por usuario media en su servidor (Plex/Jellyfin user id, o nombre).</li>
-                    <li>Modo IPs: se conservan las IPs más antiguas; se cortan todas las sesiones de las IPs nuevas de más.</li>
-                    <li>Modo sesiones: se conserva la emisión con más progreso.</li>
+                    <li>Si supera el límite se registra en Incumplimientos (sin spam: solo al cruzar o si cambian IPs/sesiones).</li>
+                    <li>Modo IPs: con corte activo se conservan las IPs más antiguas y se cortan las nuevas de más.</li>
+                    <li>Modo sesiones: con corte activo se conserva la emisión con más progreso.</li>
                     <li>Se aplica al refrescar En directo y en el cron <code>streams</code> (o <code>all</code>).</li>
                 </ul>
                 <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm">
