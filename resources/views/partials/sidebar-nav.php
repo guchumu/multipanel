@@ -45,7 +45,6 @@ $settingsActive = $startsWith('/settings');
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/expiring') ?>" href="/media-users/expiring"><i class="bi bi-hourglass-split me-2"></i>Vencimientos</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/estimacion') ?>" href="/media-users/estimacion"><i class="bi bi-calendar3 me-2"></i>Estimación mensual</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/limpieza') ?>" href="/media-users/limpieza"><i class="bi bi-recycle me-2"></i>Limpieza / reinicio</a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/cleanup-iptv') ?>" href="/media-users/cleanup-iptv"><i class="bi bi-funnel me-2"></i>Limpieza IPTV</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/broadcast') ?>" href="/media-users/broadcast"><i class="bi bi-megaphone me-2"></i>Mensaje masivo</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/bulk') ?>" href="/media-users/bulk"><i class="bi bi-envelope-plus me-2"></i>Añadir emails</a></li>
         </ul>

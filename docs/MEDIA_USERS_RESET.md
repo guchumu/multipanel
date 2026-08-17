@@ -1,7 +1,7 @@
 # Reinicio limpio de usuarios media
 
 Flujo para dejar el panel solo con usuarios reales de Plex/Jellyfin y
-caducidades del importador (sin mezclar IPTV).
+caducidades del importador (solo servicio 1 y 5).
 
 ## Dónde está
 
@@ -43,4 +43,3 @@ IMPORT_SERVICIO_5_SERVERS=nucbox,nuc box
 
 ## Relacionado
 
-- Limpieza heurística IPTV: `docs/IPTV_CLEANUP.md`

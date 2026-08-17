@@ -7,9 +7,8 @@ $servicioMap = $servicioMap ?? [];
     <div class="min-w-0">
         <a href="/media-users" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Usuarios</a>
         <h4 class="mb-0 mt-1">Limpieza / reinicio usuarios media</h4>
-        <p class="text-muted small mb-0">Flujo recomendado para limpiar IPTV mezclado y dejar solo usuarios reales de biblioteca con fechas del importador.</p>
+        <p class="text-muted small mb-0">Flujo recomendado para dejar solo usuarios reales de biblioteca con fechas del importador (servicio 1 y 5).</p>
     </div>
-    <a href="/media-users/cleanup-iptv" class="btn btn-outline-secondary btn-sm"><i class="bi bi-funnel me-1"></i>Limpieza IPTV (heurística)</a>
 </div>
 
 <div class="alert alert-info small">
@@ -21,7 +20,7 @@ $servicioMap = $servicioMap ?? [];
             <?php foreach ($servicioLabels as $code => $label): ?>
                 <span class="badge bg-light text-dark border"><?= (int) $code ?> = <?= e((string) $label) ?></span>
             <?php endforeach; ?>
-            El resto de servicios (IPTV, etc.) se ignora.
+            El resto de códigos de servicio se ignora.
         </li>
     </ol>
 </div>

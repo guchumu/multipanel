@@ -13,7 +13,7 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
 <div class="alert alert-secondary small">
     <strong>Filtro servicio:</strong> del SQL/CSV solo se aplican filas con
     <code>servicio</code> / <code>service</code> <strong>1</strong> (Server10) o <strong>5</strong> (NucBox).
-    El resto (IPTV u otros packs) se ignora. Si la fila no trae esa columna, se infiere por
+    El resto de códigos de servicio se ignora. Si la fila no trae esa columna, se infiere por
     <code>payments_history.service</code> o por el nombre del servidor legacy (Server10/Nucbox).
     Flujo limpio: <a href="/media-users/limpieza">Usuarios → Limpieza / reinicio</a>
     (borrar todos → sync → importar fechas).
