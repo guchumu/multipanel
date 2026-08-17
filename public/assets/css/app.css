@@ -760,3 +760,30 @@ body {
         flex: 1 1 8rem;
     }
 }
+
+/* Peticiones (BD remota) */
+.peticiones-grid .peticion-card {
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.peticiones-grid .peticion-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
+}
+.peticion-poster {
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    background: #e9ecef;
+}
+.peticion-title {
+    min-height: 2.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow: hidden;
+    cursor: text;
+}
+.peticion-streaming .badge {
+    font-weight: 500;
+    margin: 0.1rem;
+}

@@ -1,0 +1,312 @@
+<?php ob_start(); ?>
+<?php
+/** @var array $counts */
+/** @var array $items */
+/** @var array $motivos */
+/** @var array $platformsById */
+/** @var string $filter */
+/** @var string|null $error */
+/** @var bool $configured */
+/** @var int $page */
+/** @var bool $hasTmdb */
+
+$tabClass = static function (string $name, string $current): string {
+    return 'nav-link' . ($name === $current ? ' active' : '');
+};
+$badge = static function (int $n): string {
+    return $n > 0 ? ' <span class="badge rounded-pill bg-secondary">' . $n . '</span>' : '';
+};
+?>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0">Peticiones</h4>
+        <div class="text-muted small">BD remota legacy (panel viejo en paralelo)</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="/settings#peticiones" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-database me-1"></i>BD remota
+        </a>
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAddPeticion" <?= !$configured ? 'disabled' : '' ?>>
+            <i class="bi bi-plus-lg me-1"></i>Añadir URL
+        </button>
+    </div>
+</div>
+
+<?php if ($error): ?>
+<div class="alert alert-warning border"><?= e($error) ?></div>
+<?php endif; ?>
+
+<ul class="nav nav-pills flex-wrap gap-1 mb-4">
+    <li class="nav-item">
+        <a class="<?= $tabClass('pendientes', $filter) ?>" href="/peticiones?filtro=pendientes">
+            Pendientes<?= $badge((int) ($counts['pendientes'] ?? 0)) ?>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="<?= $tabClass('proceso', $filter) ?>" href="/peticiones?filtro=proceso">
+            En proceso<?= $badge((int) ($counts['proceso'] ?? 0)) ?>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="<?= $tabClass('denegadas', $filter) ?>" href="/peticiones?filtro=denegadas">
+            Denegadas<?= $badge((int) ($counts['denegadas'] ?? 0)) ?>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="<?= $tabClass('todas', $filter) ?>" href="/peticiones?filtro=todas">
+            Todas<?= $badge((int) ($counts['todas'] ?? 0)) ?>
+        </a>
+    </li>
+</ul>
+
+<?php if ($configured && empty($error) && empty($items)): ?>
+<div class="text-center text-muted py-5">No hay peticiones en esta pestaña.</div>
+<?php endif; ?>
+
+<div class="row g-3 peticiones-grid">
+<?php foreach ($items as $row): ?>
+    <?php
+    $id = (int) ($row['id'] ?? 0);
+    $isDenied = ((string) ($row['activo'] ?? '1') === '0') || ((int) ($row['idmotivo'] ?? 0) > 0);
+    $isAccepted = ((string) ($row['aceptado'] ?? '0') === '1');
+    $border = $isDenied ? 'border-danger' : ($isAccepted ? 'border-success' : 'border-warning');
+    $img = trim((string) ($row['img'] ?? ''));
+    if ($img === '') {
+        $img = 'https://via.placeholder.com/300x450?text=Sin+poster';
+    }
+    $platforms = $platformsById[$id] ?? [];
+    ?>
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>">
+        <div class="card h-100 shadow-sm peticion-card <?= e($border) ?> border-2">
+            <a href="<?= e((string) ($row['url'] ?? '#')) ?>" target="_blank" rel="noopener" class="peticion-poster-link">
+                <img src="<?= e($img) ?>" class="card-img-top peticion-poster" alt="" loading="lazy"
+                     onerror="this.src='https://via.placeholder.com/300x450?text=Sin+poster'">
+            </a>
+            <div class="card-body p-2 d-flex flex-column gap-1">
+                <div class="peticion-title form-control form-control-sm"
+                     contenteditable="true"
+                     data-id="<?= $id ?>"
+                     title="Editar título (se guarda al salir)"><?= e((string) ($row['nombrepeticion'] ?? '')) ?></div>
+                <div class="small text-muted text-truncate" title="<?= e((string) ($row['username'] ?? '')) ?>">
+                    <i class="bi bi-person"></i> <?= e((string) ($row['username'] ?? $row['idusuario'] ?? '—')) ?>
+                </div>
+                <div class="small text-muted">
+                    <i class="bi bi-calendar3"></i> <?= e((string) ($row['fechapeticion'] ?? '—')) ?>
+                </div>
+                <?php if ($hasTmdb): ?>
+                <div class="small peticion-streaming">
+                    <?php if ($platforms === []): ?>
+                        <span class="text-muted">Ver: —</span>
+                    <?php else: ?>
+                        <span class="text-muted">Ver:</span>
+                        <?php foreach ($platforms as $p): ?>
+                            <span class="badge text-bg-light border"><?= e($p) ?></span>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <div class="mt-auto d-flex flex-wrap gap-1 pt-1">
+                    <?php if (!$isDenied && !$isAccepted): ?>
+                    <button type="button" class="btn btn-success btn-sm flex-fill" data-action="aceptar" data-id="<?= $id ?>" title="Aceptar">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                    <?php endif; ?>
+                    <?php if ($isAccepted && !$isDenied): ?>
+                    <button type="button" class="btn btn-primary btn-sm flex-fill" data-action="subir" data-id="<?= $id ?>" title="Marcar subida">
+                        <i class="bi bi-cloud-upload"></i>
+                    </button>
+                    <?php endif; ?>
+                    <?php if (!$isDenied): ?>
+                    <button type="button" class="btn btn-warning btn-sm flex-fill" data-action="denegar-open" data-id="<?= $id ?>"
+                            data-title="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" title="Denegar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    <?php endif; ?>
+                    <button type="button" class="btn btn-outline-danger btn-sm flex-fill" data-action="borrar" data-id="<?= $id ?>" title="Borrar">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+<?php endforeach; ?>
+</div>
+
+<?php
+$totalForFilter = (int) ($counts[$filter] ?? 0);
+$hasMore = ($page * $perPage) < $totalForFilter;
+if ($hasMore):
+?>
+<div class="text-center mt-4">
+    <a class="btn btn-outline-secondary" href="/peticiones?filtro=<?= e($filter) ?>&page=<?= $page + 1 ?>">Cargar más</a>
+</div>
+<?php endif; ?>
+
+<!-- Modal denegar -->
+<div class="modal fade" id="modalDenegar" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="formDenegar">
+            <div class="modal-header">
+                <h5 class="modal-title">Denegar petición</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" id="modal_id_peli" value="">
+                <p class="small text-muted mb-2" id="modal_titulo_peli"></p>
+                <label class="form-label">Motivo</label>
+                <select name="id_motivo" id="motivo_denegacion" class="form-select" required>
+                    <option value="">Selecciona…</option>
+                    <?php foreach ($motivos as $m): ?>
+                    <option value="<?= (int) $m['id'] ?>"><?= e((string) ($m['nombre'] ?? '')) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-warning">Denegar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal añadir -->
+<div class="modal fade" id="modalAddPeticion" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="formAddPeticion">
+            <div class="modal-header">
+                <h5 class="modal-title">Añadir petición (manual)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">URL</label>
+                    <input type="url" name="url" class="form-control" required placeholder="https://…">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Título</label>
+                    <input type="text" name="titulo" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Imagen (URL poster)</label>
+                    <input type="url" name="img" class="form-control" placeholder="Opcional">
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label">Telegram chat id</label>
+                        <input type="text" name="idusuario" class="form-control" placeholder="Opcional">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Usuario</label>
+                        <input type="text" name="username" class="form-control" placeholder="Opcional">
+                    </div>
+                </div>
+                <p class="small text-muted mt-2 mb-0">Sin ScraperAPI: introduce título e imagen a mano. El scrape automático se puede activar más adelante.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="peticionesToast" class="position-fixed bottom-0 end-0 p-3" style="z-index:1080"></div>
+
+<?php
+$scripts = <<<'JS'
+<script>
+(function () {
+  const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+
+  function toast(msg, ok) {
+    const wrap = document.getElementById('peticionesToast');
+    if (!wrap) return;
+    const el = document.createElement('div');
+    el.className = 'alert alert-' + (ok ? 'success' : 'danger') + ' shadow-sm py-2 px-3 mb-2';
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => el.remove(), 3200);
+  }
+
+  async function postAction(body) {
+    const res = await fetch('/peticiones/action', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) { data = { ok: false, message: 'Respuesta inválida' }; }
+    return { res, data };
+  }
+
+  document.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const action = btn.getAttribute('data-action');
+      const id = parseInt(btn.getAttribute('data-id') || '0', 10);
+      if (!id) return;
+
+      if (action === 'denegar-open') {
+        document.getElementById('modal_id_peli').value = String(id);
+        document.getElementById('modal_titulo_peli').textContent = btn.getAttribute('data-title') || '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDenegar')).show();
+        return;
+      }
+
+      if (action === 'borrar' && !confirm('¿Borrar esta petición?')) return;
+
+      btn.disabled = true;
+      const { data } = await postAction({ accion: action, id });
+      btn.disabled = false;
+      toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+      if (data.ok) {
+        const card = document.getElementById('peticion-card-' + id);
+        if (card) card.remove();
+        else location.reload();
+      }
+    });
+  });
+
+  document.querySelectorAll('.peticion-title').forEach((el) => {
+    el.addEventListener('blur', async () => {
+      const id = parseInt(el.getAttribute('data-id') || '0', 10);
+      const titulo = (el.textContent || '').trim();
+      if (!id || !titulo) return;
+      const { data } = await postAction({ accion: 'rename', id, titulo });
+      if (!data.ok) toast(data.message || 'No se pudo guardar el título', false);
+    });
+  });
+
+  const formDenegar = document.getElementById('formDenegar');
+  formDenegar?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = parseInt(document.getElementById('modal_id_peli').value || '0', 10);
+    const id_motivo = parseInt(document.getElementById('motivo_denegacion').value || '0', 10);
+    const { data } = await postAction({ accion: 'denegar', id, id_motivo });
+    toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    if (data.ok) {
+      bootstrap.Modal.getInstance(document.getElementById('modalDenegar'))?.hide();
+      document.getElementById('peticion-card-' + id)?.remove();
+    }
+  });
+
+  const formAdd = document.getElementById('formAddPeticion');
+  formAdd?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(formAdd);
+    const body = Object.fromEntries(fd.entries());
+    body.accion = 'add';
+    const { data } = await postAction(body);
+    toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    if (data.ok) location.reload();
+  });
+})();
+</script>
+JS;
+?>
+<?php $content = ob_get_clean(); include base_path('resources/views/layouts/app.php'); ?>

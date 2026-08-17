@@ -9,6 +9,8 @@ use App\Services\AuthService;
 use App\Services\BillingSettingsService;
 use App\Services\CronService;
 use App\Services\Payments\StripeGateway;
+use App\Services\Peticiones\PeticionesConfig;
+use App\Services\Peticiones\PeticionesDatabase;
 use App\Services\TelegramConfig;
 use App\Services\TelegramSandboxSender;
 use App\Services\TwoFactorService;
@@ -48,6 +50,8 @@ class SettingsController extends Controller
             || str_contains($appUrl, 'localhost')
             || str_contains($appUrl, '127.0.0.1');
 
+        $peticionesUi = PeticionesConfig::forSettingsUi($tenantId);
+
         return $this->view('settings.index', [
             'title' => 'Configuración',
             'settings' => $settings,
@@ -68,7 +72,40 @@ class SettingsController extends Controller
             'cronHttpBase' => $cronBase,
             'cronTokenConfigured' => $cronToken !== '',
             'cronTokenMasked' => $cronToken !== '' ? $this->maskKey($cronToken) : '',
+            'peticiones' => $peticionesUi,
         ]);
+    }
+
+    /**
+     * Prueba la conexión a la BD remota de peticiones (valores guardados o del formulario).
+     */
+    public function testPeticionesDb(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $cfg = PeticionesConfig::forTenant($tenantId);
+
+        $host = trim((string) ($request->input('peticiones_db_host') ?? ''));
+        $port = (int) ($request->input('peticiones_db_port') ?? 0);
+        $database = trim((string) ($request->input('peticiones_db_database') ?? ''));
+        $username = trim((string) ($request->input('peticiones_db_username') ?? ''));
+        $password = trim((string) ($request->input('peticiones_db_password') ?? ''));
+
+        $override = [
+            'host' => $host !== '' ? $host : $cfg['host'],
+            'port' => $port > 0 ? $port : $cfg['port'],
+            'database' => $database !== '' ? $database : $cfg['database'],
+            'username' => $username !== '' ? $username : $cfg['username'],
+            'password' => $password !== '' ? $password : $cfg['password'],
+            'charset' => $cfg['charset'],
+        ];
+
+        $result = PeticionesDatabase::testConnection($tenantId, $override);
+        Session::getInstance()->flash(
+            $result['ok'] ? 'success' : 'error',
+            $result['message']
+        );
+
+        return $this->redirect('/settings#peticiones');
     }
 
     /**
@@ -319,10 +356,34 @@ class SettingsController extends Controller
                 'whatsapp_phone',
                 'whatsapp_apikey',
             ],
+            'peticiones' => [
+                'peticiones_db_host',
+                'peticiones_db_port',
+                'peticiones_db_database',
+                'peticiones_db_username',
+                'peticiones_db_password',
+                'peticiones_tmdb_api_key',
+                'peticiones_scraper_api_key',
+            ],
             'discord' => ['discord_webhook_url'],
             'security' => ['rate_limit_max', 'session_lifetime'],
             default => ['app_name', 'app_timezone', 'app_locale'],
         };
+
+        if ($group === 'peticiones') {
+            PeticionesConfig::save($tenantId, [
+                'peticiones_db_host' => $request->input('peticiones_db_host'),
+                'peticiones_db_port' => $request->input('peticiones_db_port'),
+                'peticiones_db_database' => $request->input('peticiones_db_database'),
+                'peticiones_db_username' => $request->input('peticiones_db_username'),
+                'peticiones_db_password' => $request->input('peticiones_db_password'),
+                'peticiones_tmdb_api_key' => $request->input('peticiones_tmdb_api_key'),
+                'peticiones_scraper_api_key' => $request->input('peticiones_scraper_api_key'),
+            ]);
+            PeticionesDatabase::reset();
+            Session::getInstance()->flash('success', 'Configuración de peticiones guardada.');
+            return $this->redirect('/settings#peticiones');
+        }
 
         if ($group === 'telegram') {
             // Checkboxes: si no vienen, guardar 0
@@ -356,6 +417,7 @@ class SettingsController extends Controller
             'smtp' => '#smtp',
             'alerts' => '#cron',
             'whatsapp' => '#whatsapp',
+            'peticiones' => '#peticiones',
             'billing' => '#billing',
             default => '',
         };

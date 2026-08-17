@@ -52,6 +52,7 @@ $settingsActive = $startsWith('/settings');
     </li>
 
     <li class="nav-item"><a class="<?= $linkClass('/import') ?>" href="/import"><i class="bi bi-upload me-2"></i><?= __('import_export') ?></a></li>
+    <li class="nav-item"><a class="<?= $linkClass('/peticiones') ?>" href="/peticiones"><i class="bi bi-film me-2"></i>Peticiones</a></li>
     <li class="nav-item mt-3"><small class="text-muted px-3"><?= __('management') ?></small></li>
     <li class="nav-item"><a class="<?= $linkClass('/integrations') ?>" href="/integrations"><i class="bi bi-plug me-2"></i><?= __('integrations') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/automation') ?>" href="/automation"><i class="bi bi-lightning me-2"></i><?= __('automation') ?></a></li>

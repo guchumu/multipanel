@@ -38,6 +38,7 @@ use App\Controllers\InvoiceController;
 use App\Controllers\SecurityController;
 use App\Controllers\CronController;
 use App\Controllers\PaymentLinkController;
+use App\Controllers\PeticionesController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
 use App\Controllers\Portal\PortalPaymentController;
@@ -204,6 +205,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
     $router->post('/settings/telegram/test', [SettingsController::class, 'testTelegram'], 'settings.telegram.test', [CsrfMiddleware::class]);
     $router->post('/settings/whatsapp/test', [SettingsController::class, 'testWhatsApp'], 'settings.whatsapp.test', [CsrfMiddleware::class]);
+    $router->post('/settings/peticiones/test', [SettingsController::class, 'testPeticionesDb'], 'settings.peticiones.test', [CsrfMiddleware::class]);
     $router->post('/settings/stripe/test', [SettingsController::class, 'testStripe'], 'settings.stripe.test', [CsrfMiddleware::class]);
     $router->post('/settings/billing', [SettingsController::class, 'updateBilling'], 'settings.billing.update', [CsrfMiddleware::class]);
     $router->post('/settings/2fa/enable', [SettingsController::class, 'enable2fa'], 'settings.2fa.enable', [CsrfMiddleware::class]);
@@ -275,6 +277,10 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/import', [ImportController::class, 'show'], 'import.index');
     $router->post('/import', [ImportController::class, 'upload'], 'import.upload', [CsrfMiddleware::class]);
     $router->get('/import/template', [ImportController::class, 'template'], 'import.template');
+
+    // Peticiones (BD remota legacy)
+    $router->get('/peticiones', [PeticionesController::class, 'index'], 'peticiones.index');
+    $router->post('/peticiones/action', [PeticionesController::class, 'action'], 'peticiones.action', [CsrfMiddleware::class]);
 
     // Multi-tenant
     $router->get('/tenants', [TenantController::class, 'index'], 'tenants.index');

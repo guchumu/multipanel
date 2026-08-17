@@ -24,6 +24,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">Email / SMTP</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegram">Telegram</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#whatsapp">WhatsApp / Alertas admin</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#peticiones">Peticiones / BD remota</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Facturación</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cron">Cron / Tareas</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#security">Seguridad</button></li>
@@ -189,6 +190,73 @@
                     <li><strong>Servidor caído:</strong> mismo CallMeBot; email de alertas se configura en Cron.</li>
                     <li>Un mensaje por evento (sin spam de reintentos en altas/renovaciones).</li>
                 </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="peticiones">
+        <?php $pet = $peticiones ?? []; ?>
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="bi bi-film me-1"></i>Peticiones / BD remota</h6>
+                <p class="small text-muted mb-3">
+                    Conexión a la misma MySQL del panel legacy (<code>peticiones</code> / <code>motivo</code>).
+                    El panel viejo sigue en paralelo. La contraseña se guarda cifrada (SecretCrypt), nunca en Git.
+                    Documentación: <code>docs/PETICIONES.md</code>.
+                </p>
+                <form method="POST" action="/settings" class="row g-3" id="peticionesDbForm">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="group" value="peticiones">
+                    <div class="col-md-8">
+                        <label class="form-label">Host</label>
+                        <input name="peticiones_db_host" class="form-control" autocomplete="off"
+                               value="<?= e($pet['peticiones_db_host'] ?? '') ?>" placeholder="servidor.ejemplo.net">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Puerto</label>
+                        <input name="peticiones_db_port" type="number" class="form-control" min="1" max="65535"
+                               value="<?= e($pet['peticiones_db_port'] ?? '3306') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Base de datos</label>
+                        <input name="peticiones_db_database" class="form-control" autocomplete="off"
+                               value="<?= e($pet['peticiones_db_database'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Usuario</label>
+                        <input name="peticiones_db_username" class="form-control" autocomplete="off"
+                               value="<?= e($pet['peticiones_db_username'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Contraseña</label>
+                        <input type="password" name="peticiones_db_password" class="form-control" autocomplete="new-password"
+                               placeholder="<?= !empty($pet['peticiones_db_password_set']) ? '•••••••••• (dejar vacío = no cambiar)' : '' ?>">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">TMDb API key (opcional)</label>
+                        <input type="password" name="peticiones_tmdb_api_key" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($pet['peticiones_tmdb_api_key_set']) ? '•••••••••• (dejar vacío = no cambiar)' : 'Vacío = sin plataformas' ?>">
+                        <div class="form-text">Solo para mostrar plataformas de streaming. No pegues claves antiguas expuestas.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">ScraperAPI key (opcional, futuro)</label>
+                        <input type="password" name="peticiones_scraper_api_key" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($pet['peticiones_scraper_api_key_set']) ? '•••••••••• (dejar vacío = no cambiar)' : 'Sin scrape automático en MVP' ?>">
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-light border small mb-0">
+                            <strong>Firewall:</strong> MySQL en el host remoto debe aceptar conexiones desde la IP del VPS MultiPanel al puerto 3306
+                            (el legacy usaba <code>localhost</code> en esa máquina; MultiPanel conecta por red).
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-primary">Guardar BD remota</button>
+                        <button type="submit" class="btn btn-outline-success" formaction="/settings/peticiones/test">
+                            <i class="bi bi-plug me-1"></i>Probar conexión
+                        </button>
+                        <a href="/peticiones" class="btn btn-outline-secondary">Ir a Peticiones</a>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
