@@ -88,8 +88,9 @@
                         <label class="form-label">Chat ID del admin (alertas)</label>
                         <input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>" placeholder="Ej. 123456789">
                         <div class="form-text">
-                            Donde llegan avisos del panel (servidor caído, altas/renovaciones, automatizaciones admin). No es el chat de cada cliente.
-                            Al caer un servidor también se envía email (pestaña Cron) y WhatsApp (pestaña WhatsApp / Alertas admin) si CallMeBot está configurado.
+                            Donde llegan avisos del panel (servidor caído, altas/renovaciones, resumen diario, automatizaciones).
+                            Canales por tipo de aviso se configuran en <a href="#whatsapp">WhatsApp / Alertas admin</a>.
+                            Email de caídas: pestaña Cron.
                         </div>
                     </div>
 
@@ -132,13 +133,21 @@
     </div>
 
     <div class="tab-pane fade" id="whatsapp">
+        <?php
+        $alertOn = static function (string $key, bool $default) use ($settings): bool {
+            if (!array_key_exists($key, $settings) || trim((string) $settings[$key]) === '') {
+                return $default;
+            }
+            return in_array(strtolower(trim((string) $settings[$key])), ['1', 'true', 'yes', 'on'], true);
+        };
+        ?>
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
                 <h6 class="mb-2"><i class="bi bi-whatsapp me-1"></i>Alertas WhatsApp (admin)</h6>
                 <p class="small text-muted mb-3">
-                    Canal CallMeBot para avisos al admin: <strong>altas</strong>, <strong>renovaciones</strong> y
-                    <strong>servidor caído</strong> (este último también por Telegram + email).
-                    Si acabas de pedir el apikey a CallMeBot, la espera de ~24&nbsp;h es normal: pega el apikey aquí cuando llegue.
+                    CallMeBot para el admin. Por defecto: <strong>resumen diario</strong> y <strong>servidor caído</strong> por WhatsApp;
+                    altas/renovaciones solo por Telegram (menos spam). Puedes cambiarlo abajo.
+                    Si acabas de pedir el apikey a CallMeBot, la espera de ~24&nbsp;h es normal.
                 </p>
                 <form method="POST" action="/settings" class="row g-3" id="whatsappAlertsForm">
                     <?= csrf_field() ?>
@@ -146,8 +155,8 @@
                     <div class="col-12">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" name="whatsapp_enabled" value="1" id="waAlerts"
-                                   <?= !empty($settings['whatsapp_enabled']) && $settings['whatsapp_enabled'] !== '0' ? 'checked' : '' ?>>
-                            <label class="form-check-label" for="waAlerts">Activar alertas WhatsApp (CallMeBot)</label>
+                                   <?= $alertOn('whatsapp_enabled', false) ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="waAlerts">Activar canal WhatsApp (CallMeBot)</label>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -172,8 +181,81 @@
                             </ol>
                         </div>
                     </div>
+
+                    <div class="col-12"><hr class="my-1"></div>
+                    <div class="col-12">
+                        <h6 class="mb-1">Qué avisos enviar</h6>
+                        <p class="small text-muted mb-2">Menos es más: WhatsApp para lo crítico (caídas + resumen); Telegram para el día a día.</p>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold mb-2"><i class="bi bi-journal-text me-1"></i>Resumen diario (~09:00)</div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="telegram_notify_digest" value="1" id="tgDigest"
+                                       <?= $alertOn('telegram_notify_digest', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="tgDigest">Telegram</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="whatsapp_notify_digest" value="1" id="waDigest"
+                                       <?= $alertOn('whatsapp_notify_digest', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waDigest">WhatsApp</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold mb-2"><i class="bi bi-hdd-network me-1"></i>Servidor caído</div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="telegram_notify_server_down" value="1" id="tgDown"
+                                       <?= $alertOn('telegram_notify_server_down', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="tgDown">Telegram</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="whatsapp_notify_server_down" value="1" id="waDown"
+                                       <?= $alertOn('whatsapp_notify_server_down', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waDown">WhatsApp</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="email_notify_server_down" value="1" id="emDown"
+                                       <?= $alertOn('email_notify_server_down', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="emDown">Email</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold mb-2"><i class="bi bi-person-plus me-1"></i>Alta de usuario</div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="telegram_notify_alta" value="1" id="tgAlta"
+                                       <?= $alertOn('telegram_notify_alta', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="tgAlta">Telegram</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="whatsapp_notify_alta" value="1" id="waAlta"
+                                       <?= $alertOn('whatsapp_notify_alta', false) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waAlta">WhatsApp <span class="text-muted">(off por defecto)</span></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold mb-2"><i class="bi bi-arrow-repeat me-1"></i>Renovación</div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="telegram_notify_renew" value="1" id="tgRenew"
+                                       <?= $alertOn('telegram_notify_renew', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="tgRenew">Telegram</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="whatsapp_notify_renew" value="1" id="waRenew"
+                                       <?= $alertOn('whatsapp_notify_renew', false) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waRenew">WhatsApp <span class="text-muted">(off por defecto)</span></label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="col-12 d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-primary">Guardar WhatsApp</button>
+                        <button type="submit" class="btn btn-primary">Guardar WhatsApp / Alertas</button>
                         <button type="submit" class="btn btn-outline-success" formaction="/settings/whatsapp/test">
                             <i class="bi bi-whatsapp me-1"></i>Probar WhatsApp
                         </button>
@@ -183,12 +265,11 @@
         </div>
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <h6 class="mb-2">Qué avisos llegan aquí</h6>
+                <h6 class="mb-2">Notas</h6>
                 <ul class="small text-muted mb-0">
-                    <li><strong>Alta:</strong> registro <code>/registro</code>, crear usuario en el panel, invitación rápida del dashboard.</li>
-                    <li><strong>Renovación:</strong> registro (usuario existente), pago Stripe OK, extensión manual (+días).</li>
-                    <li><strong>Servidor caído:</strong> mismo CallMeBot; email de alertas se configura en Cron.</li>
-                    <li>Un mensaje por evento (sin spam de reintentos en altas/renovaciones).</li>
+                    <li>El <strong>resumen diario</strong> corre con el cron <code>digest</code> (incluido en <code>all</code>), en la misma hora que caducidades (pestaña Cron).</li>
+                    <li>Email de servidor caído: destinatario en pestaña Cron. Requiere SMTP.</li>
+                    <li>Pruebas Telegram / sandbox: pestaña Telegram.</li>
                 </ul>
             </div>
         </div>
@@ -287,6 +368,7 @@
                 <h6 class="mb-2"><i class="bi bi-clock-history me-1"></i>Avisos de caducidad (hora)</h6>
                 <p class="small text-muted">
                     Aunque el cron <code>all</code> corra cada 5 minutos, los mensajes de caducidad a usuarios
+                    y el <strong>resumen diario admin</strong> (<code>digest</code>)
                     <strong>solo se envían</strong> en la hora local configurada (por defecto 09:00 Europe/Madrid).
                     Fuera de esa hora se omite el envío y <em>no</em> se marca como enviado.
                 </p>

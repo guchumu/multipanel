@@ -125,9 +125,12 @@ final class ServerDownAlertService
             ? 'Servidor caído'
             : 'Servidor sigue caído';
 
-        $channels = ['telegram', 'email'];
-        if ($this->alerts->whatsappConfigured($tenantId)) {
-            $channels[] = 'whatsapp';
+        $channels = $this->notifications->adminServerDownChannels($tenantId);
+        if ($channels === []) {
+            Logger::debug('Server down alert skipped: no channels enabled', [
+                'server_id' => $server->id,
+            ]);
+            return 'skipped';
         }
 
         $this->notifications->notify(
@@ -291,7 +294,18 @@ final class ServerDownAlertService
             $lines[] = 'last_check_at: ' . $lastCheck;
         }
         $lines[] = '';
-        $lines[] = 'Canales: Telegram admin + email alertas' . ($this->alerts->whatsappConfigured((int) $server->tenant_id) ? ' + WhatsApp' : '');
+        $channelBits = [];
+        if ($this->alerts->telegramNotifyServerDown((int) $server->tenant_id)) {
+            $channelBits[] = 'Telegram';
+        }
+        if ($this->alerts->emailNotifyServerDown((int) $server->tenant_id)) {
+            $channelBits[] = 'email';
+        }
+        if ($this->alerts->whatsappNotifyServerDown((int) $server->tenant_id)
+            && $this->alerts->whatsappConfigured((int) $server->tenant_id)) {
+            $channelBits[] = 'WhatsApp';
+        }
+        $lines[] = 'Canales: ' . ($channelBits !== [] ? implode(' + ', $channelBits) : 'ninguno');
 
         return implode("\n", $lines);
     }

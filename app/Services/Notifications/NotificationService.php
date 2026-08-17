@@ -79,15 +79,65 @@ final class NotificationService
     }
 
     /**
-     * Canales admin para altas/renovaciones: Telegram + WhatsApp (si CallMeBot está listo).
-     * El email queda reservado a alertas de servidor caído.
+     * Canales admin para altas/renovaciones según toggles.
+     * Telegram ON por defecto; WhatsApp OFF por defecto (CallMeBot no es para spam de altas).
+     *
+     * @param 'created'|'renewed' $event
+     * @return array<int, string>
+     */
+    public function adminLifecycleChannels(string $event = 'created', ?int $tenantId = null): array
+    {
+        $channels = [];
+        $wantTelegram = $event === 'renewed'
+            ? $this->alerts->telegramNotifyRenew($tenantId)
+            : $this->alerts->telegramNotifyAlta($tenantId);
+        $wantWhatsApp = $event === 'renewed'
+            ? $this->alerts->whatsappNotifyRenew($tenantId)
+            : $this->alerts->whatsappNotifyAlta($tenantId);
+
+        if ($wantTelegram) {
+            $channels[] = 'telegram';
+        }
+        if ($wantWhatsApp && $this->alerts->whatsappConfigured($tenantId)) {
+            $channels[] = 'whatsapp';
+        }
+
+        return $channels;
+    }
+
+    /**
+     * Canales del resumen diario admin.
      *
      * @return array<int, string>
      */
-    public function adminLifecycleChannels(?int $tenantId = null): array
+    public function adminDigestChannels(?int $tenantId = null): array
     {
-        $channels = ['telegram'];
-        if ($this->alerts->whatsappConfigured($tenantId)) {
+        $channels = [];
+        if ($this->alerts->telegramNotifyDigest($tenantId)) {
+            $channels[] = 'telegram';
+        }
+        if ($this->alerts->whatsappNotifyDigest($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
+            $channels[] = 'whatsapp';
+        }
+
+        return $channels;
+    }
+
+    /**
+     * Canales de alerta servidor caído (Telegram / email / WhatsApp según toggles).
+     *
+     * @return array<int, string>
+     */
+    public function adminServerDownChannels(?int $tenantId = null): array
+    {
+        $channels = [];
+        if ($this->alerts->telegramNotifyServerDown($tenantId)) {
+            $channels[] = 'telegram';
+        }
+        if ($this->alerts->emailNotifyServerDown($tenantId)) {
+            $channels[] = 'email';
+        }
+        if ($this->alerts->whatsappNotifyServerDown($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
         }
 
@@ -131,11 +181,15 @@ final class NotificationService
         }
 
         try {
+            $channels = $this->adminLifecycleChannels('created', $tenantId);
+            if ($channels === []) {
+                return;
+            }
             $this->notify(
                 'media_user.created',
                 'Alta usuario',
                 implode(' · ', $bits),
-                $this->adminLifecycleChannels($tenantId),
+                $channels,
                 [
                     'email' => $who,
                     'server' => $serverName,
@@ -175,11 +229,15 @@ final class NotificationService
         }
 
         try {
+            $channels = $this->adminLifecycleChannels('renewed', $tenantId);
+            if ($channels === []) {
+                return;
+            }
             $this->notify(
                 'media_user.renewed',
                 'Renovación usuario',
                 implode(' · ', $bits),
-                $this->adminLifecycleChannels($tenantId),
+                $channels,
                 [
                     'email' => $who,
                     'server' => $serverName,

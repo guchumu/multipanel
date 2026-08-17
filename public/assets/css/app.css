@@ -787,3 +787,31 @@ body {
     font-weight: 500;
     margin: 0.1rem;
 }
+
+.peticion-action-btn {
+    min-height: 2.25rem;
+}
+
+@media (max-width: 575.98px) {
+    .peticiones-grid .peticion-actions {
+        flex-direction: column;
+        gap: 0.35rem !important;
+    }
+
+    .peticiones-grid .peticion-action-btn {
+        flex: 1 1 100%;
+        width: 100%;
+        min-height: 2.5rem;
+    }
+
+    .dashboard-kpi-row .card-body,
+    .row.g-3.g-md-4 .card-body {
+        padding: 0.85rem;
+    }
+
+    .dashboard-kpi-row h3,
+    .row.g-3.g-md-4 h3.mb-0 {
+        font-size: 1.35rem;
+    }
+}
+

@@ -355,6 +355,15 @@ class SettingsController extends Controller
                 'whatsapp_enabled',
                 'whatsapp_phone',
                 'whatsapp_apikey',
+                'whatsapp_notify_alta',
+                'whatsapp_notify_renew',
+                'whatsapp_notify_server_down',
+                'whatsapp_notify_digest',
+                'telegram_notify_alta',
+                'telegram_notify_renew',
+                'telegram_notify_server_down',
+                'telegram_notify_digest',
+                'email_notify_server_down',
             ],
             'peticiones' => [
                 'peticiones_db_host',
@@ -392,13 +401,49 @@ class SettingsController extends Controller
         }
 
         if ($group === 'whatsapp') {
-            $this->saveSetting($tenantId, 'alerts', 'whatsapp_enabled', $request->input('whatsapp_enabled') ? '1' : '0');
+            $checkboxKeys = [
+                'whatsapp_enabled',
+                'whatsapp_notify_alta',
+                'whatsapp_notify_renew',
+                'whatsapp_notify_server_down',
+                'whatsapp_notify_digest',
+                'telegram_notify_alta',
+                'telegram_notify_renew',
+                'telegram_notify_server_down',
+                'telegram_notify_digest',
+                'email_notify_server_down',
+            ];
+            foreach ($checkboxKeys as $checkboxKey) {
+                $this->saveSetting(
+                    $tenantId,
+                    'alerts',
+                    $checkboxKey,
+                    $request->input($checkboxKey) ? '1' : '0'
+                );
+            }
         }
 
         $persistGroup = $group === 'whatsapp' ? 'alerts' : $group;
 
+        $whatsappCheckboxes = [
+            'whatsapp_enabled',
+            'whatsapp_notify_alta',
+            'whatsapp_notify_renew',
+            'whatsapp_notify_server_down',
+            'whatsapp_notify_digest',
+            'telegram_notify_alta',
+            'telegram_notify_renew',
+            'telegram_notify_server_down',
+            'telegram_notify_digest',
+            'email_notify_server_down',
+        ];
+
         foreach ($fields as $field) {
-            if (in_array($field, ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real', 'whatsapp_enabled'], true)) {
+            $skipCheckboxes = array_merge(
+                ['telegram_sandbox_enabled', 'telegram_sandbox_copy_real'],
+                $whatsappCheckboxes
+            );
+            if (in_array($field, $skipCheckboxes, true)) {
                 continue;
             }
             // cron_token / whatsapp_apikey: vacío = no cambiar

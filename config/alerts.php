@@ -17,6 +17,18 @@ return [
     'whatsapp_apikey' => env('WHATSAPP_CALLMEBOT_APIKEY', env('WHATSAPP_APIKEY', '')),
     'whatsapp_api_url' => env('WHATSAPP_CALLMEBOT_URL', 'https://api.callmebot.com/whatsapp.php'),
 
+    // Preferencias por evento (DB settings.group=alerts tiene prioridad).
+    // WhatsApp: digest + server-down ON; alta/renovación OFF (menos spam CallMeBot).
+    'whatsapp_notify_alta' => false,
+    'whatsapp_notify_renew' => false,
+    'whatsapp_notify_server_down' => true,
+    'whatsapp_notify_digest' => true,
+    'telegram_notify_alta' => true,
+    'telegram_notify_renew' => true,
+    'telegram_notify_server_down' => true,
+    'telegram_notify_digest' => true,
+    'email_notify_server_down' => true,
+
     // Escalado servidor caído (minutos desde la primera detección). Tras el último, no se reenvía.
     'server_down_escalation_minutes' => [0, 5, 15, 30],
 ];

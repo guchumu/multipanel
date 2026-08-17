@@ -106,6 +106,94 @@ final class AlertSettingsService
             && $this->whatsappApiKey($tenantId) !== '';
     }
 
+    /**
+     * Preferencias por tipo de aviso admin.
+     * WhatsApp: digest + server-down ON por defecto; alta/renovación OFF.
+     * Telegram: digest + ciclo de vida + server-down ON por defecto.
+     */
+    public function whatsappNotifyAlta(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_notify_alta', false, $tenantId);
+    }
+
+    public function whatsappNotifyRenew(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_notify_renew', false, $tenantId);
+    }
+
+    public function whatsappNotifyServerDown(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_notify_server_down', true, $tenantId);
+    }
+
+    public function whatsappNotifyDigest(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_notify_digest', true, $tenantId);
+    }
+
+    public function telegramNotifyAlta(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('telegram_notify_alta', true, $tenantId);
+    }
+
+    public function telegramNotifyRenew(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('telegram_notify_renew', true, $tenantId);
+    }
+
+    public function telegramNotifyServerDown(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('telegram_notify_server_down', true, $tenantId);
+    }
+
+    public function telegramNotifyDigest(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('telegram_notify_digest', true, $tenantId);
+    }
+
+    public function emailNotifyServerDown(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('email_notify_server_down', true, $tenantId);
+    }
+
+    /**
+     * Misma ventana que avisos de caducidad (hora configurada en Europe/Madrid por defecto).
+     *
+     * @param array{hour: int, timezone: string, window_minutes?: int}|null $schedule
+     */
+    public function isWithinExpiryNotifyWindow(?array $schedule = null, ?int $tenantId = null): bool
+    {
+        $schedule ??= $this->expiryNotifySchedule($tenantId);
+        try {
+            $tz = new \DateTimeZone($schedule['timezone']);
+        } catch (\Throwable) {
+            $tz = new \DateTimeZone(self::DEFAULT_EXPIRY_TZ);
+        }
+
+        $now = new \DateTimeImmutable('now', $tz);
+        $hour = (int) $now->format('G');
+        $targetHour = (int) $schedule['hour'];
+
+        return $hour === $targetHour;
+    }
+
+    public function digestLastSentDate(?int $tenantId = null): ?string
+    {
+        $tenantId ??= $this->tenantId();
+        $raw = $this->get($tenantId, 'alerts', 'digest_last_sent');
+        if ($raw === null || trim($raw) === '') {
+            return null;
+        }
+
+        return substr(trim($raw), 0, 10);
+    }
+
+    public function markDigestSent(string $dateYmd, ?int $tenantId = null): void
+    {
+        $tenantId ??= $this->tenantId();
+        $this->set($tenantId, 'alerts', 'digest_last_sent', substr($dateYmd, 0, 10), 'string');
+    }
+
     /** @return array<int, int> */
     public function serverDownEscalationMinutes(): array
     {
@@ -149,6 +237,22 @@ final class AlertSettingsService
     private function truthy(mixed $value): bool
     {
         return in_array(strtolower(trim((string) $value)), ['1', 'true', 'yes', 'on'], true);
+    }
+
+    private function alertFlag(string $key, bool $default, ?int $tenantId = null): bool
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        if (array_key_exists($key, $alerts) && trim($alerts[$key]) !== '') {
+            return $this->truthy($alerts[$key]);
+        }
+
+        $fromConfig = config('alerts.' . $key, null);
+        if ($fromConfig !== null && $fromConfig !== '') {
+            return is_bool($fromConfig) ? $fromConfig : $this->truthy($fromConfig);
+        }
+
+        return $default;
     }
 
     /** @return array<string, string> */

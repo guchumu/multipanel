@@ -105,24 +105,24 @@ $badge = static function (int $n): string {
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
-                <div class="mt-auto d-flex flex-wrap gap-1 pt-1">
+                <div class="mt-auto d-flex flex-wrap gap-1 pt-1 peticion-actions">
                     <?php if (!$isDenied && !$isAccepted): ?>
-                    <button type="button" class="btn btn-success btn-sm flex-fill" data-action="aceptar" data-id="<?= $id ?>" title="Aceptar">
-                        <i class="bi bi-check-lg"></i>
+                    <button type="button" class="btn btn-success btn-sm flex-fill peticion-action-btn" data-action="aceptar" data-id="<?= $id ?>" title="Aceptar">
+                        <i class="bi bi-check-lg"></i><span class="d-none d-sm-inline ms-1">Aceptar</span>
                     </button>
                     <?php endif; ?>
                     <?php if ($isAccepted && !$isDenied): ?>
-                    <button type="button" class="btn btn-primary btn-sm flex-fill" data-action="subir" data-id="<?= $id ?>" title="Marcar subida">
-                        <i class="bi bi-cloud-upload"></i>
+                    <button type="button" class="btn btn-primary btn-sm flex-fill peticion-action-btn" data-action="subir" data-id="<?= $id ?>" title="Marcar subida">
+                        <i class="bi bi-cloud-upload"></i><span class="d-none d-sm-inline ms-1">Subir</span>
                     </button>
                     <?php endif; ?>
                     <?php if (!$isDenied): ?>
-                    <button type="button" class="btn btn-warning btn-sm flex-fill" data-action="denegar-open" data-id="<?= $id ?>"
+                    <button type="button" class="btn btn-warning btn-sm flex-fill peticion-action-btn" data-action="denegar-open" data-id="<?= $id ?>"
                             data-title="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" title="Denegar">
-                        <i class="bi bi-x-lg"></i>
+                        <i class="bi bi-x-lg"></i><span class="d-none d-sm-inline ms-1">Denegar</span>
                     </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-outline-danger btn-sm flex-fill" data-action="borrar" data-id="<?= $id ?>" title="Borrar">
+                    <button type="button" class="btn btn-outline-danger btn-sm flex-fill peticion-action-btn" data-action="borrar" data-id="<?= $id ?>" title="Borrar">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>

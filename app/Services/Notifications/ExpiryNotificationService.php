@@ -34,7 +34,7 @@ final class ExpiryNotificationService
         }
 
         $schedule = $this->alertSettings->expiryNotifySchedule($tenantId);
-        if (!$this->isWithinNotifyWindow($schedule)) {
+        if (!$this->alertSettings->isWithinExpiryNotifyWindow($schedule, $tenantId)) {
             $tzLabel = $schedule['timezone'];
             $hour = str_pad((string) $schedule['hour'], 2, '0', STR_PAD_LEFT);
             Logger::info("Expiry notifications skipped until {$hour}:00 {$tzLabel} (no se marca como enviado)");
@@ -148,30 +148,6 @@ final class ExpiryNotificationService
         }
 
         return $stats;
-    }
-
-    /**
-     * Ventana: hora configurada y minutos 0..(window-1), O toda la hora si aún no se envió el milestone
-     * (el dedup alreadySent evita reenvíos). Fuera de esa hora no se marca como enviado.
-     *
-     * @param array{hour: int, timezone: string, window_minutes: int} $schedule
-     */
-    private function isWithinNotifyWindow(array $schedule): bool
-    {
-        try {
-            $tz = new DateTimeZone($schedule['timezone']);
-        } catch (\Throwable) {
-            $tz = new DateTimeZone('Europe/Madrid');
-        }
-
-        $now = new DateTimeImmutable('now', $tz);
-        $hour = (int) $now->format('G');
-        $targetHour = (int) $schedule['hour'];
-
-        // Solo la hora objetivo (p. ej. 09:00–09:59 Europe/Madrid).
-        // window_minutes documenta la franja ideal del cron */5; el dedup por milestone
-        // evita reenvíos si el cron cae varias veces dentro de la hora.
-        return $hour === $targetHour;
     }
 
     /**

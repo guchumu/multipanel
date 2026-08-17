@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\ServerRepository;
+use App\Services\Notifications\AdminDigestService;
 use App\Services\Notifications\ExpiryNotificationService;
 use Core\Database;
 use Core\Updater;
@@ -17,7 +18,7 @@ final class CronService
     /** @return array<int, string> */
     public static function tasks(): array
     {
-        return ['all', 'sync', 'automation', 'billing', 'backup', 'jobs', 'gdpr', 'cleanup', 'expiry', 'migrate', 'health', 'streams'];
+        return ['all', 'sync', 'automation', 'billing', 'backup', 'jobs', 'gdpr', 'cleanup', 'expiry', 'digest', 'migrate', 'health', 'streams'];
     }
 
     /**
@@ -28,7 +29,7 @@ final class CronService
         return [
             'all' => [
                 'title' => 'Todas',
-                'description' => 'Ejecuta migrate + billing + sync + automation + backup + jobs + expiry + streams + gdpr + cleanup.',
+                'description' => 'Ejecuta migrate + billing + sync + automation + backup + jobs + expiry + digest + streams + gdpr + cleanup.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'sync' => [
@@ -38,13 +39,18 @@ final class CronService
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Reglas activas; servidor caído: Telegram + email + WhatsApp (CallMeBot opcional), con diagnóstico y escalado 5/15/30 min.',
+                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp según toggles (diagnóstico + escalado 5/15/30 min).',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
                 'title' => 'Avisos de caducidad',
                 'description' => 'Envía plantillas Telegram según días restantes (solo ~09:00 Europe/Madrid; fuera de hora no marca enviado). Puede desactivar caducados.',
                 'schedule' => 'Incluido en all; solo envía a las 09:00 Madrid',
+            ],
+            'digest' => [
+                'title' => 'Resumen diario admin',
+                'description' => 'Caducidades hoy/semana, peticiones pendientes, servidores y overdue. Telegram y/o WhatsApp según toggles; una vez al día en la misma hora que caducidades.',
+                'schedule' => 'Incluido en all; solo ~09:00 Madrid',
             ],
             'billing' => [
                 'title' => 'Facturación',
@@ -111,6 +117,7 @@ final class CronService
             'gdpr' => $this->runGdpr($capture),
             'cleanup' => $this->runCleanup($capture),
             'expiry' => $this->runExpiryNotifications($tenantId, $capture),
+            'digest' => $this->runAdminDigest($tenantId, $capture),
             'migrate' => $this->runMigrations($capture),
             'health' => $capture('Health OK'),
             'streams' => $this->runStreamLimits($tenantId, $capture),
@@ -130,6 +137,7 @@ final class CronService
         $this->runBackup($tenantId, $out);
         $this->runJobs($out);
         $this->runExpiryNotifications($tenantId, $out);
+        $this->runAdminDigest($tenantId, $out);
         $this->runStreamLimits($tenantId, $out);
         $this->runGdpr($out);
         $this->runCleanup($out);
@@ -192,6 +200,39 @@ final class CronService
             ));
         } catch (\Throwable $e) {
             $out('  Expiry notifications failed: ' . $e->getMessage());
+        }
+    }
+
+    /** @param callable(string): void $out */
+    private function runAdminDigest(int $tenantId, callable $out): void
+    {
+        $out('Sending admin daily digest...');
+        try {
+            $stats = (new AdminDigestService())->run($tenantId);
+            if (!empty($stats['deferred'])) {
+                $sched = (new AlertSettingsService())->expiryNotifySchedule($tenantId);
+                $hh = str_pad((string) $sched['hour'], 2, '0', STR_PAD_LEFT);
+                $out("  Deferred: skipped until {$hh}:00 {$sched['timezone']}.");
+                return;
+            }
+            if (!empty($stats['already_sent'])) {
+                $out('  Already sent today.');
+                return;
+            }
+            if (!empty($stats['skipped'])) {
+                $out('  Skipped: digest channels disabled.');
+                return;
+            }
+            if (!empty($stats['error'])) {
+                $out('  Digest failed: ' . $stats['error']);
+                return;
+            }
+            $channels = isset($stats['channels']) && is_array($stats['channels'])
+                ? implode(', ', $stats['channels'])
+                : '—';
+            $out('  Sent: ' . (int) ($stats['sent'] ?? 0) . " ({$channels})");
+        } catch (\Throwable $e) {
+            $out('  Admin digest failed: ' . $e->getMessage());
         }
     }
 

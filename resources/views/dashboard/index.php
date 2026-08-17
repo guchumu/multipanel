@@ -2,9 +2,9 @@
 ob_start();
 ?>
 
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
+<div class="row g-3 g-md-4 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
@@ -18,8 +18,8 @@ ob_start();
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
@@ -33,8 +33,8 @@ ob_start();
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
@@ -48,8 +48,8 @@ ob_start();
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card border-0 shadow-sm">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
