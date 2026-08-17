@@ -47,7 +47,8 @@ final class PeticionesConfig
         }
         $database = trim((string) ($stored['peticiones_db_database'] ?? '')) ?: (string) config('peticiones.database', '');
         $username = trim((string) ($stored['peticiones_db_username'] ?? '')) ?: (string) config('peticiones.username', '');
-        $charset = trim((string) ($stored['peticiones_db_charset'] ?? '')) ?: (string) config('peticiones.charset', 'utf8mb4');
+        // Siempre utf8mb4 para tildes/ñ (ignora valores legacy latin1/utf8 en settings/.env).
+        $charset = 'utf8mb4';
 
         $tmdb = trim((string) ($stored['peticiones_tmdb_api_key'] ?? ''));
         if ($tmdb === '') {
@@ -71,7 +72,7 @@ final class PeticionesConfig
             'database' => $database,
             'username' => $username,
             'password' => $password,
-            'charset' => $charset !== '' ? $charset : 'utf8mb4',
+            'charset' => $charset,
             'tmdb_api_key' => $tmdb,
             'scraper_api_key' => $scraper,
             'configured' => $configured,

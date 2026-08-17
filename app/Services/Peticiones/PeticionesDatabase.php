@@ -117,14 +117,31 @@ final class PeticionesDatabase
         $host = (string) $cfg['host'];
         $port = (int) ($cfg['port'] ?? 3306);
         $dbname = (string) $cfg['database'];
-        $charset = (string) ($cfg['charset'] ?? 'utf8mb4');
+        // Forzar utf8mb4: tildes/ñ y Unicode completo; evita mojibake si el servidor
+        // usa latin1 por defecto o si el DSN charset no se aplica en algunos drivers.
+        $charset = self::normalizeCharset((string) ($cfg['charset'] ?? 'utf8mb4'));
         $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset={$charset}";
 
-        return new PDO($dsn, (string) $cfg['username'], (string) $cfg['password'], [
+        $pdo = new PDO($dsn, (string) $cfg['username'], (string) $cfg['password'], [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
             PDO::ATTR_TIMEOUT => 8,
+            PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4',
         ]);
+
+        // Cinturón y tirantes: algunos entornos ignoran MYSQL_ATTR_INIT_COMMAND / DSN charset.
+        $pdo->exec('SET NAMES utf8mb4');
+
+        return $pdo;
+    }
+
+    /**
+     * Charset de conexión: siempre utf8mb4 (tildes/ñ).
+     * Valores latin1|utf8 en config/.env se ignoran a propósito.
+     */
+    private static function normalizeCharset(string $unused = ''): string
+    {
+        return 'utf8mb4';
     }
 }

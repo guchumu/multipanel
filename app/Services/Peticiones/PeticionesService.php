@@ -39,7 +39,7 @@ final class PeticionesService
         $this->repo->accept($id, $now);
 
         $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
-        $mensaje = "Su petición de {$corto} ha sido aceptada. Se la avisaremos tan pronto este disponible para su reproduccion.";
+        $mensaje = "Su petición de {$corto} ha sido aceptada. Se la avisaremos tan pronto esté disponible para su reproducción.";
         $this->notifyUser($row, 'Petición aceptada', $mensaje);
 
         return ['ok' => true, 'message' => 'Aceptada'];

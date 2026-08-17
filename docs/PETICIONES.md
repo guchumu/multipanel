@@ -26,6 +26,8 @@ PETICIONES_TMDB_API_KEY=
 
 La UI de settings tiene prioridad sobre `.env` cuando hay valores guardados.
 
+La conexión PDO remota usa siempre **utf8mb4** (`charset` en el DSN + `SET NAMES utf8mb4`) para que tildes y ñ se muestren bien. Las vistas escapan con `e()` → `htmlspecialchars(..., UTF-8)` y las respuestas JSON van con `charset=utf-8`.
+
 ## Menú
 
 **Peticiones** en el menú lateral (junto a importación / gestión).
