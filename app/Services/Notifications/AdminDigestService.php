@@ -8,6 +8,7 @@ use App\Repositories\MediaUserRepository;
 use App\Repositories\PeticionesRepository;
 use App\Services\AlertSettingsService;
 use App\Services\BillingService;
+use App\Services\ConcurrentStreamLimitService;
 use App\Services\Peticiones\PeticionesConfig;
 use Core\Database;
 use Core\Logger;
@@ -21,6 +22,8 @@ use DateTimeZone;
 final class AdminDigestService
 {
     private const TOP_EMAILS = 5;
+    private const TOP_OFFLINE = 4;
+    private const TOP_VIOLATORS = 3;
 
     public function __construct(
         private NotificationService $notifications = new NotificationService(),
@@ -108,17 +111,7 @@ final class AdminDigestService
     }
 
     /**
-     * @return array{
-     *   today_count: int,
-     *   week_count: int,
-     *   today_emails: array<int, string>,
-     *   week_emails: array<int, string>,
-     *   peticiones_pendientes: int|null,
-     *   servers_online: int,
-     *   servers_offline: int,
-     *   servers_total: int,
-     *   overdue: int|null
-     * }
+     * @return array<string, mixed>
      */
     private function buildPayload(int $tenantId, DateTimeZone $tz): array
     {
@@ -137,19 +130,13 @@ final class AdminDigestService
                 continue;
             }
 
-            $label = trim((string) ($user->email ?? ''));
-            if ($label === '') {
-                $label = trim((string) ($user->username ?? ''));
-            }
-            if ($label === '') {
-                $label = '#' . (int) ($user->id ?? 0);
-            }
+            $label = $this->userLabel($user);
 
             if ($daysLeft === 0) {
                 $todayEmails[] = $label;
             }
             if ($daysLeft <= 7) {
-                $weekEmails[] = $label;
+                $weekEmails[] = $label . " ({$daysLeft}d)";
             }
         }
 
@@ -166,21 +153,31 @@ final class AdminDigestService
         $serversOnline = 0;
         $serversOffline = 0;
         $serversTotal = 0;
+        $offlineNames = [];
+        $syncErrors = [];
         try {
             $rows = Database::getInstance()->fetchAll(
-                "SELECT status, COUNT(*) AS c FROM servers
+                "SELECT name, status, last_error, last_sync_at
+                 FROM servers
                  WHERE tenant_id = ? AND deleted_at IS NULL
-                 GROUP BY status",
+                 ORDER BY name ASC",
                 [$tenantId]
             );
             foreach ($rows as $row) {
-                $c = (int) ($row['c'] ?? 0);
-                $serversTotal += $c;
+                $serversTotal++;
                 $status = (string) ($row['status'] ?? '');
+                $name = trim((string) ($row['name'] ?? '')) ?: 'Servidor';
                 if ($status === 'online') {
-                    $serversOnline += $c;
+                    $serversOnline++;
                 } elseif ($status === 'offline') {
-                    $serversOffline += $c;
+                    $serversOffline++;
+                    if (count($offlineNames) < self::TOP_OFFLINE) {
+                        $offlineNames[] = $name;
+                    }
+                }
+                $err = trim((string) ($row['last_error'] ?? ''));
+                if ($err !== '' && count($syncErrors) < self::TOP_OFFLINE) {
+                    $syncErrors[] = $name . ': ' . mb_substr($err, 0, 60);
                 }
             }
         } catch (\Throwable) {
@@ -194,6 +191,53 @@ final class AdminDigestService
             $overdue = null;
         }
 
+        $violations24h = null;
+        $topAbusers = [];
+        try {
+            $since = (new DateTimeImmutable('-24 hours'))->format('Y-m-d H:i:s');
+            $countRow = Database::getInstance()->fetchOne(
+                'SELECT COUNT(*) AS c FROM stream_limit_violations
+                 WHERE tenant_id = ? AND created_at >= ?',
+                [$tenantId, $since]
+            );
+            $violations24h = (int) ($countRow['c'] ?? 0);
+
+            $abuserRows = Database::getInstance()->fetchAll(
+                'SELECT v.media_user_id, COUNT(*) AS c,
+                        MAX(COALESCE(NULLIF(mu.email, \'\'), NULLIF(mu.username, \'\'), CONCAT(\'#\', v.media_user_id))) AS label
+                 FROM stream_limit_violations v
+                 LEFT JOIN media_users mu ON mu.id = v.media_user_id
+                 WHERE v.tenant_id = ? AND v.created_at >= ?
+                 GROUP BY v.media_user_id
+                 ORDER BY c DESC
+                 LIMIT ' . self::TOP_VIOLATORS,
+                [$tenantId, $since]
+            );
+            foreach ($abuserRows as $r) {
+                $topAbusers[] = trim((string) ($r['label'] ?? '#')) . '×' . (int) ($r['c'] ?? 0);
+            }
+        } catch (\Throwable) {
+            // Tabla puede no existir aún
+            try {
+                $recent = (new ConcurrentStreamLimitService())->listViolations($tenantId, 50);
+                $violations24h = count($recent);
+            } catch (\Throwable) {
+                $violations24h = null;
+            }
+        }
+
+        $openTickets = null;
+        try {
+            $ticketRow = Database::getInstance()->fetchOne(
+                "SELECT COUNT(*) AS c FROM tickets
+                 WHERE tenant_id = ? AND status IN ('open', 'in_progress', 'waiting')",
+                [$tenantId]
+            );
+            $openTickets = (int) ($ticketRow['c'] ?? 0);
+        } catch (\Throwable) {
+            $openTickets = null;
+        }
+
         return [
             'today_count' => count($todayEmails),
             'week_count' => count($weekEmails),
@@ -203,8 +247,29 @@ final class AdminDigestService
             'servers_online' => $serversOnline,
             'servers_offline' => $serversOffline,
             'servers_total' => $serversTotal,
+            'offline_names' => $offlineNames,
+            'sync_errors' => $syncErrors,
             'overdue' => $overdue,
+            'violations_24h' => $violations24h,
+            'top_abusers' => $topAbusers,
+            'open_tickets' => $openTickets,
         ];
+    }
+
+    private function userLabel(object $user): string
+    {
+        $label = trim((string) ($user->email ?? ''));
+        if ($label === '') {
+            $label = trim((string) ($user->display_name ?? ''));
+        }
+        if ($label === '') {
+            $label = trim((string) ($user->username ?? ''));
+        }
+        if ($label === '') {
+            $label = '#' . (int) ($user->id ?? 0);
+        }
+
+        return $label;
     }
 
     /** @param array<string, mixed> $p */
@@ -222,7 +287,7 @@ final class AdminDigestService
             }
         }
 
-        $lines[] = 'Caducidades esta semana: ' . (int) $p['week_count'];
+        $lines[] = 'Caducidades ≤7d: ' . (int) $p['week_count'];
         if ($p['week_emails'] !== [] && (int) $p['week_count'] !== (int) $p['today_count']) {
             $lines[] = '  · ' . implode(', ', $p['week_emails']);
             if ((int) $p['week_count'] > count($p['week_emails'])) {
@@ -231,23 +296,46 @@ final class AdminDigestService
         }
 
         $lines[] = '';
-        if ($p['peticiones_pendientes'] === null) {
-            $lines[] = 'Peticiones pendientes: n/d';
-        } else {
-            $lines[] = 'Peticiones pendientes: ' . (int) $p['peticiones_pendientes'];
-        }
-
         $lines[] = sprintf(
             'Servidores: %d online / %d offline (total %d)',
             (int) $p['servers_online'],
             (int) $p['servers_offline'],
             (int) $p['servers_total']
         );
+        if (!empty($p['offline_names'])) {
+            $lines[] = '  Offline: ' . implode(', ', $p['offline_names']);
+        }
+        if (!empty($p['sync_errors'])) {
+            $lines[] = '  Sync/err: ' . implode(' | ', $p['sync_errors']);
+        }
+
+        if ($p['violations_24h'] !== null) {
+            $lines[] = 'Violaciones streams (24h): ' . (int) $p['violations_24h'];
+            if (!empty($p['top_abusers'])) {
+                $lines[] = '  Top: ' . implode(', ', $p['top_abusers']);
+            }
+        }
+
+        if ($p['open_tickets'] !== null) {
+            $lines[] = 'Tickets abiertos: ' . (int) $p['open_tickets'];
+        }
+
+        if ($p['peticiones_pendientes'] === null) {
+            $lines[] = 'Peticiones pendientes: n/d';
+        } else {
+            $lines[] = 'Peticiones pendientes: ' . (int) $p['peticiones_pendientes'];
+        }
 
         if ($p['overdue'] !== null) {
             $lines[] = 'Suscripciones overdue: ' . (int) $p['overdue'];
         }
 
-        return implode("\n", $lines);
+        $text = implode("\n", $lines);
+        // WhatsApp/Telegram: mantener mensaje manejable.
+        if (mb_strlen($text) > 3500) {
+            $text = mb_substr($text, 0, 3490) . "\n…";
+        }
+
+        return $text;
     }
 }
