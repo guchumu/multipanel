@@ -90,6 +90,7 @@ $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::cl
     $router->get('/profile', [PortalController::class, 'profile'], 'portal.profile');
     $router->post('/profile', [PortalController::class, 'updateProfile'], 'portal.profile.update', [CsrfMiddleware::class]);
     $router->post('/payment/checkout', [PortalPaymentController::class, 'checkout'], 'portal.payment.checkout', [CsrfMiddleware::class]);
+    $router->post('/payment/renew', [PortalPaymentController::class, 'renew'], 'portal.payment.renew', [CsrfMiddleware::class]);
     $router->get('/payment/success', [PortalPaymentController::class, 'success'], 'portal.payment.success');
     // Portal tickets
     $router->get('/tickets', [PortalTicketController::class, 'index'], 'portal.tickets');
@@ -139,6 +140,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
     $router->get('/media-users/estimacion', [MediaUserController::class, 'estimacion'], 'media_users.estimacion');
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
+    $router->post('/media-users/expiring/bulk-renew', [MediaUserController::class, 'expiringBulkRenew'], 'media_users.expiring.bulk_renew', [CsrfMiddleware::class]);
+    $router->post('/media-users/expiring/bulk-suspend', [MediaUserController::class, 'expiringBulkSuspend'], 'media_users.expiring.bulk_suspend', [CsrfMiddleware::class]);
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
     $router->get('/media-users/limpieza', [MediaUserController::class, 'cleanupHub'], 'media_users.limpieza');
@@ -160,6 +163,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/notes', [MediaUserController::class, 'updateNotes'], 'media_users.notes', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/profile', [MediaUserController::class, 'updateProfile'], 'media_users.profile', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/send-message', [MediaUserController::class, 'sendMessage'], 'media_users.send_message', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/messages/{id}/retry', [MediaUserController::class, 'retryMessage'], 'media_users.messages.retry', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/remove-server', [MediaUserController::class, 'removeFromServer'], 'media_users.remove_server', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/sync-membership', [MediaUserController::class, 'syncMembership'], 'media_users.sync_membership', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/telegram', [MediaUserController::class, 'updateTelegram'], 'media_users.telegram', [CsrfMiddleware::class]);

@@ -1,5 +1,7 @@
 (function () {
     const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+    const filterDays = Number(window.EXPIRING_FILTER_DAYS || 15);
+    const serverId = window.EXPIRING_SERVER_ID || null;
 
     async function post(url, body = {}) {
         const res = await fetch(url, {
@@ -18,6 +20,40 @@
             throw new Error(data.error || data.message || 'Error');
         }
         return data;
+    }
+
+    async function postForm(url, fields) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.className = 'd-none';
+
+        const token = document.createElement('input');
+        token.type = 'hidden';
+        token.name = '_token';
+        token.value = csrf;
+        form.appendChild(token);
+
+        Object.entries(fields).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+                value.forEach((v) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = String(v);
+                    form.appendChild(input);
+                });
+                return;
+            }
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = String(value ?? '');
+            form.appendChild(input);
+        });
+
+        document.body.appendChild(form);
+        form.submit();
     }
 
     document.querySelectorAll('.btn-quick-renew').forEach((btn) => {
@@ -48,9 +84,16 @@
     const bulkCount = document.getElementById('bulkSelectedCount');
     const bulkInputs = document.getElementById('bulkUuidInputs');
     const clearBtn = document.getElementById('bulkClearSelection');
+    const renewBtn = document.getElementById('bulkRenewBtn');
+    const suspendBtn = document.getElementById('bulkSuspendBtn');
+    const renewDaysInput = document.getElementById('bulkRenewDays');
 
     function selectedBoxes() {
         return Array.from(document.querySelectorAll('.expiring-select:checked'));
+    }
+
+    function selectedUuids() {
+        return selectedBoxes().map((el) => el.value).filter(Boolean);
     }
 
     function syncSectionSelectAll() {
@@ -97,6 +140,36 @@
                 box.checked = false;
             });
             syncBulkBar();
+        });
+    }
+
+    if (renewBtn) {
+        renewBtn.addEventListener('click', () => {
+            const uuids = selectedUuids();
+            if (!uuids.length) return;
+            const days = Math.max(1, Number(renewDaysInput?.value || 30));
+            if (!confirm(`¿Sumar ${days} días a ${uuids.length} usuario(s)?`)) return;
+            const fields = {
+                days,
+                filter_days: filterDays,
+                'uuids[]': uuids,
+            };
+            if (serverId) fields.server_id = serverId;
+            postForm('/media-users/expiring/bulk-renew', fields);
+        });
+    }
+
+    if (suspendBtn) {
+        suspendBtn.addEventListener('click', () => {
+            const uuids = selectedUuids();
+            if (!uuids.length) return;
+            if (!confirm(`¿Suspender ${uuids.length} usuario(s)? Se cortará el acceso en el servidor si es posible.`)) return;
+            const fields = {
+                filter_days: filterDays,
+                'uuids[]': uuids,
+            };
+            if (serverId) fields.server_id = serverId;
+            postForm('/media-users/expiring/bulk-suspend', fields);
         });
     }
 

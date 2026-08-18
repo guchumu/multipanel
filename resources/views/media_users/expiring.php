@@ -148,6 +148,22 @@ ob_start();
 
 <div id="bulkMessageBar" class="card border-0 shadow-sm mb-3 d-none">
     <div class="card-body py-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <strong class="small"><span id="bulkSelectedCount">0</span> seleccionado(s)</strong>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <div class="input-group input-group-sm" style="width: auto; max-width: 11rem;">
+                    <span class="input-group-text">+días</span>
+                    <input type="number" id="bulkRenewDays" class="form-control" value="30" min="1" max="3650" style="width: 4.5rem;">
+                    <button type="button" class="btn btn-success" id="bulkRenewBtn" title="Renovar selección">
+                        <i class="bi bi-calendar-plus"></i><span class="d-none d-sm-inline ms-1">Renovar</span>
+                    </button>
+                </div>
+                <button type="button" class="btn btn-warning btn-sm" id="bulkSuspendBtn" title="Suspender selección">
+                    <i class="bi bi-pause"></i><span class="d-none d-sm-inline ms-1">Suspender</span>
+                </button>
+                <button type="button" class="btn btn-link btn-sm p-0" id="bulkClearSelection">Limpiar</button>
+            </div>
+        </div>
         <form method="POST" action="/media-users/expiring/broadcast" id="bulkMessageForm">
             <?= csrf_field() ?>
             <input type="hidden" name="days" value="<?= (int) $currentDays ?>">
@@ -155,10 +171,7 @@ ob_start();
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
             <div id="bulkUuidInputs"></div>
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                <strong class="small"><span id="bulkSelectedCount">0</span> seleccionado(s)</strong>
-                <button type="button" class="btn btn-link btn-sm p-0" id="bulkClearSelection">Limpiar selección</button>
-            </div>
+            <p class="small text-muted mb-2 mb-md-1"><i class="bi bi-telegram me-1"></i>Avisar por Telegram a la selección</p>
             <div class="row g-2">
                 <div class="col-12 col-md-3">
                     <input type="text" name="title" class="form-control form-control-sm" value="Aviso de vencimiento" required placeholder="Título">
@@ -168,7 +181,7 @@ ob_start();
                 </div>
                 <div class="col-12 col-md-2 d-grid">
                     <button type="submit" class="btn btn-info btn-sm" onclick="return confirm('¿Enviar Telegram a los usuarios seleccionados?')">
-                        <i class="bi bi-send me-1"></i>Enviar
+                        <i class="bi bi-send me-1"></i>Avisar
                     </button>
                 </div>
             </div>
@@ -202,6 +215,8 @@ $renderExpiringSection(
 <?php endif; ?>
 <?php
 $content = ob_get_clean();
-$scripts = '<script src="' . e(asset('js/media-users-expiring.js')) . '"></script>';
+$scripts = '<script>window.EXPIRING_FILTER_DAYS = ' . (int) $currentDays . ';'
+    . 'window.EXPIRING_SERVER_ID = ' . json_encode($currentServerId ? (int) $currentServerId : null) . ';</script>';
+$scripts .= '<script src="' . e(asset('js/media-users-expiring.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');
 ?>
