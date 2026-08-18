@@ -325,6 +325,22 @@ final class ServerSyncService
                 'status' => 'active',
                 'expires_at' => null,
             ];
+            // Recuperar panel fields de un gemelo soft-deleted / huérfano (wipe+sync).
+            $panelTwin = $this->findPanelFieldsTwin((int) $server->tenant_id, (int) $server->id, $username, $remoteEmail, $externalId);
+            if ($panelTwin !== null) {
+                if (($insert['email'] === null || $insert['email'] === '') && !$this->isBlankPanelValue($panelTwin['email'] ?? null)) {
+                    $insert['email'] = $panelTwin['email'];
+                }
+                if (!$this->isBlankPanelValue($panelTwin['telegram_chat_id'] ?? null)) {
+                    $insert['telegram_chat_id'] = $panelTwin['telegram_chat_id'];
+                }
+                if (!$this->isBlankPanelValue($panelTwin['expires_at'] ?? null)) {
+                    $insert['expires_at'] = $panelTwin['expires_at'];
+                }
+                if (!$this->isBlankPanelValue($panelTwin['notes'] ?? null)) {
+                    $insert['notes'] = $panelTwin['notes'];
+                }
+            }
             if ($hasMembershipCols) {
                 $insert['on_server'] = 1;
                 $insert['membership_synced_at'] = $now;
@@ -714,8 +730,9 @@ final class ServerSyncService
 
     /**
      * Campos seguros para UPDATE al sincronizar con Plex/Jellyfin.
-     * Solo escribe email/avatar cuando la API trae un valor real; no toca
-     * expires_at ni telegram_chat_id (datos del panel).
+     * Solo escribe email/avatar cuando la API trae un valor real; NUNCA toca
+     * expires_at, telegram_chat_id ni notes (datos del panel / import).
+     * Tampoco nullifica email local si la API no trae email.
      *
      * @param array<string, mixed> $remoteUser
      * @param array<string, mixed> $localUser
@@ -740,6 +757,89 @@ final class ServerSyncService
             $payload['avatar'] = trim($remoteThumb);
         }
 
+        // Defensa explícita: no incluir campos de panel aunque el caller los pase en $remoteUser.
+        unset(
+            $payload['expires_at'],
+            $payload['telegram_chat_id'],
+            $payload['notes'],
+            $payload['password'],
+            $payload['jellyfin_password_encrypted']
+        );
+
         return $payload;
+    }
+
+    /**
+     * Busca email/telegram/expires/notes en un usuario soft-deleted o sin external_id
+     * del mismo tenant (típico tras wipe+sync o import previo).
+     *
+     * @return array{email?: ?string, telegram_chat_id?: ?string, expires_at?: ?string, notes?: ?string}|null
+     */
+    private function findPanelFieldsTwin(int $tenantId, int $serverId, string $username, string $email, string $externalId): ?array
+    {
+        $db = Database::getInstance();
+        $candidates = [];
+
+        if ($externalId !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND external_id = ?
+                 ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                [$tenantId, $externalId]
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($email !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND LOWER(email) = LOWER(?)
+                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                [$tenantId, $email, $serverId]
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($username !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND LOWER(username) = LOWER(?)
+                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                [$tenantId, $username, $serverId]
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        $merged = ['email' => null, 'telegram_chat_id' => null, 'expires_at' => null, 'notes' => null];
+        foreach ($candidates as $row) {
+            foreach (['email', 'telegram_chat_id', 'expires_at', 'notes'] as $field) {
+                if ($this->isBlankPanelValue($merged[$field]) && !$this->isBlankPanelValue($row[$field] ?? null)) {
+                    $merged[$field] = $row[$field];
+                }
+            }
+        }
+
+        foreach ($merged as $value) {
+            if (!$this->isBlankPanelValue($value)) {
+                return $merged;
+            }
+        }
+
+        return null;
+    }
+
+    private function isBlankPanelValue(mixed $value): bool
+    {
+        return $value === null || (is_string($value) && trim($value) === '');
     }
 }

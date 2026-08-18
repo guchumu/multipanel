@@ -16,16 +16,17 @@ return [
 
     /**
      * servicio => needles del nombre de servidor en MultiPanel.
-     * 1 = Server10, 5 = NucBox (también acepta "Nucbox").
-     * Match case-insensitive por contains (p.ej. Server10, server 10).
+     * 1 = Servitron / Server10 (dump plex_manager: servers.id=2 "Servitron").
+     * 5 = NucBox (dump: servers.id=1 "Nucbox").
+     * Match case-insensitive por contains.
      */
     'map' => [
-        1 => array_values(array_filter(array_map('trim', explode(',', (string) env('IMPORT_SERVICIO_1_SERVERS', 'server10,server 10'))))),
+        1 => array_values(array_filter(array_map('trim', explode(',', (string) env('IMPORT_SERVICIO_1_SERVERS', 'servitron,server10,server 10'))))),
         5 => array_values(array_filter(array_map('trim', explode(',', (string) env('IMPORT_SERVICIO_5_SERVERS', 'nucbox,nuc box'))))),
     ],
 
     'labels' => [
-        1 => 'Server10',
+        1 => 'Servitron/Server10',
         5 => 'NucBox',
     ],
 ];

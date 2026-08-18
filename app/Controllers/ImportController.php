@@ -169,7 +169,7 @@ class ImportController extends Controller
                     ? implode(', ', array_slice($userColumns, 0, 20))
                     : '(ninguna)';
                 $msg = sprintf(
-                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. Columnas users: %s. CRM backfill: %d.',
+                    'Importar fechas/datos (solo servicio 1=Servitron/Server10, 5=NucBox): leídas %d users → %d coincidencias, %d filas actualizadas, %d omitidos por servicio, %d sin match en panel. Telegram escritos: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. BD tras import: Telegram=%d, caducidad=%d, email=%d (ids ej. %s). Columnas users: %s. CRM backfill: %d.',
                     $parsed['users'],
                     (int) ($result['matched'] ?? 0),
                     (int) ($result['updated'] ?? 0),
@@ -180,6 +180,10 @@ class ImportController extends Controller
                     (int) ($result['applied_notes'] ?? 0),
                     (int) ($result['sql_telegram'] ?? 0),
                     (int) ($parsed['users'] ?? 0),
+                    (int) ($result['verified_telegram'] ?? 0),
+                    (int) ($result['verified_expires'] ?? 0),
+                    (int) ($result['verified_email'] ?? 0),
+                    $this->formatSampleIds($result['sample_updated_ids'] ?? []),
                     $columnsHint,
                     (int) ($result['telegram_backfilled'] ?? 0)
                 );
@@ -189,7 +193,7 @@ class ImportController extends Controller
                     ? implode(', ', array_slice($userColumns, 0, 20))
                     : '(ninguna)';
                 $msg = sprintf(
-                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Telegram rellenados: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. Columnas users: %s. CRM backfill: %d.',
+                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Telegram escritos: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. BD tras import: Telegram=%d, caducidad=%d, email=%d. Columnas users: %s. CRM backfill: %d.',
                     $parsed['servers'],
                     $parsed['users'],
                     $result['servers'],
@@ -203,6 +207,9 @@ class ImportController extends Controller
                     (int) ($result['applied_notes'] ?? 0),
                     (int) ($result['sql_telegram'] ?? 0),
                     (int) ($parsed['users'] ?? 0),
+                    (int) ($result['verified_telegram'] ?? 0),
+                    (int) ($result['verified_expires'] ?? 0),
+                    (int) ($result['verified_email'] ?? 0),
                     $columnsHint,
                     (int) ($result['telegram_backfilled'] ?? 0)
                 );
@@ -313,6 +320,24 @@ class ImportController extends Controller
             'K' => $n * 1024,
             default => $n,
         };
+    }
+
+    /** @param mixed $ids */
+    private function formatSampleIds(mixed $ids): string
+    {
+        if (!is_array($ids) || $ids === []) {
+            return '—';
+        }
+
+        $clean = [];
+        foreach ($ids as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $clean[] = (string) $n;
+            }
+        }
+
+        return $clean === [] ? '—' : implode(',', array_slice($clean, 0, 8));
     }
 
     /** @param array<string, mixed> $file */

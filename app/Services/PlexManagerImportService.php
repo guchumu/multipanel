@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\Server;
 use App\Services\Import\ServicioServerMapper;
 use App\Services\Import\SqlInsertParser;
+use Core\Cache;
 use Core\Database;
 use Core\Logger;
 use Ramsey\Uuid\Uuid;
@@ -39,7 +40,8 @@ final class PlexManagerImportService
      *   parsed: array{servers: int, users: int},
      *   sync: array<int, array{name: string, ok: bool, error: ?string}>,
      *   errors: array<int, string>, telegram_backfilled?: int, applied_telegram?: int, applied_expires?: int, applied_notes?: int,
-     *   sql_telegram?: int, user_columns?: list<string>, probe?: array<string, mixed>
+     *   sql_telegram?: int, user_columns?: list<string>, probe?: array<string, mixed>,
+     *   verified_telegram?: int, verified_expires?: int, verified_email?: int, sample_updated_ids?: list<int>
      * }
      */
     public function importFromSqlFile(string $filePath, int $tenantId, string $mode = self::MODE_FULL): array
@@ -156,6 +158,8 @@ final class PlexManagerImportService
         $appliedTelegram = 0;
         $appliedExpires = 0;
         $appliedNotes = 0;
+        /** @var list<int> */
+        $sampleUpdatedIds = [];
 
         /** @var array<int, array{server_id: ?int, server_name: ?string}> */
         $servicioServerCache = [];
@@ -202,25 +206,21 @@ final class PlexManagerImportService
                     ?? ($legacyUserId > 0 ? ($telegramByLegacyUserId[$legacyUserId] ?? null) : null);
                 $notes = $this->resolveNotes($legacy);
                 $panelFields = $this->panelFieldsPayload($expiresAt, $telegramChatId, $notes);
+                $overlayPayload = $this->overlayColumnPayload($email, $expiresAt, $telegramChatId, $notes);
 
-                // Overlay: si no hay servidor mapeado, igual intentamos match por email/username.
+                // Overlay: si no hay servidor mapeado, igual intentamos match por external_id/email/username.
                 if ($serverId === null && $mode === self::MODE_OVERLAY) {
-                    $existing = $this->findMediaUserForImport($tenantId, $email, $username, 0);
-                    if ($existing === null) {
+                    $existingIds = $this->findAllMediaUsersForImport($tenantId, $email, $username, $externalId, 0);
+                    if ($existingIds === []) {
                         $skipped++;
                         continue;
                     }
                     $matched++;
-                    $payload = $panelFields;
-                    if ($email !== '') {
-                        $payload['email'] = $email;
-                    }
-                    if ($payload !== []) {
-                        $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
-                        $updated++;
+                    if ($overlayPayload !== []) {
+                        $this->applyOverlayToMediaUsers($db, $existingIds, $overlayPayload, $updated, $sampleUpdatedIds);
                         $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
                     }
-                    $this->touchCustomerMetadata($tenantId, (int) $existing['id'], $email, $username, $legacy, $status);
+                    $this->touchCustomerMetadata($tenantId, $existingIds[0], $email, $username, $legacy, $status);
                     continue;
                 }
 
@@ -237,24 +237,22 @@ final class PlexManagerImportService
                     continue;
                 }
 
-                $existing = $this->findMediaUserForImport($tenantId, $email, $username, (int) $serverId);
+                $existingIds = $this->findAllMediaUsersForImport($tenantId, $email, $username, $externalId, (int) $serverId);
+                $existing = $existingIds !== []
+                    ? ['id' => $existingIds[0]]
+                    : null;
 
                 if ($mode === self::MODE_OVERLAY) {
-                    if ($existing === null) {
+                    if ($existingIds === []) {
                         $skipped++;
                         continue;
                     }
                     $matched++;
-                    $payload = $panelFields;
-                    if ($email !== '') {
-                        $payload['email'] = $email;
-                    }
-                    if ($payload !== []) {
-                        $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
-                        $updated++;
+                    if ($overlayPayload !== []) {
+                        $this->applyOverlayToMediaUsers($db, $existingIds, $overlayPayload, $updated, $sampleUpdatedIds);
                         $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
                     }
-                    $this->touchCustomerMetadata($tenantId, (int) $existing['id'], $email, $username, $legacy, $status);
+                    $this->touchCustomerMetadata($tenantId, $existingIds[0], $email, $username, $legacy, $status);
                     continue;
                 }
 
@@ -265,13 +263,16 @@ final class PlexManagerImportService
                         'external_id' => $externalId !== '' ? $externalId : null,
                         'status' => $status,
                     ], static fn ($v) => $v !== null && $v !== '');
-                    $update = array_merge($update, $panelFields);
+                    $update = array_merge($update, $overlayPayload);
                     $db->update('media_users', $update, 'id = ?', [$existing['id']]);
                     $mediaUserId = (int) $existing['id'];
                     $matched++;
                     $updated++;
                     $skipped++;
                     $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
+                    if (count($sampleUpdatedIds) < 8) {
+                        $sampleUpdatedIds[] = $mediaUserId;
+                    }
                 } else {
                     $mediaUserId = (int) $db->insert('media_users', array_merge([
                         'tenant_id' => $tenantId,
@@ -358,6 +359,8 @@ final class PlexManagerImportService
         }
 
         $telegramBackfilled = $this->backfillTelegramChatIds($tenantId);
+        Cache::forget('media_user_dedupe_ran_' . $tenantId);
+        $verified = $this->verifyPanelPanelFields($tenantId);
 
         Logger::info('plex_manager SQL import', compact(
             'serversImported',
@@ -373,7 +376,9 @@ final class PlexManagerImportService
             'appliedNotes',
             'sqlTelegram',
             'userColumns',
-            'mode'
+            'mode',
+            'verified',
+            'sampleUpdatedIds'
         ));
         $this->audit->log('import.plex_manager', 'import', null, null, [
             'servers' => $serversImported,
@@ -388,6 +393,8 @@ final class PlexManagerImportService
             'applied_notes' => $appliedNotes,
             'sql_telegram' => $sqlTelegram,
             'user_columns' => $userColumns,
+            'verified' => $verified,
+            'sample_updated_ids' => $sampleUpdatedIds,
             'mode' => $mode,
             'sync' => $syncResults,
         ]);
@@ -412,7 +419,11 @@ final class PlexManagerImportService
             $appliedExpires,
             $appliedNotes,
             $sqlTelegram,
-            $userColumns
+            $userColumns,
+            (int) ($verified['telegram'] ?? 0),
+            (int) ($verified['expires'] ?? 0),
+            (int) ($verified['email'] ?? 0),
+            $sampleUpdatedIds
         );
     }
 
@@ -427,52 +438,183 @@ final class PlexManagerImportService
     }
 
     /** @return array{id: int}|null */
-    private function findMediaUserForImport(int $tenantId, string $email, string $username, int $serverId): ?array
+    private function findMediaUserForImport(int $tenantId, string $email, string $username, int $serverId, string $externalId = ''): ?array
+    {
+        $ids = $this->findAllMediaUsersForImport($tenantId, $email, $username, $externalId, $serverId);
+
+        return $ids === [] ? null : ['id' => $ids[0]];
+    }
+
+    /**
+     * Todos los media_users del tenant que coinciden (external_id / email / username).
+     * Orden: on_server=1 primero, luego server preferido, luego external_id presente, id DESC.
+     * Así el overlay no deja huérfanos rellenos junto a filas sync vacías visibles en la UI.
+     *
+     * @return list<int>
+     */
+    private function findAllMediaUsersForImport(
+        int $tenantId,
+        string $email,
+        string $username,
+        string $externalId,
+        int $preferredServerId,
+    ): array {
+        $db = Database::getInstance();
+        $ids = [];
+        $hasOnServer = $this->mediaUsersHasOnServerColumn($db);
+        $order = $hasOnServer
+            ? 'ORDER BY (mu.on_server = 1) DESC, (mu.server_id = ?) DESC,
+                  (mu.external_id IS NOT NULL AND mu.external_id != \'\') DESC, mu.id DESC'
+            : 'ORDER BY (mu.server_id = ?) DESC,
+                  (mu.external_id IS NOT NULL AND mu.external_id != \'\') DESC, mu.id DESC';
+
+        if ($externalId !== '') {
+            foreach ($db->fetchAll(
+                "SELECT mu.id FROM media_users mu
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND mu.external_id = ?
+                 {$order}
+                 LIMIT 20",
+                [$tenantId, $externalId, $preferredServerId]
+            ) as $row) {
+                $ids[(int) $row['id']] = true;
+            }
+        }
+
+        if ($email !== '') {
+            foreach ($db->fetchAll(
+                "SELECT mu.id FROM media_users mu
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND LOWER(mu.email) = LOWER(?)
+                 {$order}
+                 LIMIT 20",
+                [$tenantId, $email, $preferredServerId]
+            ) as $row) {
+                $ids[(int) $row['id']] = true;
+            }
+        }
+
+        if ($username !== '') {
+            foreach ($db->fetchAll(
+                "SELECT mu.id FROM media_users mu
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND LOWER(mu.username) = LOWER(?)
+                 {$order}
+                 LIMIT 20",
+                [$tenantId, $username, $preferredServerId]
+            ) as $row) {
+                $ids[(int) $row['id']] = true;
+            }
+        }
+
+        // Preferencia estable: reordenar candidatos con la misma prioridad.
+        if ($ids === []) {
+            return [];
+        }
+
+        $idList = array_keys($ids);
+        $placeholders = implode(',', array_fill(0, count($idList), '?'));
+        $ranked = $db->fetchAll(
+            "SELECT mu.id FROM media_users mu
+             WHERE mu.id IN ({$placeholders})
+             {$order}",
+            [...$idList, $preferredServerId]
+        );
+
+        return array_values(array_map(static fn (array $r): int => (int) $r['id'], $ranked));
+    }
+
+    private function mediaUsersHasOnServerColumn(Database $db): bool
+    {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        try {
+            $row = $db->fetchOne(
+                'SELECT COUNT(*) AS total
+                 FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = ?
+                   AND COLUMN_NAME = ?',
+                ['media_users', 'on_server']
+            );
+            $cached = ((int) ($row['total'] ?? 0)) > 0;
+        } catch (\Throwable) {
+            $cached = false;
+        }
+
+        return $cached;
+    }
+
+    /**
+     * @param list<int> $ids
+     * @param array<string, mixed> $payload
+     * @param list<int> $sampleUpdatedIds
+     */
+    private function applyOverlayToMediaUsers(
+        Database $db,
+        array $ids,
+        array $payload,
+        int &$updated,
+        array &$sampleUpdatedIds,
+    ): void {
+        foreach ($ids as $id) {
+            $db->update('media_users', $payload, 'id = ?', [$id]);
+            $updated++;
+            if (count($sampleUpdatedIds) < 8) {
+                $sampleUpdatedIds[] = $id;
+            }
+        }
+    }
+
+    /**
+     * Mapa explícito columnas panel ← dump users.
+     * email ← email; telegram_chat_id ← coalesce(chat_id, telegram_id);
+     * expires_at ← end_date; notes ← private_notes.
+     *
+     * @return array{email?: string, expires_at?: string, telegram_chat_id?: string, notes?: string}
+     */
+    private function overlayColumnPayload(
+        string $email,
+        ?string $expiresAt,
+        ?string $telegramChatId,
+        ?string $notes,
+    ): array {
+        $payload = $this->panelFieldsPayload($expiresAt, $telegramChatId, $notes);
+        $email = strtolower(trim($email));
+        if ($email !== '') {
+            $payload['email'] = $email;
+        }
+
+        return $payload;
+    }
+
+    /** @return array{telegram: int, expires: int, email: int} */
+    private function verifyTenantPanelFields(int $tenantId): array
     {
         $db = Database::getInstance();
-
-        $byEmail = $db->fetchOne(
-            'SELECT id FROM media_users
-             WHERE tenant_id = ? AND deleted_at IS NULL AND server_id = ? AND LOWER(email) = LOWER(?)
-             ORDER BY id DESC LIMIT 1',
-            [$tenantId, $serverId, $email]
+        $telegram = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL
+               AND telegram_chat_id IS NOT NULL AND telegram_chat_id != \'\'',
+            [$tenantId]
         );
-        if ($byEmail) {
-            return $byEmail;
-        }
-
-        $byUsername = $db->fetchOne(
-            'SELECT id FROM media_users
-             WHERE tenant_id = ? AND deleted_at IS NULL AND server_id = ?
-               AND LOWER(username) = LOWER(?)
-             ORDER BY id DESC LIMIT 1',
-            [$tenantId, $serverId, $username]
+        $expires = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL AND expires_at IS NOT NULL',
+            [$tenantId]
         );
-        if ($byUsername) {
-            return $byUsername;
-        }
-
-        // Fallback: mismo email/username en otro server_id del tenant (mapping servicio imperfecto).
-        $byEmailAny = $db->fetchOne(
-            'SELECT id FROM media_users
-             WHERE tenant_id = ? AND deleted_at IS NULL AND LOWER(email) = LOWER(?)
-             ORDER BY (server_id = ?) DESC, id DESC LIMIT 1',
-            [$tenantId, $email, $serverId]
+        $email = $db->fetchOne(
+            'SELECT COUNT(*) AS total FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL
+               AND email IS NOT NULL AND email != \'\'',
+            [$tenantId]
         );
-        if ($byEmailAny) {
-            return $byEmailAny;
-        }
 
-        if ($username === '') {
-            return null;
-        }
-
-        return $db->fetchOne(
-            'SELECT id FROM media_users
-             WHERE tenant_id = ? AND deleted_at IS NULL AND LOWER(username) = LOWER(?)
-             ORDER BY (server_id = ?) DESC, id DESC LIMIT 1',
-            [$tenantId, $username, $serverId]
-        ) ?: null;
+        return [
+            'telegram' => (int) ($telegram['total'] ?? 0),
+            'expires' => (int) ($expires['total'] ?? 0),
+            'email' => (int) ($email['total'] ?? 0),
+        ];
     }
 
     /** @param array<string, mixed> $legacy */
@@ -814,6 +956,10 @@ final class PlexManagerImportService
         int $appliedNotes = 0,
         int $sqlTelegram = 0,
         array $userColumns = [],
+        int $verifiedTelegram = 0,
+        int $verifiedExpires = 0,
+        int $verifiedEmail = 0,
+        array $sampleUpdatedIds = [],
     ): array {
         return [
             'servers' => $servers,
@@ -836,6 +982,10 @@ final class PlexManagerImportService
             'applied_notes' => $appliedNotes,
             'sql_telegram' => $sqlTelegram,
             'user_columns' => $userColumns,
+            'verified_telegram' => $verifiedTelegram,
+            'verified_expires' => $verifiedExpires,
+            'verified_email' => $verifiedEmail,
+            'sample_updated_ids' => $sampleUpdatedIds,
         ];
     }
 

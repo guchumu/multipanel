@@ -182,7 +182,9 @@ final class MediaUserDedupeService
         $score = 0;
         $score += !$this->isBlank($user->email ?? null) ? 20 : 0;
         $score += !$this->isBlank($user->external_id ?? null) ? 15 : 0;
+        $score += ((int) ($user->on_server ?? 0) === 1) ? 12 : 0;
         $score += !$this->isBlank($user->telegram_chat_id ?? null) ? 8 : 0;
+        $score += !$this->isBlank($user->expires_at ?? null) ? 8 : 0;
         $score += !$this->isBlank($user->notes ?? null) ? 5 : 0;
         $score += !empty($user->server_id) ? 5 : 0;
         $score += ((string) $user->status) === 'active' ? 4 : 0;

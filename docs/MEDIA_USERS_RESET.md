@@ -15,18 +15,20 @@ caducidades del importador (solo servicio 1 y 5).
    - Soft-delete en la BD del panel (`deleted_at`).
    - **No** elimina cuentas en Plex/Jellyfin.
 2. **Forzar sincronización** de cada servidor (o “todos”).
-   - Recrea en el panel solo quienes están en la biblioteca remota.
+   - Recrea en el panel solo quienes estén en la biblioteca remota.
+   - Al recrear, intenta recuperar email/Telegram/caducidad/notas de gemelos soft-deleted.
 3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay).
-   - Solo filas con `servicio` / `service` **1** o **5**.
-   - 1 → Server10, 5 → NucBox (match por nombre de servidor).
-   - Actualiza `expires_at` (desde end_date/expires_at), Telegram (`users.telegram_chat_id` / `telegram_id`, y si falta: `payments_history`, `telegram_messages_history`, `notification_log`), notas (private_notes/notes) y email sobre usuarios ya sync (email/username).
-   - El flash «Telegram rellenados» cuenta valores escritos en `media_users` desde el SQL (no solo el backfill CRM).
+   - Solo filas con `servicio` / `service` **1** o **5** (o inferidos por nombre de servidor legacy / pagos).
+   - 1 → Servitron / Server10, 5 → NucBox (match por nombre de servidor).
+   - Actualiza **todas** las filas coincidentes (`plex_user_id`→`external_id`, email, username), priorizando `on_server=1`.
+   - Mapa columnas: `email`←`users.email`, `telegram_chat_id`←coalesce(`telegram_chat_id`,`telegram_id`), `expires_at`←`end_date`, `notes`←`private_notes`.
+   - El flash muestra «Telegram escritos» (writes) **y** «BD tras import» (conteo real en `media_users`).
 
 ## Filtro servicio
 
 | Código | Servidor destino (needles por defecto) |
 |--------|----------------------------------------|
-| 1 | `server10`, `server 10` |
+| 1 | `servitron`, `server10`, `server 10` |
 | 5 | `nucbox`, `nuc box` |
 
 Origen del código en cada fila SQL (en este orden):
@@ -35,10 +37,12 @@ Origen del código en cada fila SQL (en este orden):
 2. Último `payments_history.service` del mismo email
 3. Nombre del servidor legacy (`servers.server_name`) si coincide con los needles
 
-Si tus servidores se llaman distinto, define en `.env`:
+Dump típico plex_manager: `Nucbox` (id=1) → servicio 5; `Servitron` (id=2) → servicio 1.
+
+Si tus servidores MultiPanel se llaman distinto, define en `.env`:
 
 ```env
-IMPORT_SERVICIO_1_SERVERS=server10,server 10
+IMPORT_SERVICIO_1_SERVERS=servitron,server10,server 10
 IMPORT_SERVICIO_5_SERVERS=nucbox,nuc box
 ```
 

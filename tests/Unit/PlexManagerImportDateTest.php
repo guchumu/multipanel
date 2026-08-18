@@ -107,6 +107,88 @@ final class PlexManagerImportDateTest extends TestCase
         );
     }
 
+    public function test_overlay_column_payload_maps_email_and_panel_fields(): void
+    {
+        $service = new PlexManagerImportService();
+        $ref = new ReflectionMethod(PlexManagerImportService::class, 'overlayColumnPayload');
+        $ref->setAccessible(true);
+
+        $this->assertSame([
+            'expires_at' => '2026-12-01 23:59:59',
+            'telegram_chat_id' => '2023182976',
+            'notes' => 'nota',
+            'email' => 'user@example.com',
+        ], $ref->invoke(
+            $service,
+            'User@Example.com',
+            '2026-12-01 23:59:59',
+            '2023182976',
+            'nota'
+        ));
+
+        $this->assertSame(
+            ['email' => 'a@b.com'],
+            $ref->invoke($service, 'a@b.com', null, null, null)
+        );
+    }
+
+    public function test_legacy_dump_row_maps_like_overlay_payload(): void
+    {
+        $service = new PlexManagerImportService();
+        $tg = new ReflectionMethod(PlexManagerImportService::class, 'resolveTelegramChatId');
+        $tg->setAccessible(true);
+        $exp = new ReflectionMethod(PlexManagerImportService::class, 'resolveExpiresAt');
+        $exp->setAccessible(true);
+        $notes = new ReflectionMethod(PlexManagerImportService::class, 'resolveNotes');
+        $notes->setAccessible(true);
+        $overlay = new ReflectionMethod(PlexManagerImportService::class, 'overlayColumnPayload');
+        $overlay->setAccessible(true);
+
+        // Sample from plex_manager.sql users id=5 (masked email kept for mapping).
+        $legacy = [
+            'id' => 5,
+            'server_id' => 1,
+            'email' => 'arevalo.maria81@gmail.com',
+            'telegram_id' => '6160743237',
+            'telegram_chat_id' => '1172092710',
+            'plex_user_id' => '202222492',
+            'plex_username' => 'arevalo.21',
+            'end_date' => '2027-01-01',
+            'private_notes' => '',
+        ];
+
+        $payload = $overlay->invoke(
+            $service,
+            (string) $legacy['email'],
+            $exp->invoke($service, $legacy),
+            $tg->invoke($service, $legacy),
+            $notes->invoke($service, $legacy)
+        );
+
+        $this->assertSame('arevalo.maria81@gmail.com', $payload['email']);
+        $this->assertSame('1172092710', $payload['telegram_chat_id']);
+        $this->assertSame('2027-01-01 23:59:59', $payload['expires_at']);
+        $this->assertArrayNotHasKey('notes', $payload);
+
+        // telegram_id only (no chat_id) — coalesce path.
+        $legacyOnlyId = [
+            'telegram_chat_id' => null,
+            'telegram_id' => '6508105414',
+            'end_date' => '2026-11-02',
+            'private_notes' => 'hola',
+            'email' => 'pbprenedo@gmail.com',
+        ];
+        $payload2 = $overlay->invoke(
+            $service,
+            (string) $legacyOnlyId['email'],
+            $exp->invoke($service, $legacyOnlyId),
+            $tg->invoke($service, $legacyOnlyId),
+            $notes->invoke($service, $legacyOnlyId)
+        );
+        $this->assertSame('6508105414', $payload2['telegram_chat_id']);
+        $this->assertSame('hola', $payload2['notes']);
+    }
+
     public function test_telegram_from_history_tables_by_legacy_user_id(): void
     {
         $sql = <<<'SQL'
