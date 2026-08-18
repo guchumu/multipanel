@@ -42,11 +42,18 @@ Crear reglas personalizadas en `/automation`.
 
 ## 5. Portal Cliente (`/portal`)
 
-Los usuarios finales acceden con sus credenciales media para:
-- Ver su suscripción
-- Pagar online
-- Abrir tickets de soporte
-- Editar perfil
+Los usuarios finales acceden con usuario/email y contraseña de su cuenta media:
+
+| Ruta | Uso |
+|------|-----|
+| `/portal` | Inicio: estado (activo / por vencer / vencido), caducidad, streams, accesos rápidos |
+| `/portal/subscription` | Renovar / pagar (presets Stripe o planes) |
+| `/portal/peticiones` | Listar y enviar peticiones (si la BD remota está configurada) |
+| `/portal/tickets` | Soporte: listar, crear y responder |
+| `/portal/profile` | Email, Telegram (solo lectura), cambiar contraseña |
+| `/portal/payment/success` · `/cancel` | Resultado del cobro en Stripe |
+
+**Notas:** Las cuentas `expired` pueden entrar para renovar. Las peticiones se enlazan por `username` y/o `telegram_chat_id` → `idusuario` en la BD remota (best-effort).
 
 ## 6. Integraciones
 

@@ -173,30 +173,108 @@ class PeticionesRepository
      */
     public function listForUsername(string $username, int $limit = 10): array
     {
+        return $this->listForClient($username, null, $limit);
+    }
+
+    /**
+     * Lista peticiones del cliente por username y/o telegram chat id (idusuario legacy).
+     * El vínculo con la BD remota es best-effort: columnas opcionales o ausentes.
+     *
+     * @return array{ok: bool, items: array<int, array<string, mixed>>, note?: string, linked_by?: string|null}
+     */
+    public function listForClient(string $username, ?string $telegramChatId = null, int $limit = 20): array
+    {
         $username = trim($username);
-        if ($username === '') {
-            return ['ok' => false, 'items' => [], 'note' => 'Sin usuario para filtrar.'];
-        }
-
-        $limit = max(1, min(50, $limit));
-
-        try {
-            $items = $this->db()->fetchAll(
-                "SELECT id, nombrepeticion, subido, aceptado, activo, idmotivo, fechapeticion, username
-                 FROM peticiones
-                 WHERE username = ? AND subido = '0'
-                 ORDER BY id DESC
-                 LIMIT {$limit}",
-                [$username]
-            );
-
-            return ['ok' => true, 'items' => $items];
-        } catch (\Throwable $e) {
+        $chatId = trim((string) ($telegramChatId ?? ''));
+        if ($username === '' && $chatId === '') {
             return [
                 'ok' => false,
                 'items' => [],
-                'note' => 'No se pudo consultar peticiones por usuario (columna o conexión).',
+                'note' => 'No hay usuario ni Telegram vinculado para filtrar peticiones.',
+                'linked_by' => null,
             ];
         }
+
+        $limit = max(1, min(50, $limit));
+        $byId = [];
+        $linkedBy = null;
+        $lastError = null;
+
+        if ($username !== '') {
+            try {
+                $rows = $this->db()->fetchAll(
+                    "SELECT id, nombrepeticion, url, subido, aceptado, activo, idmotivo, fechapeticion, username, idusuario
+                     FROM peticiones
+                     WHERE username = ?
+                     ORDER BY id DESC
+                     LIMIT {$limit}",
+                    [$username]
+                );
+                foreach ($rows as $row) {
+                    $id = (int) ($row['id'] ?? 0);
+                    if ($id > 0) {
+                        $byId[$id] = $row;
+                    }
+                }
+                if ($rows !== []) {
+                    $linkedBy = 'username';
+                }
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+
+        if ($chatId !== '') {
+            try {
+                $rows = $this->db()->fetchAll(
+                    "SELECT id, nombrepeticion, url, subido, aceptado, activo, idmotivo, fechapeticion, username, idusuario
+                     FROM peticiones
+                     WHERE idusuario = ?
+                     ORDER BY id DESC
+                     LIMIT {$limit}",
+                    [$chatId]
+                );
+                foreach ($rows as $row) {
+                    $id = (int) ($row['id'] ?? 0);
+                    if ($id > 0) {
+                        $byId[$id] = $row;
+                    }
+                }
+                if ($rows !== [] && $linkedBy === null) {
+                    $linkedBy = 'telegram';
+                }
+            } catch (\Throwable $e) {
+                $lastError = $e;
+            }
+        }
+
+        if ($byId === [] && $lastError !== null) {
+            return [
+                'ok' => false,
+                'items' => [],
+                'note' => 'No se pudo consultar peticiones por usuario (columna o conexión). Puedes enviar una nueva si el módulo está activo.',
+                'linked_by' => null,
+            ];
+        }
+
+        krsort($byId, SORT_NUMERIC);
+        $items = array_slice(array_values($byId), 0, $limit);
+
+        if ($items === []) {
+            return [
+                'ok' => true,
+                'items' => [],
+                'note' => 'Aún no tienes peticiones asociadas a tu usuario'
+                    . ($chatId !== '' ? ' o Telegram' : '')
+                    . '. Puedes enviar una nueva abajo.',
+                'linked_by' => null,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'items' => $items,
+            'linked_by' => $linkedBy,
+        ];
     }
 }

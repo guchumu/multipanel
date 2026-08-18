@@ -6,7 +6,9 @@ namespace App\Controllers\Portal;
 
 use App\Repositories\PeticionesRepository;
 use App\Services\BillingSettingsService;
+use App\Services\PasswordService;
 use App\Services\Peticiones\PeticionesConfig;
+use App\Services\Peticiones\PeticionesService;
 use App\Services\PortalAuthService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
@@ -24,6 +26,7 @@ class PortalController extends Controller
         private PortalAuthService $auth = new PortalAuthService(),
         private StreamingActivityService $streaming = new StreamingActivityService(),
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
+        private PasswordService $passwords = new PasswordService(),
     ) {
     }
 
@@ -32,7 +35,7 @@ class PortalController extends Controller
         if ($this->auth->check()) {
             return $this->redirect('/portal');
         }
-        return $this->view('portal.login', ['title' => 'Portal Cliente']);
+        return $this->view('portal.login', ['title' => 'Acceder']);
     }
 
     public function login(Request $request): Response
@@ -42,9 +45,9 @@ class PortalController extends Controller
             'password' => 'required',
         ]);
 
-        $user = $this->auth->attempt($data['username'], $data['password']);
-        if (!$user) {
-            Session::getInstance()->flash('error', 'Credenciales incorrectas o cuenta inactiva.');
+        $result = $this->auth->attemptWithReason($data['username'], $data['password']);
+        if (empty($result['ok'])) {
+            Session::getInstance()->flash('error', $result['error'] ?? 'No se pudo iniciar sesión.');
             return $this->redirect('/portal/login');
         }
 
@@ -54,6 +57,7 @@ class PortalController extends Controller
     public function logout(Request $request): Response
     {
         $this->auth->logout();
+        Session::getInstance()->flash('success', 'Has cerrado sesión correctamente.');
         return $this->redirect('/portal/login');
     }
 
@@ -70,17 +74,6 @@ class PortalController extends Controller
              WHERE s.media_user_id = ? ORDER BY s.created_at DESC LIMIT 1",
             [$user->id]
         );
-
-        $recentPlays = [];
-        try {
-            $recentPlays = $db->fetchAll(
-                'SELECT title, media_type, player, started_at, duration_seconds
-                 FROM playback_sessions WHERE media_user_id = ? ORDER BY started_at DESC LIMIT 10',
-                [$user->id]
-            );
-        } catch (\Throwable) {
-            $recentPlays = [];
-        }
 
         $tickets = [];
         try {
@@ -109,57 +102,209 @@ class PortalController extends Controller
         }
 
         $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
+        $accountStatus = $this->accountStatusLabel($user, $expiry);
         $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
-        $peticiones = [
-            'configured' => false,
-            'items' => [],
-            'note' => null,
-        ];
-        try {
-            $cfg = PeticionesConfig::forTenant($tenantId);
-            if (!empty($cfg['configured'])) {
-                $peticiones['configured'] = true;
-                $result = (new PeticionesRepository())->listForUsername((string) ($user->username ?? ''));
-                $peticiones['items'] = $result['items'] ?? [];
-                if (empty($result['ok'])) {
-                    $peticiones['note'] = $result['note']
-                        ?? 'Las peticiones no están vinculadas a tu cuenta en este momento.';
-                }
-            } else {
-                $peticiones['note'] = 'El módulo de peticiones no está configurado.';
-            }
-        } catch (\Throwable) {
-            $peticiones['note'] = 'No se pudieron cargar tus peticiones.';
-        }
+        $peticiones = $this->loadPeticionesSummary($user, $tenantId, 5);
 
         return $this->view('portal.dashboard', [
             'title' => 'Mi cuenta',
             'portalUser' => $user,
             'subscription' => $subscription,
-            'recentPlays' => $recentPlays,
             'tickets' => $tickets,
             'liveStreams' => $liveStreams,
             'expiry' => $expiry,
+            'accountStatus' => $accountStatus,
             'renewalPresets' => $renewalPresets,
             'stripeConfigured' => $stripeConfigured,
             'peticiones' => $peticiones,
+            'navActive' => 'home',
         ]);
     }
 
+    public function subscription(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
+        $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
+        $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
+
+        $plans = [];
+        try {
+            $plans = Database::getInstance()->fetchAll(
+                'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY price',
+                [$tenantId]
+            );
+        } catch (\Throwable) {
+            $plans = [];
+        }
+
+        return $this->view('portal.subscription', [
+            'title' => 'Renovar / pagar',
+            'portalUser' => $user,
+            'plans' => $plans,
+            'expiry' => $expiry,
+            'renewalPresets' => $renewalPresets,
+            'stripeConfigured' => $stripeConfigured,
+            'navActive' => 'pay',
+        ]);
+    }
+
+    public function profile(Request $request): Response
+    {
+        return $this->view('portal.profile', [
+            'title' => 'Mi perfil',
+            'portalUser' => $this->auth->user(),
+            'navActive' => 'profile',
+        ]);
+    }
+
+    public function updateProfile(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $email = trim((string) $request->input('email', ''));
+        $displayName = trim((string) $request->input('display_name', ''));
+
+        if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            Session::getInstance()->flash('error', 'El email no es válido.');
+            return $this->redirect('/portal/profile');
+        }
+
+        if ($displayName !== '') {
+            $user->display_name = $displayName;
+        }
+        $user->email = $email !== '' ? $email : $user->email;
+        $user->locale = $request->input('locale') ?: $user->locale;
+        $user->timezone = $request->input('timezone') ?: $user->timezone;
+        $user->save();
+
+        Session::getInstance()->flash('success', 'Perfil actualizado.');
+        return $this->redirect('/portal/profile');
+    }
+
+    public function changePassword(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $current = (string) $request->input('current_password', '');
+        $new = (string) $request->input('new_password', '');
+        $confirm = (string) $request->input('new_password_confirmation', '');
+
+        $hash = (string) ($user->password ?? '');
+        if ($hash === '' || !$this->passwords->verify($current, $hash)) {
+            Session::getInstance()->flash('error', 'La contraseña actual no es correcta.');
+            return $this->redirect('/portal/profile');
+        }
+
+        if ($new !== $confirm) {
+            Session::getInstance()->flash('error', 'La nueva contraseña y la confirmación no coinciden.');
+            return $this->redirect('/portal/profile');
+        }
+
+        if (!$this->passwords->validate($new, [
+            'min_length' => 8,
+            'require_uppercase' => false,
+            'require_lowercase' => false,
+            'require_number' => false,
+            'require_special' => false,
+        ])) {
+            Session::getInstance()->flash('error', 'La nueva contraseña debe tener al menos 8 caracteres.');
+            return $this->redirect('/portal/profile');
+        }
+
+        $user->password = $this->passwords->hash($new);
+        $user->save();
+
+        Session::getInstance()->flash('success', 'Contraseña actualizada. Úsala en el próximo acceso.');
+        return $this->redirect('/portal/profile');
+    }
+
+    public function peticiones(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $peticiones = $this->loadPeticionesSummary($user, $tenantId, 30);
+
+        return $this->view('portal.peticiones', [
+            'title' => 'Mis peticiones',
+            'portalUser' => $user,
+            'peticiones' => $peticiones,
+            'navActive' => 'peticiones',
+        ]);
+    }
+
+    public function storePeticion(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $tenantId = (int) ($user->tenant_id ?? 1);
+
+        try {
+            $cfg = PeticionesConfig::forTenant($tenantId);
+            if (empty($cfg['configured'])) {
+                Session::getInstance()->flash('error', 'El módulo de peticiones no está configurado.');
+                return $this->redirect('/portal/peticiones');
+            }
+        } catch (\Throwable) {
+            Session::getInstance()->flash('error', 'No se pudo conectar con peticiones.');
+            return $this->redirect('/portal/peticiones');
+        }
+
+        $title = trim((string) $request->input('title', ''));
+        $url = trim((string) $request->input('url', ''));
+
+        if ($title === '') {
+            Session::getInstance()->flash('error', 'Indica un título para la petición.');
+            return $this->redirect('/portal/peticiones');
+        }
+
+        if ($url === '') {
+            // URL opcional: usar placeholder estable para el esquema legacy.
+            $url = 'https://www.themoviedb.org/search?query=' . rawurlencode($title);
+        } elseif (!preg_match('#^https?://#i', $url)) {
+            Session::getInstance()->flash('error', 'La URL debe empezar por http:// o https://');
+            return $this->redirect('/portal/peticiones');
+        }
+
+        try {
+            $result = (new PeticionesService())->addManual(
+                $url,
+                $title,
+                '',
+                $user->telegram_chat_id !== null && trim((string) $user->telegram_chat_id) !== ''
+                    ? (string) $user->telegram_chat_id
+                    : null,
+                (string) ($user->username ?? ''),
+            );
+        } catch (\Throwable) {
+            Session::getInstance()->flash('error', 'No se pudo guardar la petición. Inténtalo más tarde.');
+            return $this->redirect('/portal/peticiones');
+        }
+
+        if (empty($result['ok'])) {
+            Session::getInstance()->flash('error', $result['message'] ?? 'No se pudo crear la petición.');
+            return $this->redirect('/portal/peticiones');
+        }
+
+        Session::getInstance()->flash('success', 'Petición enviada. La revisaremos pronto.');
+        return $this->redirect('/portal/peticiones');
+    }
+
     /**
-     * @return array{label: string, class: string, date: string|null, days_left: int|null, expired: bool}
+     * @return array{label: string, class: string, date: string|null, days_left: int|null, expired: bool, urgent: bool}
      */
     private function expiryInfo(?string $expiresAt, string $status): array
     {
         if ($expiresAt === null || trim($expiresAt) === '') {
+            $expired = $status === 'expired' || $status === 'suspended';
+
             return [
-                'label' => 'Sin fecha de caducidad',
-                'class' => 'secondary',
+                'label' => $expired ? 'Sin acceso activo' : 'Sin fecha de caducidad',
+                'class' => $expired ? 'danger' : 'secondary',
                 'date' => null,
                 'days_left' => null,
-                'expired' => $status !== 'active',
+                'expired' => $expired,
+                'urgent' => $expired,
             ];
         }
 
@@ -172,6 +317,7 @@ class PortalController extends Controller
                 'date' => $date,
                 'days_left' => null,
                 'expired' => false,
+                'urgent' => false,
             ];
         }
 
@@ -183,6 +329,7 @@ class PortalController extends Controller
                 'date' => $date,
                 'days_left' => $days,
                 'expired' => true,
+                'urgent' => true,
             ];
         }
         if ($days === 0) {
@@ -192,6 +339,7 @@ class PortalController extends Controller
                 'date' => $date,
                 'days_left' => 0,
                 'expired' => false,
+                'urgent' => true,
             ];
         }
         if ($days <= 7) {
@@ -201,6 +349,7 @@ class PortalController extends Controller
                 'date' => $date,
                 'days_left' => $days,
                 'expired' => false,
+                'urgent' => true,
             ];
         }
 
@@ -210,42 +359,99 @@ class PortalController extends Controller
             'date' => $date,
             'days_left' => $days,
             'expired' => false,
+            'urgent' => false,
         ];
     }
 
-    public function subscription(Request $request): Response
+    /**
+     * Estado legible para el cliente: activo / por vencer / vencido / suspendido…
+     *
+     * @param object $user
+     * @param array{label: string, class: string, expired: bool, urgent: bool, days_left: int|null} $expiry
+     * @return array{label: string, class: string, hint: string}
+     */
+    private function accountStatusLabel(object $user, array $expiry): array
     {
-        $user = $this->auth->user();
-        $plans = Database::getInstance()->fetchAll(
-            'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY price',
-            [$user->tenant_id ?? 1]
-        );
+        $status = (string) ($user->status ?? '');
 
-        return $this->view('portal.subscription', [
-            'title' => 'Mi suscripción',
-            'portalUser' => $user,
-            'plans' => $plans,
-        ]);
+        if ($status === 'suspended') {
+            return [
+                'label' => 'Suspendida',
+                'class' => 'warning',
+                'hint' => 'Contacta con soporte para reactivar el acceso.',
+            ];
+        }
+        if ($status === 'blocked') {
+            return [
+                'label' => 'Bloqueada',
+                'class' => 'danger',
+                'hint' => 'Contacta con soporte.',
+            ];
+        }
+        if (!empty($expiry['expired']) || $status === 'expired') {
+            return [
+                'label' => 'Vencido',
+                'class' => 'danger',
+                'hint' => 'Renueva para recuperar el acceso.',
+            ];
+        }
+        if (!empty($expiry['urgent'])) {
+            return [
+                'label' => 'Por vencer',
+                'class' => 'warning',
+                'hint' => 'Renueva pronto para no perder el acceso.',
+            ];
+        }
+        if ($status === 'invited') {
+            return [
+                'label' => 'Invitada',
+                'class' => 'info',
+                'hint' => 'Tu cuenta está lista. Disfruta del servicio.',
+            ];
+        }
+
+        return [
+            'label' => 'Activo',
+            'class' => 'success',
+            'hint' => 'Todo en orden.',
+        ];
     }
 
-    public function profile(Request $request): Response
+    /**
+     * @return array{configured: bool, items: array<int, array<string, mixed>>, note: ?string, can_submit: bool}
+     */
+    private function loadPeticionesSummary(object $user, int $tenantId, int $limit = 10): array
     {
-        return $this->view('portal.profile', [
-            'title' => 'Mi perfil',
-            'portalUser' => $this->auth->user(),
-        ]);
-    }
+        $out = [
+            'configured' => false,
+            'items' => [],
+            'note' => null,
+            'can_submit' => false,
+        ];
 
-    public function updateProfile(Request $request): Response
-    {
-        $user = $this->auth->user();
-        $user->display_name = $request->input('display_name') ?: $user->display_name;
-        $user->email = $request->input('email') ?: $user->email;
-        $user->locale = $request->input('locale') ?: $user->locale;
-        $user->timezone = $request->input('timezone') ?: $user->timezone;
-        $user->save();
+        try {
+            $cfg = PeticionesConfig::forTenant($tenantId);
+            if (empty($cfg['configured'])) {
+                $out['note'] = 'El módulo de peticiones no está configurado.';
 
-        Session::getInstance()->flash('success', 'Perfil actualizado.');
-        return $this->redirect('/portal/profile');
+                return $out;
+            }
+
+            $out['configured'] = true;
+            $out['can_submit'] = true;
+            $result = (new PeticionesRepository())->listForClient(
+                (string) ($user->username ?? ''),
+                isset($user->telegram_chat_id) ? (string) $user->telegram_chat_id : null,
+                $limit
+            );
+            $out['items'] = $result['items'] ?? [];
+            if (!empty($result['note'])) {
+                $out['note'] = $result['note'];
+            }
+        } catch (\Throwable) {
+            $out['note'] = 'No se pudieron cargar tus peticiones.';
+        }
+
+        return $out;
     }
 }

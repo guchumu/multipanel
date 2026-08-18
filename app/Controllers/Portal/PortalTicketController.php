@@ -36,6 +36,7 @@ class PortalTicketController extends Controller
             'title' => 'Mis tickets',
             'portalUser' => $user,
             'tickets' => $tickets,
+            'navActive' => 'tickets',
         ]);
     }
 
@@ -44,6 +45,7 @@ class PortalTicketController extends Controller
         return $this->view('portal.tickets.create', [
             'title' => 'Nuevo ticket',
             'portalUser' => $this->auth->user(),
+            'navActive' => 'tickets',
         ]);
     }
 
@@ -116,6 +118,49 @@ class PortalTicketController extends Controller
             'portalUser' => $user,
             'ticket' => $ticket,
             'messages' => $messages,
+            'navActive' => 'tickets',
         ]);
+    }
+
+    public function reply(Request $request, string $uuid): Response
+    {
+        $user = $this->auth->user();
+        $db = Database::getInstance();
+
+        $ticket = $db->fetchOne(
+            "SELECT t.*, c.id AS customer_row_id FROM tickets t
+             JOIN customers c ON c.id = t.customer_id
+             WHERE t.uuid = ? AND c.media_user_id = ?",
+            [$uuid, $user->id]
+        );
+
+        if (!$ticket) {
+            return $this->redirect('/portal/tickets');
+        }
+
+        if (in_array((string) ($ticket['status'] ?? ''), ['closed', 'resolved'], true)) {
+            Session::getInstance()->flash('error', 'Este ticket está cerrado. Abre uno nuevo si lo necesitas.');
+            return $this->redirect('/portal/tickets/' . $uuid);
+        }
+
+        $message = trim((string) $request->input('message', ''));
+        if ($message === '') {
+            Session::getInstance()->flash('error', 'Escribe un mensaje antes de enviar.');
+            return $this->redirect('/portal/tickets/' . $uuid);
+        }
+
+        $db->insert('ticket_messages', [
+            'ticket_id' => (int) $ticket['id'],
+            'customer_id' => (int) $ticket['customer_row_id'],
+            'message' => $message,
+        ]);
+
+        $db->update('tickets', [
+            'status' => 'open',
+            'updated_at' => date('Y-m-d H:i:s'),
+        ], 'id = ?', [(int) $ticket['id']]);
+
+        Session::getInstance()->flash('success', 'Mensaje enviado.');
+        return $this->redirect('/portal/tickets/' . $uuid);
     }
 }

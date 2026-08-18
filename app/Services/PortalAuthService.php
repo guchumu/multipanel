@@ -6,7 +6,6 @@ namespace App\Services;
 
 use App\Models\MediaUser;
 use App\Repositories\MediaUserRepository;
-use App\Services\PasswordService;
 use Core\Logger;
 use Core\Session;
 
@@ -21,8 +20,16 @@ final class PortalAuthService
     ) {
     }
 
-    public function attempt(string $username, string $password): ?MediaUser
+    /**
+     * @return array{ok: bool, user?: MediaUser, error?: string}
+     */
+    public function attemptWithReason(string $username, string $password): array
     {
+        $username = trim($username);
+        if ($username === '' || $password === '') {
+            return ['ok' => false, 'error' => 'Introduce tu usuario y contraseña.'];
+        }
+
         $db = \Core\Database::getInstance();
         $row = $db->fetchOne(
             'SELECT * FROM media_users WHERE (username = ? OR email = ?) AND deleted_at IS NULL LIMIT 1',
@@ -30,21 +37,41 @@ final class PortalAuthService
         );
 
         if (!$row) {
-            return null;
+            return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos.'];
         }
 
         $user = new MediaUser($row);
+        $hash = (string) ($user->password ?? '');
 
-        if (!$this->passwords->verify($password, $user->password ?? '')) {
-            return null;
+        if ($hash === '' || !$this->passwords->verify($password, $hash)) {
+            return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos.'];
         }
 
-        if (!in_array($user->status, ['active', 'invited'], true)) {
-            return null;
+        $status = (string) ($user->status ?? '');
+        if (in_array($status, ['blocked', 'deleted'], true)) {
+            return ['ok' => false, 'error' => 'Tu cuenta está bloqueada. Contacta con soporte.'];
+        }
+        if ($status === 'suspended') {
+            return ['ok' => false, 'error' => 'Tu cuenta está suspendida. Contacta con soporte para reactivarla.'];
+        }
+        if ($status === 'pending') {
+            return ['ok' => false, 'error' => 'Tu cuenta aún no está activa. Espera la confirmación o contacta con soporte.'];
+        }
+        // active, invited, expired → permitir (expired puede renovar en el portal)
+        if (!in_array($status, ['active', 'invited', 'expired'], true)) {
+            return ['ok' => false, 'error' => 'No puedes acceder con el estado actual de tu cuenta.'];
         }
 
         $this->login($user);
-        return $user;
+
+        return ['ok' => true, 'user' => $user];
+    }
+
+    public function attempt(string $username, string $password): ?MediaUser
+    {
+        $result = $this->attemptWithReason($username, $password);
+
+        return !empty($result['ok']) ? ($result['user'] ?? null) : null;
     }
 
     public function login(MediaUser $user): void

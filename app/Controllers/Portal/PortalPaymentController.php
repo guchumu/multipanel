@@ -37,6 +37,7 @@ class PortalPaymentController extends Controller
         );
 
         if (!$plan) {
+            Session::getInstance()->flash('error', 'El plan seleccionado no está disponible.');
             return $this->redirect('/portal/subscription');
         }
 
@@ -57,6 +58,7 @@ class PortalPaymentController extends Controller
                 'reference' => $result['reference'],
                 'plan' => $plan,
                 'portalUser' => $user,
+                'navActive' => 'pay',
             ]);
         }
 
@@ -64,6 +66,7 @@ class PortalPaymentController extends Controller
             'title' => 'Error de pago',
             'error' => $result['error'] ?? 'No se pudo iniciar el pago.',
             'portalUser' => $user,
+            'navActive' => 'pay',
         ]);
     }
 
@@ -82,7 +85,7 @@ class PortalPaymentController extends Controller
         }
 
         Session::getInstance()->flash('error', $result['message'] ?? 'No se pudo iniciar el pago.');
-        return $this->redirect('/portal');
+        return $this->redirect('/portal/subscription');
     }
 
     public function success(Request $request): Response
@@ -90,6 +93,16 @@ class PortalPaymentController extends Controller
         return $this->view('portal.payment.success', [
             'title' => 'Pago completado',
             'portalUser' => $this->auth->user(),
+            'navActive' => 'pay',
+        ]);
+    }
+
+    public function cancel(Request $request): Response
+    {
+        return $this->view('portal.payment.cancel', [
+            'title' => 'Pago cancelado',
+            'portalUser' => $this->auth->user(),
+            'navActive' => 'pay',
         ]);
     }
 

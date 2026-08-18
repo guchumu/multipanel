@@ -83,7 +83,7 @@ final class StripeGateway implements PaymentGatewayInterface
         }
 
         $successUrl = $baseUrl . '/portal/payment/success?session_id={CHECKOUT_SESSION_ID}';
-        $cancelUrl = $baseUrl . '/portal/subscription';
+        $cancelUrl = $baseUrl . '/portal/payment/cancel';
 
         try {
             $response = $this->client->post('checkout/sessions', [

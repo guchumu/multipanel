@@ -69,7 +69,7 @@ final class PayPalGateway implements PaymentGatewayInterface
                     ]],
                     'application_context' => [
                         'return_url' => config('app.url') . '/portal/payment/success',
-                        'cancel_url' => config('app.url') . '/portal/subscription',
+                        'cancel_url' => config('app.url') . '/portal/payment/cancel',
                     ],
                 ],
             ]);

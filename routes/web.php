@@ -89,14 +89,19 @@ $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::cl
     $router->get('/subscription', [PortalController::class, 'subscription'], 'portal.subscription');
     $router->get('/profile', [PortalController::class, 'profile'], 'portal.profile');
     $router->post('/profile', [PortalController::class, 'updateProfile'], 'portal.profile.update', [CsrfMiddleware::class]);
+    $router->post('/profile/password', [PortalController::class, 'changePassword'], 'portal.profile.password', [CsrfMiddleware::class]);
+    $router->get('/peticiones', [PortalController::class, 'peticiones'], 'portal.peticiones');
+    $router->post('/peticiones', [PortalController::class, 'storePeticion'], 'portal.peticiones.store', [CsrfMiddleware::class]);
     $router->post('/payment/checkout', [PortalPaymentController::class, 'checkout'], 'portal.payment.checkout', [CsrfMiddleware::class]);
     $router->post('/payment/renew', [PortalPaymentController::class, 'renew'], 'portal.payment.renew', [CsrfMiddleware::class]);
     $router->get('/payment/success', [PortalPaymentController::class, 'success'], 'portal.payment.success');
+    $router->get('/payment/cancel', [PortalPaymentController::class, 'cancel'], 'portal.payment.cancel');
     // Portal tickets
     $router->get('/tickets', [PortalTicketController::class, 'index'], 'portal.tickets');
     $router->get('/tickets/create', [PortalTicketController::class, 'create'], 'portal.tickets.create');
     $router->post('/tickets', [PortalTicketController::class, 'store'], 'portal.tickets.store', [CsrfMiddleware::class]);
     $router->get('/tickets/{uuid}', [PortalTicketController::class, 'show'], 'portal.tickets.show');
+    $router->post('/tickets/{uuid}/reply', [PortalTicketController::class, 'reply'], 'portal.tickets.reply', [CsrfMiddleware::class]);
 });
 
 // Admin protected routes
