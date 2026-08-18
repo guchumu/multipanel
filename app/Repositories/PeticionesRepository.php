@@ -165,4 +165,38 @@ class PeticionesRepository
 
         return (string) ($row['nombre'] ?? 'Sin motivo');
     }
+
+    /**
+     * Intentos de enlazar peticiones al cliente por username (columna legacy opcional).
+     *
+     * @return array{ok: bool, items: array<int, array<string, mixed>>, note?: string}
+     */
+    public function listForUsername(string $username, int $limit = 10): array
+    {
+        $username = trim($username);
+        if ($username === '') {
+            return ['ok' => false, 'items' => [], 'note' => 'Sin usuario para filtrar.'];
+        }
+
+        $limit = max(1, min(50, $limit));
+
+        try {
+            $items = $this->db()->fetchAll(
+                "SELECT id, nombrepeticion, subido, aceptado, activo, idmotivo, fechapeticion, username
+                 FROM peticiones
+                 WHERE username = ? AND subido = '0'
+                 ORDER BY id DESC
+                 LIMIT {$limit}",
+                [$username]
+            );
+
+            return ['ok' => true, 'items' => $items];
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'items' => [],
+                'note' => 'No se pudo consultar peticiones por usuario (columna o conexión).',
+            ];
+        }
+    }
 }

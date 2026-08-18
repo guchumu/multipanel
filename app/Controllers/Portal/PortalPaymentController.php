@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Controllers\Portal;
 
+use App\Services\BillingService;
 use App\Services\Payments\PaymentService;
 use App\Services\PortalAuthService;
 use Core\Controller;
 use Core\Database;
 use Core\Request;
 use Core\Response;
+use Core\Session;
 
 /**
  * Portal payment controller.
@@ -19,6 +21,7 @@ class PortalPaymentController extends Controller
     public function __construct(
         private PortalAuthService $auth = new PortalAuthService(),
         private PaymentService $payments = new PaymentService(),
+        private BillingService $billing = new BillingService(),
     ) {
     }
 
@@ -62,6 +65,24 @@ class PortalPaymentController extends Controller
             'error' => $result['error'] ?? 'No se pudo iniciar el pago.',
             'portalUser' => $user,
         ]);
+    }
+
+    /** Renovación rápida con preset (Stripe) desde el portal. */
+    public function renew(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $amount = (float) $request->input('amount', 0);
+        $days = (int) $request->input('days', 0);
+        $currency = strtoupper(trim((string) $request->input('currency', 'EUR'))) ?: 'EUR';
+
+        $result = $this->billing->createRenewalCheckout($user, $amount, $currency, $days);
+
+        if (!empty($result['success']) && !empty($result['checkout_url'])) {
+            return $this->redirect((string) $result['checkout_url']);
+        }
+
+        Session::getInstance()->flash('error', $result['message'] ?? 'No se pudo iniciar el pago.');
+        return $this->redirect('/portal');
     }
 
     public function success(Request $request): Response
