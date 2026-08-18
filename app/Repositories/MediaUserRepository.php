@@ -149,16 +149,24 @@ class MediaUserRepository
         ?bool $onServer = null,
     ): array {
         $query = trim($query);
-        if ($query === '' || mb_strlen($query) < 2) {
+        // Permitir id numérico de 1 dígito; resto mínimo 2 caracteres.
+        if ($query === '' || (mb_strlen($query) < 2 && !ctype_digit($query))) {
             return [];
         }
 
         $like = '%' . $query . '%';
-        $params = [$tenantId, $like, $like, $like];
+        $params = [$tenantId, $like, $like, $like, $like];
         $matchSql = '(
                     mu.`username` LIKE ?
                     OR mu.`email` LIKE ?
-                    OR mu.`display_name` LIKE ?';
+                    OR mu.`display_name` LIKE ?
+                    OR mu.`uuid` LIKE ?';
+
+        if (ctype_digit($query)) {
+            $matchSql .= '
+                    OR mu.`id` = ?';
+            $params[] = (int) $query;
+        }
 
         if ($this->hasTelegramChatIdColumn()) {
             $matchSql .= '

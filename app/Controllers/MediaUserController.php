@@ -295,6 +295,94 @@ class MediaUserController extends Controller
         return $this->redirect($back);
     }
 
+    public function expiringBulkRenew(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $days = max(1, min(3650, (int) $request->input('days', 30)));
+        $uuids = $request->input('uuids', []);
+        if (!is_array($uuids)) {
+            $uuids = [];
+        }
+
+        $redirectDays = max(1, (int) $request->input('filter_days', 15));
+        $redirectServer = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $back = '/media-users/expiring?days=' . $redirectDays
+            . ($redirectServer ? '&server_id=' . $redirectServer : '');
+
+        if ($uuids === []) {
+            Session::getInstance()->flash('error', 'Selecciona al menos un usuario.');
+            return $this->redirect($back);
+        }
+
+        $users = $this->mediaUsers->findByUuids($tenantId, $uuids);
+        $ok = 0;
+        $fail = 0;
+        foreach ($users as $user) {
+            $result = $this->management->addDays($user, $days);
+            if (!empty($result['success'])) {
+                $ok++;
+            } else {
+                $fail++;
+            }
+        }
+        $missing = max(0, count($uuids) - count($users));
+
+        Session::getInstance()->flash('success', sprintf(
+            'Renovación +%d días: %d ok, %d fallidos%s.',
+            $days,
+            $ok,
+            $fail,
+            $missing > 0 ? ", {$missing} no encontrados" : ''
+        ));
+
+        return $this->redirect($back);
+    }
+
+    public function expiringBulkSuspend(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $uuids = $request->input('uuids', []);
+        if (!is_array($uuids)) {
+            $uuids = [];
+        }
+
+        $redirectDays = max(1, (int) $request->input('filter_days', 15));
+        $redirectServer = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $back = '/media-users/expiring?days=' . $redirectDays
+            . ($redirectServer ? '&server_id=' . $redirectServer : '');
+
+        if ($uuids === []) {
+            Session::getInstance()->flash('error', 'Selecciona al menos un usuario.');
+            return $this->redirect($back);
+        }
+
+        $users = $this->mediaUsers->findByUuids($tenantId, $uuids);
+        $ok = 0;
+        $fail = 0;
+        foreach ($users as $user) {
+            if ($user->status === 'suspended') {
+                $ok++;
+                continue;
+            }
+            $result = $this->management->suspend($user);
+            if (!empty($result['success'])) {
+                $ok++;
+            } else {
+                $fail++;
+            }
+        }
+        $missing = max(0, count($uuids) - count($users));
+
+        Session::getInstance()->flash('success', sprintf(
+            'Suspensión: %d ok, %d fallidos%s.',
+            $ok,
+            $fail,
+            $missing > 0 ? ", {$missing} no encontrados" : ''
+        ));
+
+        return $this->redirect($back);
+    }
+
     public function cleanupIptv(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
@@ -412,6 +500,7 @@ class MediaUserController extends Controller
                     'display_name' => (string) ($u->display_name ?? ''),
                     'email' => (string) ($u->email ?? ''),
                     'server_name' => (string) ($u->server_name ?? ''),
+                    'server_uuid' => (string) ($u->server_uuid ?? ''),
                     'status' => (string) $u->status,
                     'on_server' => isset($u->on_server) ? (int) $u->on_server : null,
                     'membership_synced_at' => $u->membership_synced_at ?? null,
@@ -844,12 +933,60 @@ class MediaUserController extends Controller
             return $this->redirect('/media-users');
         }
 
+        $status = trim((string) $request->input('status', ''));
+        $channel = trim((string) $request->input('channel', ''));
+        if (!in_array($status, ['sent', 'failed'], true)) {
+            $status = '';
+        }
+        if ($channel === '') {
+            $channel = '';
+        }
+
         return $this->view('media_users.messages', [
             'title' => 'Mensajes: ' . ($user->display_name ?? $user->username),
             // Must not be named "user": AuthMiddleware shares auth $user for the layout/navbar.
             'mediaUser' => $user,
-            'messages' => $this->messages->listForUser((int) $user->id),
+            'messages' => $this->messages->listForUser(
+                (int) $user->id,
+                100,
+                $status !== '' ? $status : null,
+                $channel !== '' ? $channel : null
+            ),
+            'filterStatus' => $status,
+            'filterChannel' => $channel,
         ]);
+    }
+
+    public function retryMessage(Request $request, string $uuid, string $id): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $messageId = (int) $id;
+        $row = $this->messages->findForUser((int) $user->id, $messageId);
+        if ($row === null) {
+            return $this->json(['success' => false, 'message' => 'Aviso no encontrado'], 404);
+        }
+
+        $channel = (string) ($row['channel'] ?? 'telegram');
+        if ($channel !== 'telegram') {
+            return $this->json([
+                'success' => false,
+                'message' => 'Solo se puede reintentar avisos de Telegram desde el panel.',
+            ], 422);
+        }
+
+        $title = trim((string) ($row['title'] ?? 'Aviso'));
+        $body = trim((string) ($row['body'] ?? ''));
+        if ($body === '') {
+            return $this->json(['success' => false, 'message' => 'El aviso no tiene cuerpo.'], 422);
+        }
+
+        $result = $this->management->sendTelegramMessage($user, $title !== '' ? $title : 'Aviso', $body);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
     public function destroy(Request $request, string $uuid): Response

@@ -815,3 +815,35 @@ body {
     }
 }
 
+/* Buscador global (topbar) */
+.global-search {
+    min-width: 0;
+}
+.global-search-results {
+    display: block;
+    max-height: min(70vh, 22rem);
+    overflow-y: auto;
+    z-index: 1080;
+    position: absolute;
+    left: 0;
+    right: 0;
+}
+.global-search-results:not(.d-none) {
+    display: block !important;
+}
+.global-search-item.active,
+.global-search-item:hover {
+    background-color: var(--bs-tertiary-bg, #f8f9fa);
+}
+@media (max-width: 575.98px) {
+    .global-search {
+        order: 10;
+        flex-basis: 100%;
+        max-width: none !important;
+        margin-top: 0.35rem;
+    }
+    .navbar .global-search + .d-flex {
+        margin-left: auto !important;
+    }
+}
+
