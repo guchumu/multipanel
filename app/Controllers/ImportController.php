@@ -164,8 +164,12 @@ class ImportController extends Controller
             }
 
             if ($mode === PlexManagerImportService::MODE_OVERLAY) {
+                $userColumns = $result['user_columns'] ?? [];
+                $columnsHint = is_array($userColumns) && $userColumns !== []
+                    ? implode(', ', array_slice($userColumns, 0, 20))
+                    : '(ninguna)';
                 $msg = sprintf(
-                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Aplicados: Telegram %d, caducidad %d, notas %d. Telegram rellenados (CRM): %d.',
+                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. Columnas users: %s. CRM backfill: %d.',
                     $parsed['users'],
                     (int) ($result['matched'] ?? 0),
                     (int) ($result['updated'] ?? 0),
@@ -174,11 +178,18 @@ class ImportController extends Controller
                     (int) ($result['applied_telegram'] ?? 0),
                     (int) ($result['applied_expires'] ?? 0),
                     (int) ($result['applied_notes'] ?? 0),
+                    (int) ($result['sql_telegram'] ?? 0),
+                    (int) ($parsed['users'] ?? 0),
+                    $columnsHint,
                     (int) ($result['telegram_backfilled'] ?? 0)
                 );
             } else {
+                $userColumns = $result['user_columns'] ?? [];
+                $columnsHint = is_array($userColumns) && $userColumns !== []
+                    ? implode(', ', array_slice($userColumns, 0, 20))
+                    : '(ninguna)';
                 $msg = sprintf(
-                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Aplicados: Telegram %d, caducidad %d, notas %d. Telegram rellenados (CRM): %d.',
+                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Telegram rellenados: %d (caducidad %d, notas %d). En SQL había Telegram en %d/%d users. Columnas users: %s. CRM backfill: %d.',
                     $parsed['servers'],
                     $parsed['users'],
                     $result['servers'],
@@ -190,7 +201,10 @@ class ImportController extends Controller
                     (int) ($result['applied_telegram'] ?? 0),
                     (int) ($result['applied_expires'] ?? 0),
                     (int) ($result['applied_notes'] ?? 0),
-                    $result['telegram_backfilled'] ?? 0
+                    (int) ($result['sql_telegram'] ?? 0),
+                    (int) ($parsed['users'] ?? 0),
+                    $columnsHint,
+                    (int) ($result['telegram_backfilled'] ?? 0)
                 );
             }
 

@@ -99,7 +99,7 @@ $phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
                     <li><strong>servicio / service / payments_history</strong> → 1=Server10, 5=NucBox</li>
                     <li><strong>end_date / expires_at / expiration</strong> → Fecha expiración (<code>media_users.expires_at</code>)</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
-                    <li><strong>telegram_chat_id / telegram_id / idcliente</strong> → Chat ID Telegram (<code>media_users.telegram_chat_id</code>); si falta, se intenta desde <code>payments_history</code></li>
+                    <li><strong>telegram_chat_id / telegram_id</strong> (tabla <code>users</code>) → Chat ID (<code>media_users.telegram_chat_id</code>); si falta, se completa desde <code>payments_history</code>, <code>telegram_messages_history</code> o <code>notification_log</code></li>
                     <li><strong>private_notes / notes / admin_notes</strong> → Notas (<code>media_users.notes</code>)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>

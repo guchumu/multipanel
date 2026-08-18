@@ -17,6 +17,7 @@ final class PlexManagerImportDateTest extends TestCase
         $ref->setAccessible(true);
 
         $this->assertSame(1, $ref->invoke(null, '1'));
+        $this->assertSame('10379938', $ref->invoke(null, '10379938'));
         $this->assertSame('2023182976', $ref->invoke(null, '2023182976'));
         $this->assertSame('-1001234567890', $ref->invoke(null, '-1001234567890'));
     }
@@ -50,6 +51,13 @@ final class PlexManagerImportDateTest extends TestCase
         ]));
         $this->assertSame('2023182976', $ref->invoke($service, [
             'telegram_id' => '2023182976',
+        ]));
+        $this->assertSame('10379938', $ref->invoke($service, [
+            'telegram_chat_id' => '',
+            'telegram_id' => '10379938',
+        ]));
+        $this->assertSame('50063059', $ref->invoke($service, [
+            'tg_id' => '50063059',
         ]));
         $this->assertNull($ref->invoke($service, [
             'telegram_id' => 'not-a-chat',
@@ -97,5 +105,24 @@ final class PlexManagerImportDateTest extends TestCase
             ['telegram_chat_id' => '99999'],
             $ref->invoke($service, null, '99999', null)
         );
+    }
+
+    public function test_telegram_from_history_tables_by_legacy_user_id(): void
+    {
+        $sql = <<<'SQL'
+INSERT INTO `telegram_messages_history` (`id`, `user_id`, `telegram_chat_id`, `message`, `sent_date`, `status`, `sent_by`, `created_at`) VALUES
+(1, 46, '50063059', 'hola', '2025-09-11 19:38:02', 'sent', 'admin', '2025-09-11 17:38:02');
+
+INSERT INTO `notification_log` (`id`, `user_id`, `telegram_id`, `message_type`, `message_sent`, `sent_date`) VALUES
+(1, 28, 2023182976, 'expiry_3', 'msg', '2025-09-21 15:04:31');
+SQL;
+
+        $service = new PlexManagerImportService();
+        $ref = new ReflectionMethod(PlexManagerImportService::class, 'telegramChatIdByLegacyUserId');
+        $ref->setAccessible(true);
+        $map = $ref->invoke($service, $sql);
+
+        $this->assertSame('50063059', $map[46]);
+        $this->assertSame('2023182976', $map[28]);
     }
 }

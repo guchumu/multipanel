@@ -38,7 +38,8 @@ final class PlexManagerImportService
      *   skipped_servicio: int, matched: int, updated: int, mode: string,
      *   parsed: array{servers: int, users: int},
      *   sync: array<int, array{name: string, ok: bool, error: ?string}>,
-     *   errors: array<int, string>, telegram_backfilled?: int, applied_telegram?: int, applied_expires?: int, applied_notes?: int, probe?: array<string, mixed>
+     *   errors: array<int, string>, telegram_backfilled?: int, applied_telegram?: int, applied_expires?: int, applied_notes?: int,
+     *   sql_telegram?: int, user_columns?: list<string>, probe?: array<string, mixed>
      * }
      */
     public function importFromSqlFile(string $filePath, int $tenantId, string $mode = self::MODE_FULL): array
@@ -63,9 +64,22 @@ final class PlexManagerImportService
         $legacyServers = SqlInsertParser::extractTable($sql, 'servers');
         $legacyUsers = SqlInsertParser::extractTable($sql, 'users');
         $parseStats = ['servers' => count($legacyServers), 'users' => count($legacyUsers)];
+        $userColumns = $legacyUsers !== [] ? array_keys($legacyUsers[0]) : [];
         $serversImported = 0;
         $paymentByEmail = ServicioServerMapper::paymentServicioByEmail($sql);
         $telegramByEmail = $this->telegramChatIdByEmailFromPayments($sql);
+        $telegramByLegacyUserId = $this->telegramChatIdByLegacyUserId($sql);
+        $sqlTelegram = 0;
+        foreach ($legacyUsers as $probeUser) {
+            $emailProbe = strtolower(trim((string) ($probeUser['email'] ?? '')));
+            $legacyIdProbe = (int) ($probeUser['id'] ?? 0);
+            if ($this->resolveTelegramChatId($probeUser)
+                ?? ($emailProbe !== '' ? ($telegramByEmail[$emailProbe] ?? null) : null)
+                ?? ($legacyIdProbe > 0 ? ($telegramByLegacyUserId[$legacyIdProbe] ?? null) : null)
+            ) {
+                $sqlTelegram++;
+            }
+        }
 
         foreach ($legacyServers as $legacy) {
             $legacyId = (int) ($legacy['id'] ?? 0);
@@ -182,8 +196,10 @@ final class PlexManagerImportService
                     $legacy['start_date'] ?? $legacy['starts_at'] ?? $legacy['fecha_inicio'] ?? null,
                     '00:00:00'
                 );
+                $legacyUserId = (int) ($legacy['id'] ?? 0);
                 $telegramChatId = $this->resolveTelegramChatId($legacy)
-                    ?? ($telegramByEmail[$email] ?? null);
+                    ?? ($telegramByEmail[$email] ?? null)
+                    ?? ($legacyUserId > 0 ? ($telegramByLegacyUserId[$legacyUserId] ?? null) : null);
                 $notes = $this->resolveNotes($legacy);
                 $panelFields = $this->panelFieldsPayload($expiresAt, $telegramChatId, $notes);
 
@@ -355,6 +371,8 @@ final class PlexManagerImportService
             'appliedTelegram',
             'appliedExpires',
             'appliedNotes',
+            'sqlTelegram',
+            'userColumns',
             'mode'
         ));
         $this->audit->log('import.plex_manager', 'import', null, null, [
@@ -368,6 +386,8 @@ final class PlexManagerImportService
             'applied_telegram' => $appliedTelegram,
             'applied_expires' => $appliedExpires,
             'applied_notes' => $appliedNotes,
+            'sql_telegram' => $sqlTelegram,
+            'user_columns' => $userColumns,
             'mode' => $mode,
             'sync' => $syncResults,
         ]);
@@ -390,7 +410,9 @@ final class PlexManagerImportService
             $mode,
             $appliedTelegram,
             $appliedExpires,
-            $appliedNotes
+            $appliedNotes,
+            $sqlTelegram,
+            $userColumns
         );
     }
 
@@ -640,7 +662,7 @@ final class PlexManagerImportService
     /** @param array<string, mixed> $legacy */
     private function resolveTelegramChatId(array $legacy): ?string
     {
-        foreach (['telegram_chat_id', 'telegram_id', 'idcliente', 'client_id'] as $field) {
+        foreach (['telegram_chat_id', 'telegram_id', 'idcliente', 'client_id', 'tg_id', 'chat_id'] as $field) {
             if (!array_key_exists($field, $legacy)) {
                 continue;
             }
@@ -652,7 +674,11 @@ final class PlexManagerImportService
             if (is_float($raw)) {
                 continue;
             }
+            if (is_bool($raw)) {
+                continue;
+            }
             $value = trim((string) $raw);
+            $value = trim($value, "\"'");
             if ($this->isValidTelegramChatId($value)) {
                 return $value;
             }
@@ -786,6 +812,8 @@ final class PlexManagerImportService
         int $appliedTelegram = 0,
         int $appliedExpires = 0,
         int $appliedNotes = 0,
+        int $sqlTelegram = 0,
+        array $userColumns = [],
     ): array {
         return [
             'servers' => $servers,
@@ -806,6 +834,8 @@ final class PlexManagerImportService
             'applied_telegram' => $appliedTelegram,
             'applied_expires' => $appliedExpires,
             'applied_notes' => $appliedNotes,
+            'sql_telegram' => $sqlTelegram,
+            'user_columns' => $userColumns,
         ];
     }
 
@@ -911,6 +941,45 @@ final class PlexManagerImportService
             ]);
             if ($chatId !== null) {
                 $map[$email] = $chatId;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Chat IDs indexados por users.id legacy (telegram_messages_history / notification_log).
+     *
+     * @return array<int, string> legacy user id => chat id
+     */
+    private function telegramChatIdByLegacyUserId(string $sql): array
+    {
+        $map = [];
+
+        foreach (SqlInsertParser::extractTable($sql, 'telegram_messages_history') as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            if ($userId <= 0) {
+                continue;
+            }
+            $chatId = $this->resolveTelegramChatId([
+                'telegram_chat_id' => $row['telegram_chat_id'] ?? null,
+            ]);
+            if ($chatId !== null) {
+                $map[$userId] = $chatId;
+            }
+        }
+
+        foreach (SqlInsertParser::extractTable($sql, 'notification_log') as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            if ($userId <= 0 || isset($map[$userId])) {
+                continue;
+            }
+            $chatId = $this->resolveTelegramChatId([
+                'telegram_id' => $row['telegram_id'] ?? null,
+                'telegram_chat_id' => $row['telegram_id'] ?? null,
+            ]);
+            if ($chatId !== null) {
+                $map[$userId] = $chatId;
             }
         }
 

@@ -9,7 +9,7 @@ namespace App\Services\Import;
  */
 final class SqlInsertParser
 {
-    public const VERSION = '3.1';
+    public const VERSION = '3.2';
 
     /** @return array{file_bytes: int, has_servers_marker: bool, has_users_marker: bool, parser: string} */
     public static function probe(string $sql): array
@@ -372,20 +372,20 @@ final class SqlInsertParser
             return null;
         }
 
-if (is_numeric($token)) {
-    if (str_contains($token, '.')) {
-        return (float) $token;
-    }
+        // Pure integers: keep Telegram/Plex-style IDs as strings (precision +
+        // avoid float casts). Threshold 5 matches isValidTelegramChatId min length.
+        if (preg_match('/^-?\d+$/', $token) === 1) {
+            $digits = ltrim($token, '+-');
+            if (strlen($digits) >= 5) {
+                return $token;
+            }
 
-    // Keep long numeric IDs (Telegram, Plex) as strings so views/JSON
-    // never see ints and precision is preserved.
-    $digits = ltrim($token, '+-');
-    if (strlen($digits) >= 10) {
-        return $token;
-    }
+            return (int) $token;
+        }
 
-    return (int) $token;
-}
+        if (is_numeric($token) && str_contains($token, '.')) {
+            return (float) $token;
+        }
 
         return $token;
     }

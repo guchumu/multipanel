@@ -17,7 +17,7 @@ final class SqlInsertParserTest extends TestCase
         $probe = SqlInsertParser::probe($sql);
         $this->assertTrue($probe['has_servers_marker']);
         $this->assertTrue($probe['has_users_marker']);
-        $this->assertSame('3.1', $probe['parser']);
+        $this->assertSame('3.2', $probe['parser']);
     }
 
     public function test_extract_fixture_file(): void
