@@ -19,7 +19,7 @@ caducidades del importador (solo servicio 1 y 5).
 3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay).
    - Solo filas con `servicio` / `service` **1** o **5**.
    - 1 → Server10, 5 → NucBox (match por nombre de servidor).
-   - Actualiza `expires_at`, Telegram, email sobre usuarios ya sync (email/username).
+   - Actualiza `expires_at` (desde end_date/expires_at), Telegram (telegram_chat_id/telegram_id/idcliente), notas (private_notes/notes) y email sobre usuarios ya sync (email/username).
 
 ## Filtro servicio
 

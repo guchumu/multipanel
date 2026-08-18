@@ -38,7 +38,7 @@ final class PlexManagerImportService
      *   skipped_servicio: int, matched: int, updated: int, mode: string,
      *   parsed: array{servers: int, users: int},
      *   sync: array<int, array{name: string, ok: bool, error: ?string}>,
-     *   errors: array<int, string>, telegram_backfilled?: int, probe?: array<string, mixed>
+     *   errors: array<int, string>, telegram_backfilled?: int, applied_telegram?: int, applied_expires?: int, applied_notes?: int, probe?: array<string, mixed>
      * }
      */
     public function importFromSqlFile(string $filePath, int $tenantId, string $mode = self::MODE_FULL): array
@@ -65,6 +65,7 @@ final class PlexManagerImportService
         $parseStats = ['servers' => count($legacyServers), 'users' => count($legacyUsers)];
         $serversImported = 0;
         $paymentByEmail = ServicioServerMapper::paymentServicioByEmail($sql);
+        $telegramByEmail = $this->telegramChatIdByEmailFromPayments($sql);
 
         foreach ($legacyServers as $legacy) {
             $legacyId = (int) ($legacy['id'] ?? 0);
@@ -138,6 +139,9 @@ final class PlexManagerImportService
         $skippedServicio = 0;
         $matched = 0;
         $updated = 0;
+        $appliedTelegram = 0;
+        $appliedExpires = 0;
+        $appliedNotes = 0;
 
         /** @var array<int, array{server_id: ?int, server_name: ?string}> */
         $servicioServerCache = [];
@@ -166,6 +170,44 @@ final class PlexManagerImportService
                 $fallbackServerId = $serverMap[$legacyServerId] ?? null;
                 $serverId = $mappedServerId ?? $fallbackServerId;
 
+                $username = trim((string) ($legacy['plex_username'] ?? ''));
+                if ($username === '') {
+                    $username = strstr($email, '@', true) ?: $email;
+                }
+
+                $externalId = (string) ($legacy['plex_user_id'] ?? '');
+                $status = $this->mapStatus((string) ($legacy['status'] ?? 'invited'));
+                $expiresAt = $this->resolveExpiresAt($legacy);
+                $startsAt = $this->dateToDatetime(
+                    $legacy['start_date'] ?? $legacy['starts_at'] ?? $legacy['fecha_inicio'] ?? null,
+                    '00:00:00'
+                );
+                $telegramChatId = $this->resolveTelegramChatId($legacy)
+                    ?? ($telegramByEmail[$email] ?? null);
+                $notes = $this->resolveNotes($legacy);
+                $panelFields = $this->panelFieldsPayload($expiresAt, $telegramChatId, $notes);
+
+                // Overlay: si no hay servidor mapeado, igual intentamos match por email/username.
+                if ($serverId === null && $mode === self::MODE_OVERLAY) {
+                    $existing = $this->findMediaUserForImport($tenantId, $email, $username, 0);
+                    if ($existing === null) {
+                        $skipped++;
+                        continue;
+                    }
+                    $matched++;
+                    $payload = $panelFields;
+                    if ($email !== '') {
+                        $payload['email'] = $email;
+                    }
+                    if ($payload !== []) {
+                        $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
+                        $updated++;
+                        $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
+                    }
+                    $this->touchCustomerMetadata($tenantId, (int) $existing['id'], $email, $username, $legacy, $status);
+                    continue;
+                }
+
                 if ($serverId === null) {
                     $errors[] = sprintf(
                         'Usuario %s: no hay servidor MultiPanel para servicio %d (%s). Revisa el nombre (needles: %s) o IMPORT_SERVICIO_%d_SERVERS.',
@@ -179,17 +221,6 @@ final class PlexManagerImportService
                     continue;
                 }
 
-                $username = trim((string) ($legacy['plex_username'] ?? ''));
-                if ($username === '') {
-                    $username = strstr($email, '@', true) ?: $email;
-                }
-
-                $externalId = (string) ($legacy['plex_user_id'] ?? '');
-                $status = $this->mapStatus((string) ($legacy['status'] ?? 'invited'));
-                $expiresAt = $this->dateToDatetime($legacy['end_date'] ?? null);
-                $startsAt = $this->dateToDatetime($legacy['start_date'] ?? null, '00:00:00');
-                $telegramChatId = $this->resolveTelegramChatId($legacy);
-
                 $existing = $this->findMediaUserForImport($tenantId, $email, $username, (int) $serverId);
 
                 if ($mode === self::MODE_OVERLAY) {
@@ -198,56 +229,58 @@ final class PlexManagerImportService
                         continue;
                     }
                     $matched++;
-                    $payload = array_filter([
-                        'expires_at' => $expiresAt,
-                        'telegram_chat_id' => $telegramChatId,
-                        'notes' => $legacy['private_notes'] ?? null,
-                        'email' => $email !== '' ? $email : null,
-                    ], static fn ($v) => $v !== null && $v !== '');
+                    $payload = $panelFields;
+                    if ($email !== '') {
+                        $payload['email'] = $email;
+                    }
                     if ($payload !== []) {
                         $db->update('media_users', $payload, 'id = ?', [$existing['id']]);
                         $updated++;
+                        $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
                     }
                     $this->touchCustomerMetadata($tenantId, (int) $existing['id'], $email, $username, $legacy, $status);
                     continue;
                 }
 
                 if ($existing) {
-                    $db->update('media_users', array_filter([
+                    $update = array_filter([
                         'server_id' => $serverId,
                         'username' => $username,
-                        'external_id' => $externalId ?: null,
-                        'expires_at' => $expiresAt,
+                        'external_id' => $externalId !== '' ? $externalId : null,
                         'status' => $status,
-                        'telegram_chat_id' => $telegramChatId,
-                        'notes' => $legacy['private_notes'] ?? null,
-                    ], fn ($v) => $v !== null), 'id = ?', [$existing['id']]);
+                    ], static fn ($v) => $v !== null && $v !== '');
+                    $update = array_merge($update, $panelFields);
+                    $db->update('media_users', $update, 'id = ?', [$existing['id']]);
                     $mediaUserId = (int) $existing['id'];
                     $matched++;
                     $updated++;
                     $skipped++;
+                    $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
                 } else {
-                    $mediaUserId = (int) $db->insert('media_users', [
+                    $mediaUserId = (int) $db->insert('media_users', array_merge([
                         'tenant_id' => $tenantId,
                         'uuid' => Uuid::uuid4()->toString(),
                         'server_id' => $serverId,
-                        'external_id' => $externalId ?: null,
+                        'external_id' => $externalId !== '' ? $externalId : null,
                         'email' => $email,
                         'username' => $username,
                         'display_name' => $username,
                         'status' => $status,
-                        'expires_at' => $expiresAt,
-                        'telegram_chat_id' => $telegramChatId,
-                        'notes' => $legacy['private_notes'] ?? null,
                         'metadata' => json_encode([
                             'legacy_id' => $legacy['id'] ?? null,
                             'email_type' => $legacy['email_type'] ?? null,
                             'imported_from' => 'plex_manager',
                             'servicio' => $servicio,
                         ], JSON_UNESCAPED_UNICODE),
-                    ]);
+                    ], [
+                        'expires_at' => $expiresAt,
+                        'telegram_chat_id' => $telegramChatId,
+                        'notes' => $notes,
+                    ]));
                     $usersImported++;
+                    $this->tallyAppliedFields($panelFields, $appliedTelegram, $appliedExpires, $appliedNotes);
                 }
+
 
                 $customerId = $this->upsertCustomer($tenantId, $mediaUserId, $email, $username, $legacy, $status);
                 if ($customerId < 0) {
@@ -319,6 +352,9 @@ final class PlexManagerImportService
             'skippedServicio',
             'matched',
             'updated',
+            'appliedTelegram',
+            'appliedExpires',
+            'appliedNotes',
             'mode'
         ));
         $this->audit->log('import.plex_manager', 'import', null, null, [
@@ -329,6 +365,9 @@ final class PlexManagerImportService
             'skipped_servicio' => $skippedServicio,
             'matched' => $matched,
             'updated' => $updated,
+            'applied_telegram' => $appliedTelegram,
+            'applied_expires' => $appliedExpires,
+            'applied_notes' => $appliedNotes,
             'mode' => $mode,
             'sync' => $syncResults,
         ]);
@@ -348,7 +387,10 @@ final class PlexManagerImportService
             $skippedServicio,
             $matched,
             $updated,
-            $mode
+            $mode,
+            $appliedTelegram,
+            $appliedExpires,
+            $appliedNotes
         );
     }
 
@@ -444,7 +486,7 @@ final class PlexManagerImportService
                 'media_user_id' => $mediaUserId,
                 'status' => $status === 'active' ? 'active' : 'inactive',
                 'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
-                'notes' => $legacy['private_notes'] ?? null,
+                'notes' => $this->resolveNotes($legacy),
             ], 'id = ?', [$customer['id']]);
 
             return (int) $customer['id'];
@@ -457,7 +499,7 @@ final class PlexManagerImportService
             'email' => $email,
             'first_name' => $username,
             'status' => $status === 'active' ? 'active' : 'inactive',
-            'notes' => $legacy['private_notes'] ?? null,
+            'notes' => $this->resolveNotes($legacy),
             'metadata' => json_encode($metadata, JSON_UNESCAPED_UNICODE),
         ]);
 
@@ -634,16 +676,26 @@ final class PlexManagerImportService
         }
 
         $db = Database::getInstance();
+        $this->ensureMediaUserColumn($db,
+            'ALTER TABLE `media_users` ADD COLUMN `telegram_chat_id` VARCHAR(50) NULL AFTER `email`'
+        );
+        $this->ensureMediaUserColumn($db,
+            'ALTER TABLE `media_users` ADD COLUMN `notes` TEXT NULL'
+        );
+        $this->ensureMediaUserColumn($db,
+            'ALTER TABLE `media_users` ADD COLUMN `expires_at` DATETIME NULL'
+        );
+        \App\Repositories\MediaUserRepository::clearColumnCache();
+    }
+
+    private function ensureMediaUserColumn(Database $db, string $alterSql): void
+    {
         try {
-            $db->pdo()->exec(
-                'ALTER TABLE `media_users` ADD COLUMN `telegram_chat_id` VARCHAR(50) NULL AFTER `email`'
-            );
-            \App\Repositories\MediaUserRepository::clearColumnCache();
+            $db->pdo()->exec($alterSql);
         } catch (\Throwable $e) {
             if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
                 throw $e;
             }
-            \App\Repositories\MediaUserRepository::clearColumnCache();
         }
     }
 
@@ -731,6 +783,9 @@ final class PlexManagerImportService
         int $matched = 0,
         int $updated = 0,
         string $mode = self::MODE_FULL,
+        int $appliedTelegram = 0,
+        int $appliedExpires = 0,
+        int $appliedNotes = 0,
     ): array {
         return [
             'servers' => $servers,
@@ -748,6 +803,117 @@ final class PlexManagerImportService
             'sync' => $sync,
             'errors' => $errors,
             'telegram_backfilled' => $telegramBackfilled,
+            'applied_telegram' => $appliedTelegram,
+            'applied_expires' => $appliedExpires,
+            'applied_notes' => $appliedNotes,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $legacy
+     */
+    private function resolveExpiresAt(array $legacy): ?string
+    {
+        foreach (['end_date', 'expires_at', 'expiration', 'fecha_fin', 'fecha_caducidad', 'vence', 'vencimiento'] as $field) {
+            if (!array_key_exists($field, $legacy)) {
+                continue;
+            }
+            $normalized = $this->dateToDatetime($legacy[$field]);
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $legacy
+     */
+    private function resolveNotes(array $legacy): ?string
+    {
+        foreach (['private_notes', 'notes', 'admin_notes', 'nota', 'notas'] as $field) {
+            if (!array_key_exists($field, $legacy)) {
+                continue;
+            }
+            $raw = $legacy[$field];
+            if ($raw === null) {
+                continue;
+            }
+            $value = trim((string) $raw);
+            // phpMyAdmin escapes newlines as \r\n literals in some dumps.
+            $value = str_replace(["\\r\\n", "\\n", "\\r"], ["\n", "\n", "\n"], $value);
+            $value = trim($value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Solo campos de panel con valor real (no pisa existentes con vacío).
+     *
+     * @return array{expires_at?: string, telegram_chat_id?: string, notes?: string}
+     */
+    private function panelFieldsPayload(?string $expiresAt, ?string $telegramChatId, ?string $notes): array
+    {
+        $payload = [];
+        $expiresAt = $expiresAt !== null ? trim($expiresAt) : null;
+        $telegramChatId = $telegramChatId !== null ? trim($telegramChatId) : null;
+        $notes = $notes !== null ? trim($notes) : null;
+        if ($expiresAt !== null && $expiresAt !== '') {
+            $payload['expires_at'] = $expiresAt;
+        }
+        if ($telegramChatId !== null && $telegramChatId !== '') {
+            $payload['telegram_chat_id'] = $telegramChatId;
+        }
+        if ($notes !== null && $notes !== '') {
+            $payload['notes'] = $notes;
+        }
+
+        return $payload;
+    }
+
+    /** @param array{expires_at?: string, telegram_chat_id?: string, notes?: string} $fields */
+    private function tallyAppliedFields(array $fields, int &$telegram, int &$expires, int &$notes): void
+    {
+        if (isset($fields['telegram_chat_id'])) {
+            $telegram++;
+        }
+        if (isset($fields['expires_at'])) {
+            $expires++;
+        }
+        if (isset($fields['notes'])) {
+            $notes++;
+        }
+    }
+
+    /**
+     * Chat IDs desde payments_history (client_id / telegram_id) indexados por email.
+     *
+     * @return array<string, string> lowercase email => chat id
+     */
+    private function telegramChatIdByEmailFromPayments(string $sql): array
+    {
+        $map = [];
+        foreach (SqlInsertParser::extractTable($sql, 'payments_history') as $row) {
+            $email = strtolower(trim((string) ($row['email'] ?? '')));
+            if ($email === '') {
+                continue;
+            }
+            $chatId = $this->resolveTelegramChatId([
+                'telegram_chat_id' => $row['telegram_id'] ?? null,
+                'telegram_id' => $row['telegram_id'] ?? null,
+                'idcliente' => $row['client_id'] ?? null,
+                'client_id' => $row['client_id'] ?? null,
+            ]);
+            if ($chatId !== null) {
+                $map[$email] = $chatId;
+            }
+        }
+
+        return $map;
     }
 }

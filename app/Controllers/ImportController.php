@@ -165,17 +165,20 @@ class ImportController extends Controller
 
             if ($mode === PlexManagerImportService::MODE_OVERLAY) {
                 $msg = sprintf(
-                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Telegram rellenados: %d.',
+                    'Importar fechas/datos (solo servicio 1=Server10, 5=NucBox): leídas %d users → %d coincidencias, %d actualizados, %d omitidos por servicio, %d sin match en panel. Aplicados: Telegram %d, caducidad %d, notas %d. Telegram rellenados (CRM): %d.',
                     $parsed['users'],
                     (int) ($result['matched'] ?? 0),
                     (int) ($result['updated'] ?? 0),
                     (int) ($result['skipped_servicio'] ?? 0),
                     (int) ($result['skipped'] ?? 0),
+                    (int) ($result['applied_telegram'] ?? 0),
+                    (int) ($result['applied_expires'] ?? 0),
+                    (int) ($result['applied_notes'] ?? 0),
                     (int) ($result['telegram_backfilled'] ?? 0)
                 );
             } else {
                 $msg = sprintf(
-                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Telegram rellenados: %d.',
+                    'Migración plex_manager (filtro servicio 1/5): leídas %d filas servers / %d users → importados %d servidores, %d usuarios nuevos, %d clientes, %d bibliotecas. Omitidos por servicio: %d. Omitidos/actualizados: %d. Aplicados: Telegram %d, caducidad %d, notas %d. Telegram rellenados (CRM): %d.',
                     $parsed['servers'],
                     $parsed['users'],
                     $result['servers'],
@@ -184,6 +187,9 @@ class ImportController extends Controller
                     $result['libraries'] ?? 0,
                     (int) ($result['skipped_servicio'] ?? 0),
                     $result['skipped'],
+                    (int) ($result['applied_telegram'] ?? 0),
+                    (int) ($result['applied_expires'] ?? 0),
+                    (int) ($result['applied_notes'] ?? 0),
                     $result['telegram_backfilled'] ?? 0
                 );
             }

@@ -55,4 +55,47 @@ final class PlexManagerImportDateTest extends TestCase
             'telegram_id' => 'not-a-chat',
         ]));
     }
+
+    public function test_resolve_expires_at_aliases(): void
+    {
+        $service = new PlexManagerImportService();
+        $ref = new ReflectionMethod(PlexManagerImportService::class, 'resolveExpiresAt');
+        $ref->setAccessible(true);
+
+        $this->assertSame('2026-12-01 23:59:59', $ref->invoke($service, ['end_date' => '2026-12-01']));
+        $this->assertSame('2026-12-01 23:59:59', $ref->invoke($service, ['expires_at' => '2026-12-01']));
+        $this->assertSame('2026-12-01 23:59:59', $ref->invoke($service, ['expiration' => '01/12/2026']));
+        $this->assertNull($ref->invoke($service, ['end_date' => null, 'expires_at' => '']));
+    }
+
+    public function test_resolve_notes_aliases(): void
+    {
+        $service = new PlexManagerImportService();
+        $ref = new ReflectionMethod(PlexManagerImportService::class, 'resolveNotes');
+        $ref->setAccessible(true);
+
+        $this->assertSame('hola', $ref->invoke($service, ['private_notes' => 'hola']));
+        $this->assertSame('admin', $ref->invoke($service, ['private_notes' => '', 'admin_notes' => 'admin']));
+        $this->assertSame("linea1\nlinea2", $ref->invoke($service, ['notes' => "linea1\\nlinea2"]));
+        $this->assertNull($ref->invoke($service, ['private_notes' => '   ', 'notes' => null]));
+    }
+
+    public function test_panel_fields_payload_skips_empty(): void
+    {
+        $service = new PlexManagerImportService();
+        $ref = new ReflectionMethod(PlexManagerImportService::class, 'panelFieldsPayload');
+        $ref->setAccessible(true);
+
+        $this->assertSame([
+            'expires_at' => '2026-12-01 23:59:59',
+            'telegram_chat_id' => '12345',
+            'notes' => 'x',
+        ], $ref->invoke($service, '2026-12-01 23:59:59', '12345', 'x'));
+
+        $this->assertSame([], $ref->invoke($service, null, '', '  '));
+        $this->assertSame(
+            ['telegram_chat_id' => '99999'],
+            $ref->invoke($service, null, '99999', null)
+        );
+    }
 }

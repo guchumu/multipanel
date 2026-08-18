@@ -97,9 +97,10 @@ $phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
                     <li><strong>servers</strong> → Servidores Plex (URL, token, machine_id) — solo modo completo</li>
                     <li><strong>users</strong> → Usuarios media + clientes CRM (filtrados por servicio 1/5)</li>
                     <li><strong>servicio / service / payments_history</strong> → 1=Server10, 5=NucBox</li>
-                    <li><strong>end_date</strong> → Fecha expiración (<code>media_users.expires_at</code>)</li>
+                    <li><strong>end_date / expires_at / expiration</strong> → Fecha expiración (<code>media_users.expires_at</code>)</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
-                    <li><strong>telegram_chat_id / telegram_id</strong> → Chat ID Telegram del usuario media (<code>media_users.telegram_chat_id</code>)</li>
+                    <li><strong>telegram_chat_id / telegram_id / idcliente</strong> → Chat ID Telegram (<code>media_users.telegram_chat_id</code>); si falta, se intenta desde <code>payments_history</code></li>
+                    <li><strong>private_notes / notes / admin_notes</strong> → Notas (<code>media_users.notes</code>)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>
                 <h6>SQL grande por FTP</h6>

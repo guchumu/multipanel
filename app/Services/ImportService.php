@@ -72,8 +72,9 @@ final class ImportService
 
                 $password = $data['password'] ?? $this->passwords->generate();
 
-                $telegramChatId = trim((string) ($data['telegram_chat_id'] ?? $data['telegram_id'] ?? ''));
-                $telegramChatId = $telegramChatId !== '' ? $telegramChatId : null;
+                $telegramChatId = $this->resolveImportTelegram($data);
+                $expiresAt = $this->resolveImportExpires($data);
+                $notes = $this->resolveImportNotes($data);
 
                 $user = new MediaUser([
                     'tenant_id' => $tenantId,
@@ -85,9 +86,9 @@ final class ImportService
                     'status' => $data['status'] ?? 'pending',
                     'max_streams' => (int) ($data['max_streams'] ?? 1),
                     'max_devices' => (int) ($data['max_devices'] ?? 5),
-                    'expires_at' => $data['expires_at'] ?? null,
+                    'expires_at' => $expiresAt,
                     'telegram_chat_id' => $telegramChatId,
-                    'notes' => $data['notes'] ?? null,
+                    'notes' => $notes,
                 ]);
 
                 $user->save();
@@ -129,9 +130,6 @@ final class ImportService
 
             try {
                 $password = $data['password'] ?? $this->passwords->generate();
-                $telegramChatId = trim((string) ($data['telegram_chat_id'] ?? $data['telegram_id'] ?? ''));
-                $telegramChatId = $telegramChatId !== '' ? $telegramChatId : null;
-
                 $user = new MediaUser([
                     'tenant_id' => $tenantId,
                     'uuid' => Uuid::uuid4()->toString(),
@@ -140,7 +138,9 @@ final class ImportService
                     'password' => $this->passwords->hash($password),
                     'status' => $data['status'] ?? 'pending',
                     'max_streams' => (int) ($data['max_streams'] ?? 1),
-                    'telegram_chat_id' => $telegramChatId,
+                    'expires_at' => $this->resolveImportExpires($data),
+                    'telegram_chat_id' => $this->resolveImportTelegram($data),
+                    'notes' => $this->resolveImportNotes($data),
                 ]);
                 $user->save();
                 $imported++;
@@ -169,5 +169,53 @@ final class ImportService
         }
 
         return ServicioServerMapper::isAllowed((int) $raw);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function resolveImportTelegram(array $data): ?string
+    {
+        foreach (['telegram_chat_id', 'telegram_id', 'idcliente', 'client_id'] as $field) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            $value = trim((string) ($data[$field] ?? ''));
+            if ($value !== '' && $value !== '0') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $data */
+    private function resolveImportExpires(array $data): ?string
+    {
+        foreach (['expires_at', 'end_date', 'expiration', 'fecha_fin'] as $field) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            $value = trim((string) ($data[$field] ?? ''));
+            if ($value !== '' && !str_starts_with($value, '0000-00-00')) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $data */
+    private function resolveImportNotes(array $data): ?string
+    {
+        foreach (['private_notes', 'notes', 'admin_notes', 'nota', 'notas'] as $field) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            $value = trim((string) ($data[$field] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }
