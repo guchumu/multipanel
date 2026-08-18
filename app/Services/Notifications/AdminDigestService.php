@@ -157,7 +157,7 @@ final class AdminDigestService
         $syncErrors = [];
         try {
             $rows = Database::getInstance()->fetchAll(
-                "SELECT name, status, last_error, last_sync_at
+                "SELECT name, type, status, last_error, last_sync_at
                  FROM servers
                  WHERE tenant_id = ? AND deleted_at IS NULL
                  ORDER BY name ASC",
@@ -167,17 +167,25 @@ final class AdminDigestService
                 $serversTotal++;
                 $status = (string) ($row['status'] ?? '');
                 $name = trim((string) ($row['name'] ?? '')) ?: 'Servidor';
+                $rawType = trim((string) ($row['type'] ?? ''));
+                $type = match ($rawType) {
+                    'plex' => 'Plex',
+                    'jellyfin' => 'Jellyfin',
+                    '' => 'Desconocido',
+                    default => ucfirst($rawType),
+                };
+                $label = $name . ' (' . $type . ')';
                 if ($status === 'online') {
                     $serversOnline++;
                 } elseif ($status === 'offline') {
                     $serversOffline++;
                     if (count($offlineNames) < self::TOP_OFFLINE) {
-                        $offlineNames[] = $name;
+                        $offlineNames[] = $label;
                     }
                 }
                 $err = trim((string) ($row['last_error'] ?? ''));
                 if ($err !== '' && count($syncErrors) < self::TOP_OFFLINE) {
-                    $syncErrors[] = $name . ': ' . mb_substr($err, 0, 60);
+                    $syncErrors[] = $label . ': ' . mb_substr($err, 0, 60);
                 }
             }
         } catch (\Throwable) {

@@ -13,7 +13,7 @@
     </span>
     <div class="global-search flex-grow-1 mx-1 mx-lg-3 position-relative" style="max-width: 28rem;">
         <div class="input-group input-group-sm">
-            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <span class="input-group-text bg-body border-end-0"><i class="bi bi-search text-muted"></i></span>
             <input type="search"
                    id="globalSearchInput"
                    class="form-control border-start-0"
@@ -22,11 +22,12 @@
                    aria-label="Búsqueda global de usuarios"
                    aria-controls="globalSearchResults"
                    aria-expanded="false"
-                   role="combobox">
-            <kbd class="input-group-text d-none d-md-inline bg-light text-muted small" title="Atajo">/</kbd>
+                   role="combobox"
+                   aria-autocomplete="list">
+            <kbd class="input-group-text d-none d-md-inline bg-body-secondary text-muted small" title="Atajo">/</kbd>
         </div>
         <div id="globalSearchResults"
-             class="global-search-results dropdown-menu shadow border-0 w-100 mt-1 d-none"
+             class="global-search-results d-none"
              role="listbox"
              aria-label="Resultados de búsqueda"></div>
     </div>

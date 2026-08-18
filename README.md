@@ -52,11 +52,12 @@ docker compose up -d
 ## Cron Jobs
 
 ```bash
-# Cada 5 minutos - sincronización y automatizaciones
+# Cada 5 minutos - sync, automatizaciones, etc.
+# El backup NO se crea en cada tick: gate cada 6h (retención ~28 ≈ 1 semana)
 */5 * * * * php /path/to/multipanel/cron/run.php all
 
-# Backup diario a las 3:00
-0 3 * * * php /path/to/multipanel/cron/run.php backup
+# Opcional: forzar una copia fuera del intervalo
+# 0 3 * * * php /path/to/multipanel/cron/run.php backup
 ```
 
 ## Estructura del proyecto

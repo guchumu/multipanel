@@ -26,6 +26,16 @@
         }
     }
 
+    function statusBadgeClass(status) {
+        switch (status) {
+            case 'active': return 'text-bg-success';
+            case 'suspended': return 'text-bg-warning';
+            case 'pending': return 'text-bg-info';
+            case 'expired': return 'text-bg-secondary';
+            default: return 'text-bg-light text-dark border';
+        }
+    }
+
     function hide() {
         results.classList.add('d-none');
         results.innerHTML = '';
@@ -37,6 +47,14 @@
     function show() {
         results.classList.remove('d-none');
         input.setAttribute('aria-expanded', 'true');
+    }
+
+    function setStatus(message, isError) {
+        const cls = isError ? 'global-search-status is-error' : 'global-search-status';
+        results.innerHTML = `<div class="${cls}">${escapeHtml(message)}</div>`;
+        show();
+        items = [];
+        activeIndex = -1;
     }
 
     function highlight(delta) {
@@ -52,16 +70,17 @@
 
     function goActive() {
         if (activeIndex >= 0 && items[activeIndex]) {
-            const href = items[activeIndex].getAttribute('href');
+            const href = items[activeIndex].getAttribute('data-href');
             if (href) window.location.href = href;
         }
     }
 
     function render(users, q) {
         if (!users.length) {
-            results.innerHTML = `<div class="px-3 py-2 text-muted small">Sin resultados para “${escapeHtml(q)}”</div>`;
+            results.innerHTML = `<div class="global-search-empty">Sin resultados para “${escapeHtml(q)}”</div>`;
             show();
             items = [];
+            activeIndex = -1;
             return;
         }
 
@@ -70,30 +89,35 @@
             const email = escapeHtml(u.email || '');
             const server = escapeHtml(u.server_name || '');
             const tg = escapeHtml(u.telegram_chat_id || '');
-            const meta = [
+            const href = `/media-users/${escapeHtml(u.uuid)}`;
+            const metaParts = [
                 email,
                 server ? `Servidor: ${server}` : '',
                 tg ? `TG: ${tg}` : '',
                 `#${Number(u.id || 0)}`,
-            ].filter(Boolean).join(' · ');
-
+            ].filter(Boolean);
+            const meta = metaParts.join(' · ');
+            const status = String(u.status || '');
             const serverLink = u.server_uuid
-                ? `<a href="/servers/${escapeHtml(u.server_uuid)}" class="small text-decoration-none ms-1" tabindex="-1" onclick="event.stopPropagation()">servidor</a>`
+                ? `<a href="/servers/${escapeHtml(u.server_uuid)}" class="global-search-server-link link-primary" tabindex="-1">abrir servidor</a>`
                 : '';
 
-            return `<a href="/media-users/${escapeHtml(u.uuid)}"
-                        class="dropdown-item global-search-item py-2"
+            return `<div class="global-search-item"
                         role="option"
+                        tabindex="-1"
                         id="globalSearchOpt${i}"
-                        data-index="${i}">
-                <div class="d-flex justify-content-between gap-2 align-items-start">
-                    <div class="min-w-0">
-                        <div class="fw-medium text-truncate">${name}${serverLink}</div>
-                        <div class="small text-muted text-truncate">${meta}</div>
-                    </div>
-                    <span class="badge bg-light text-dark border flex-shrink-0">${escapeHtml(statusLabel(u.status))}</span>
-                </div>
-            </a>`;
+                        data-index="${i}"
+                        data-href="${href}">
+                <span class="global-search-avatar" aria-hidden="true"><i class="bi bi-person"></i></span>
+                <span class="global-search-body">
+                    <span class="global-search-title">
+                        <span class="global-search-title-text">${name}</span>
+                        ${serverLink}
+                    </span>
+                    <span class="global-search-meta">${meta}</span>
+                </span>
+                <span class="badge global-search-badge ${statusBadgeClass(status)}">${escapeHtml(statusLabel(status))}</span>
+            </div>`;
         }).join('');
 
         items = Array.from(results.querySelectorAll('.global-search-item'));
@@ -109,8 +133,7 @@
         }
 
         const mySeq = ++seq;
-        results.innerHTML = '<div class="px-3 py-2 text-muted small">Buscando…</div>';
-        show();
+        setStatus('Buscando…', false);
 
         try {
             const res = await fetch(`/media-users/search?q=${encodeURIComponent(q)}`, {
@@ -120,15 +143,13 @@
             const data = await res.json().catch(() => ({}));
             if (mySeq !== seq) return;
             if (!res.ok) {
-                results.innerHTML = `<div class="px-3 py-2 text-danger small">${escapeHtml(data.error || 'Error en la búsqueda')}</div>`;
-                show();
+                setStatus(data.error || 'Error en la búsqueda', true);
                 return;
             }
             render(data.users || [], q);
         } catch {
             if (mySeq !== seq) return;
-            results.innerHTML = '<div class="px-3 py-2 text-danger small">Error de red</div>';
-            show();
+            setStatus('Error de red', true);
         }
     }
 
@@ -157,6 +178,17 @@
 
     input.addEventListener('focus', () => {
         if (input.value.trim().length >= 1) runSearch();
+    });
+
+    results.addEventListener('click', (e) => {
+        if (e.target.closest('a.global-search-server-link')) {
+            e.stopPropagation();
+            return;
+        }
+        const item = e.target.closest('.global-search-item');
+        if (!item) return;
+        const href = item.getAttribute('data-href');
+        if (href) window.location.href = href;
     });
 
     document.addEventListener('click', (e) => {

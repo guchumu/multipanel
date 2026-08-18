@@ -80,7 +80,8 @@ certbot --nginx -d multipanel.example.com
 
 ```crontab
 */5 * * * * www-data php /var/www/multipanel/cron/run.php all >> /var/log/multipanel-cron.log 2>&1
-0 3 * * * www-data php /var/www/multipanel/cron/run.php backup >> /var/log/multipanel-backup.log 2>&1
+# Backup: incluido en `all` con gate cada 6h (BACKUP_INTERVAL_HOURS) y retención ~28 archivos
+# Opcional forzar: 0 3 * * * www-data php /var/www/multipanel/cron/run.php backup >> /var/log/multipanel-backup.log 2>&1
 ```
 
 ### 7. PHP-FPM tuning (producción)

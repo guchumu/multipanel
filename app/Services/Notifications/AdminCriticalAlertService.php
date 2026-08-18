@@ -139,10 +139,10 @@ final class AdminCriticalAlertService
         return $this->notify(
             $tenantId,
             $fp,
-            $count === 1 ? 'Sync FAIL: servidor' : "Sync FAIL: {$count} servidores",
+            $count === 1 ? "Sync FAIL: {$list}" : "Sync FAIL: {$count} servidores",
             $count === 1
                 ? "El sync del servidor \"{$list}\" ha fallado. Revisar conexión / token / URL."
-                : "Han fallado {$count} servidores en el sync:\n{$list}",
+                : "Han fallado {$count} servidores en el sync (nombre + tipo):\n{$list}",
             ['debounce_minutes' => 30]
         );
     }

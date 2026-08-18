@@ -159,22 +159,67 @@ final class BackupService
         return true;
     }
 
+    /** @return array<string, mixed>|null */
+    public function lastCompleted(int $tenantId = 1): ?array
+    {
+        return Database::getInstance()->fetchOne(
+            "SELECT * FROM backups WHERE tenant_id = ? AND status = 'completed' AND type IN ('database','full') ORDER BY created_at DESC LIMIT 1",
+            [$tenantId]
+        );
+    }
+
+    public function intervalHours(): int
+    {
+        return max(1, (int) config('backup.interval_hours', 6));
+    }
+
+    /** True si ha pasado el intervalo desde el último backup completo. */
+    public function isDue(int $tenantId = 1): bool
+    {
+        $last = $this->lastCompleted($tenantId);
+        if ($last === null) {
+            return true;
+        }
+
+        $ts = strtotime((string) ($last['completed_at'] ?? $last['created_at'] ?? ''));
+        if ($ts === false) {
+            return true;
+        }
+
+        return (time() - $ts) >= ($this->intervalHours() * 3600);
+    }
+
     public function prune(int $tenantId = 1): int
     {
-        $days = (int) config('backup.retention_days', 30);
-        $old = Database::getInstance()->fetchAll(
-            'SELECT * FROM backups WHERE tenant_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)',
-            [$tenantId, $days]
-        );
+        $deleted = 0;
+        $keep = max(1, (int) config('backup.retention_count', 28));
 
-        $count = 0;
-        foreach ($old as $backup) {
-            if ($this->delete((int) $backup['id'])) {
-                $count++;
+        // Conservar solo los N más recientes (prioriza ~1 semana con intervalo 6h).
+        // OFFSET interpolado (int) por compatibilidad PDO/MySQL.
+        $extra = Database::getInstance()->fetchAll(
+            "SELECT id FROM backups WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 1000 OFFSET {$keep}",
+            [$tenantId]
+        );
+        foreach ($extra as $row) {
+            if ($this->delete((int) $row['id'])) {
+                $deleted++;
             }
         }
 
-        return $count;
+        $days = (int) config('backup.retention_days', 8);
+        if ($days > 0) {
+            $old = Database::getInstance()->fetchAll(
+                'SELECT * FROM backups WHERE tenant_id = ? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)',
+                [$tenantId, $days]
+            );
+            foreach ($old as $backup) {
+                if ($this->delete((int) $backup['id'])) {
+                    $deleted++;
+                }
+            }
+        }
+
+        return $deleted;
     }
 
     private function uploadRemote(string $filePath, string $filename): ?string

@@ -30,17 +30,17 @@ final class CronService
         return [
             'all' => [
                 'title' => 'Todas',
-                'description' => 'Ejecuta migrate + billing + sync + automation + backup + jobs + expiry + digest + streams + gdpr + cleanup.',
+                'description' => 'Ejecuta migrate + billing + sync + automation + backup (solo si toca por intervalo) + jobs + expiry + digest + streams + gdpr + cleanup.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'sync' => [
                 'title' => 'Sincronizar servidores',
-                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones. FAIL → alerta admin.',
+                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones. FAIL → alerta admin (con tipo Plex/Jellyfin).',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp (diagnóstico + escalado 0/5/15/30 min).',
+                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp (diagnóstico + tipo Plex/Jellyfin + escalado 0/5/15/30 min).',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
@@ -60,8 +60,8 @@ final class CronService
             ],
             'backup' => [
                 'title' => 'Backup',
-                'description' => 'Genera copia de seguridad y limpia backups antiguos según retención. Fallo → alerta admin.',
-                'schedule' => 'Diario de madrugada',
+                'description' => 'Copia de seguridad cada ~6h (incluido en all con gate por último backup). Retención ~28 archivos ≈ 7 días. Fallo → alerta admin. La tarea backup fuerza una copia.',
+                'schedule' => 'Cada 6 horas (gate en all)',
             ],
             'jobs' => [
                 'title' => 'Cola de trabajos',
@@ -114,7 +114,7 @@ final class CronService
                 'sync' => $this->runServerSync($tenantId, $capture),
                 'automation' => $this->runAutomation($tenantId, $capture),
                 'billing' => $this->runBilling($tenantId, $capture),
-                'backup' => $this->runBackup($tenantId, $capture),
+                'backup' => $this->runBackup($tenantId, $capture, true),
                 'jobs' => $this->runJobs($capture),
                 'gdpr' => $this->runGdpr($capture),
                 'cleanup' => $this->runCleanup($capture),
@@ -144,7 +144,7 @@ final class CronService
         $this->runBilling($tenantId, $out);
         $this->runServerSync($tenantId, $out);
         $this->runAutomation($tenantId, $out);
-        $this->runBackup($tenantId, $out);
+        $this->runBackup($tenantId, $out, false);
         $this->runJobs($out);
         $this->runExpiryNotifications($tenantId, $out);
         $this->runAdminDigest($tenantId, $out);
@@ -291,10 +291,11 @@ final class CronService
         $failedNames = [];
 
         foreach ($repo->allByTenant($tenantId) as $server) {
+            $label = $server->displayLabel();
             $result = $sync->sync($server);
-            $out('  Server ' . $server->name . ': ' . ($result ? 'OK' : 'FAIL'));
+            $out('  Server ' . $label . ': ' . ($result ? 'OK' : 'FAIL'));
             if (!$result) {
-                $failedNames[] = (string) $server->name;
+                $failedNames[] = $label;
             }
         }
 
@@ -364,12 +365,27 @@ final class CronService
         }
     }
 
-    /** @param callable(string): void $out */
-    private function runBackup(int $tenantId, callable $out): void
+    /**
+     * @param callable(string): void $out
+     * @param bool $force Si true (tarea `backup`), crea siempre; si false (desde `all`), solo si pasó el intervalo.
+     */
+    private function runBackup(int $tenantId, callable $out, bool $force = false): void
     {
-        $out('Creating backup...');
+        $service = new BackupService();
+        $hours = $service->intervalHours();
+        $out($force ? 'Creating backup (forced)...' : "Checking backup schedule (every {$hours}h)...");
+
         try {
-            $service = new BackupService();
+            if (!$force && !$service->isDue($tenantId)) {
+                $out("  Skipped: último backup reciente; próximo como mínimo cada {$hours}h");
+                $pruned = $service->prune($tenantId);
+                if ($pruned > 0) {
+                    $out("  Old backups pruned: {$pruned}");
+                }
+
+                return;
+            }
+
             $result = $service->create($tenantId);
             if ($result) {
                 $out('  Backup created: ' . ($result['filename'] ?? 'ok'));

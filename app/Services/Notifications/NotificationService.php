@@ -283,9 +283,10 @@ final class NotificationService
     {
         // Compat: alerta mínima. El cron de automatización usa ServerDownAlertService
         // (diagnóstico + email + WhatsApp + escalado 5/15/30).
+        // $serverName debería incluir el tipo, p.ej. "NucBox (Plex)".
         $this->notify(
             'server.down',
-            'Servidor caído',
+            'Servidor caído: ' . $serverName,
             "El servidor \"{$serverName}\" no responde.",
             ['telegram'],
             ['level' => 'error']

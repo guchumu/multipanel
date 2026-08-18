@@ -66,7 +66,7 @@ final class ServerDownAlertService
             if ($checkedAt === false || $checkedAt < ($nowTs - self::RECENT_CHECK_SECONDS)) {
                 $stats['skipped']++;
                 $stats['details'][] = [
-                    'server' => (string) $server->name,
+                    'server' => $server->displayLabel(),
                     'result' => 'skipped',
                     'reason' => 'last_check_at stale or missing',
                 ];
@@ -81,7 +81,7 @@ final class ServerDownAlertService
                 $stats['skipped']++;
             }
             $stats['details'][] = [
-                'server' => (string) $server->name,
+                'server' => $server->displayLabel(),
                 'result' => $result['result'],
                 'reason' => $result['reason'],
                 'channels' => $result['channels'] ?? [],
@@ -180,9 +180,11 @@ final class ServerDownAlertService
 
         $diagnosis = $this->diagnose($server);
         $body = $this->buildMessage($server, $diagnosis, $firstSeen, $elapsedMin, $nextLevel, $requiredMin);
+        $label = $server->displayLabel();
         $title = $nextLevel === 0
-            ? 'Servidor caído'
-            : 'Servidor sigue caído';
+            ? 'Servidor caído: ' . $label
+            : 'Servidor sigue caído: ' . $label
+        ;
 
         $results = $this->notifications->notify(
             'server.down',
@@ -375,8 +377,10 @@ final class ServerDownAlertService
         $tz = new DateTimeZone((string) config('app.timezone', 'Europe/Madrid'));
         $sinceLocal = $firstSeen->setTimezone($tz)->format('d/m/Y H:i');
 
+        $label = $server->displayLabel();
         $lines = [];
-        $lines[] = 'El servidor "' . $server->name . '" no responde.';
+        $lines[] = 'El servidor "' . $label . '" no responde.';
+        $lines[] = 'Tipo: ' . $server->typeLabel();
         if ($escalationLevel > 0) {
             $lines[] = "⚠️ Sigue caído desde {$sinceLocal} ({$elapsedMin} min). Escalado #{$escalationLevel} (≥ {$requiredMin} min).";
         } else {

@@ -59,8 +59,12 @@
         <ul class="mb-0">
             <li><strong>Completo:</strong> volcado SQL de toda la base de datos con <code>mysqldump</code> → <code>storage/backups/</code></li>
             <li><strong>Incremental:</strong> solo tablas de actividad reciente desde el último backup</li>
-            <li><strong>Cron:</strong> <code>php cron/run.php backup</code> (tarea <code>all</code> también lo incluye)</li>
-            <li><strong>Retención:</strong> <?= (int) config('backup.retention_days', 30) ?> días — los antiguos se borran automáticamente</li>
+            <li><strong>Cron:</strong> la tarea <code>all</code> solo crea backup cada <?= (int) config('backup.interval_hours', 6) ?> h (no en cada tick de 5 min). <code>php cron/run.php backup</code> fuerza una copia.</li>
+            <li><strong>Retención:</strong> últimos <?= (int) config('backup.retention_count', 28) ?> archivos
+                <?php if ((int) config('backup.retention_days', 8) > 0): ?>
+                    (+ borrar &gt; <?= (int) config('backup.retention_days', 8) ?> días)
+                <?php endif; ?>
+                — con intervalo de 6 h ≈ 1 semana</li>
         </ul>
     </div>
 </div>

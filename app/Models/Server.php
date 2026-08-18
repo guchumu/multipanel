@@ -64,4 +64,25 @@ class Server extends Model
     {
         return (int) $this->is_default === 1;
     }
+
+    /** Etiqueta legible del tipo (Plex / Jellyfin). */
+    public function typeLabel(): string
+    {
+        return match ((string) $this->type) {
+            'plex' => 'Plex',
+            'jellyfin' => 'Jellyfin',
+            default => $this->type !== '' ? ucfirst((string) $this->type) : 'Desconocido',
+        };
+    }
+
+    /** Nombre con tipo, p.ej. "NucBox (Plex)". */
+    public function displayLabel(): string
+    {
+        $name = trim((string) $this->name);
+        if ($name === '') {
+            $name = 'Servidor';
+        }
+
+        return $name . ' (' . $this->typeLabel() . ')';
+    }
 }

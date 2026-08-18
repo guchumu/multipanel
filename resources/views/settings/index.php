@@ -452,7 +452,9 @@
             <div class="card-body">
                 <h6 class="mb-2">CLI (recomendado en VPS)</h6>
                 <pre class="bg-light p-3 small mb-2">*/5 * * * * php <?= e($cronCliBase) ?> all >> /var/log/multipanel-cron.log 2>&amp;1
-0 3 * * * php <?= e($cronCliBase) ?> backup
+# backup va en «all» con gate cada <?= (int) config('backup.interval_hours', 6) ?> h (retención ~<?= (int) config('backup.retention_count', 28) ?> archivos ≈ 1 semana)
+# opcional: forzar una copia fuera de horario
+# 0 3 * * * php <?= e($cronCliBase) ?> backup
 # expiry va en «all»; solo envía ~09:00 Europe/Madrid (no hace falta cron aparte)</pre>
                 <p class="small text-muted mb-0">Ruta absoluta del script: <code><?= e($cronCliBase) ?></code></p>
             </div>
