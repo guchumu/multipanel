@@ -35,20 +35,49 @@ final class MediaUserMessageService
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function listForUser(int $mediaUserId, int $limit = 50): array
-    {
+    public function listForUser(
+        int $mediaUserId,
+        int $limit = 50,
+        ?string $status = null,
+        ?string $channel = null,
+    ): array {
         $limit = max(1, min(200, $limit));
         self::ensureMediaUserMessagesTable();
 
         try {
+            $params = [$mediaUserId];
+            $sql = 'SELECT * FROM media_user_messages WHERE media_user_id = ?';
+            if ($status !== null && $status !== '') {
+                $sql .= ' AND status = ?';
+                $params[] = $status;
+            }
+            if ($channel !== null && $channel !== '') {
+                $sql .= ' AND channel = ?';
+                $params[] = $channel;
+            }
             // LIMIT must be inlined: native PDO prepares reject bound LIMIT params.
-            return Database::getInstance()->fetchAll(
-                "SELECT * FROM media_user_messages WHERE media_user_id = ? ORDER BY sent_at DESC LIMIT {$limit}",
-                [$mediaUserId]
-            );
+            $sql .= " ORDER BY sent_at DESC LIMIT {$limit}";
+
+            return Database::getInstance()->fetchAll($sql, $params);
         } catch (\Throwable) {
             // Table may not exist yet on older installs.
             return [];
+        }
+    }
+
+    /** @return array<string, mixed>|null */
+    public function findForUser(int $mediaUserId, int $messageId): ?array
+    {
+        self::ensureMediaUserMessagesTable();
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT * FROM media_user_messages WHERE id = ? AND media_user_id = ? LIMIT 1',
+                [$messageId, $mediaUserId]
+            );
+
+            return $row ?: null;
+        } catch (\Throwable) {
+            return null;
         }
     }
 

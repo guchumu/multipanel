@@ -276,19 +276,59 @@ ob_start();
         </div>
 
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white"><strong>Últimos mensajes enviados</strong></div>
+            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <strong>Historial de avisos</strong>
+                <a href="/media-users/<?= e($mediaUser->uuid) ?>/messages" class="small">Ver todos</a>
+            </div>
             <div class="table-responsive">
-                <table class="table table-sm mb-0">
-                    <thead class="table-light"><tr><th>Fecha</th><th>Tipo</th><th>Estado</th></tr></thead>
+                <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Canal</th>
+                            <th>Tipo</th>
+                            <th>Aviso</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
                     <tbody>
                     <?php if (empty($messages)): ?>
-                    <tr><td colspan="3" class="text-muted text-center py-3">Sin mensajes</td></tr>
+                    <tr><td colspan="6" class="text-muted text-center py-3">Sin avisos registrados</td></tr>
                     <?php else: ?>
                     <?php foreach ($messages as $msg): ?>
-                    <tr>
-                        <td class="small"><?= e($msg['sent_at']) ?></td>
-                        <td class="small"><?= e($msg['message_type']) ?></td>
-                        <td><span class="badge bg-<?= $msg['status'] === 'sent' ? 'success' : 'danger' ?>"><?= e($msg['status']) ?></span></td>
+                    <?php
+                        $snippet = trim((string) ($msg['title'] ?? ''));
+                        if ($snippet === '') {
+                            $snippet = mb_substr(trim((string) ($msg['body'] ?? '')), 0, 80);
+                        } else {
+                            $bodyBit = mb_substr(trim((string) ($msg['body'] ?? '')), 0, 60);
+                            if ($bodyBit !== '') {
+                                $snippet .= ' — ' . $bodyBit;
+                            }
+                        }
+                        $failed = ($msg['status'] ?? '') === 'failed';
+                    ?>
+                    <tr class="<?= $failed ? 'table-danger' : '' ?>">
+                        <td class="small text-nowrap"><?= e($msg['sent_at'] ?? '') ?></td>
+                        <td class="small"><?= e($msg['channel'] ?? '—') ?></td>
+                        <td class="small"><span class="badge bg-secondary"><?= e($msg['message_type'] ?? '') ?></span></td>
+                        <td class="small text-truncate" style="max-width: 14rem;" title="<?= e((string) ($msg['body'] ?? '')) ?>"><?= e($snippet) ?></td>
+                        <td>
+                            <span class="badge bg-<?= $failed ? 'danger' : 'success' ?>">
+                                <?= $failed ? 'fallido' : 'enviado' ?>
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <?php if ($failed && ($msg['channel'] ?? '') === 'telegram'): ?>
+                            <button type="button"
+                                    class="btn btn-outline-danger btn-sm btn-retry-msg"
+                                    data-msg-id="<?= (int) ($msg['id'] ?? 0) ?>"
+                                    title="Reintentar envío">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                     <?php endif; ?>

@@ -392,6 +392,26 @@
     });
 
     document.addEventListener('click', async function (e) {
+        const retryBtn = e.target.closest('.btn-retry-msg');
+        if (retryBtn) {
+            const msgId = Number(retryBtn.dataset.msgId || 0);
+            if (!msgId || !uuid) return;
+            if (!confirm('¿Reintentar el envío de este aviso por Telegram?')) return;
+            retryBtn.disabled = true;
+            try {
+                const data = await post(`/media-users/${uuid}/messages/${msgId}/retry`);
+                if (data.success === false || !data.__httpOk) {
+                    throw new Error(data.message || data.error || 'No se pudo reenviar');
+                }
+                toast(data.message || 'Aviso reenviado');
+                location.reload();
+            } catch (err) {
+                toast(err.message || 'Error al reintentar');
+                retryBtn.disabled = false;
+            }
+            return;
+        }
+
         const btn = e.target.closest('.btn-kill-session');
         if (!btn) return;
         if (!confirm('¿Detener esta reproducción?')) return;
