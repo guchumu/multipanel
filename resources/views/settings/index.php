@@ -226,6 +226,27 @@
                     </div>
                     <div class="col-md-6">
                         <div class="border rounded p-3 h-100">
+                            <div class="fw-semibold mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Todo lo crítico</div>
+                            <p class="small text-muted mb-2">Sync FAIL, cron, backup, streams, webhooks de pago.</p>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="telegram_notify_critical" value="1" id="tgCrit"
+                                       <?= $alertOn('telegram_notify_critical', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="tgCrit">Telegram</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" name="whatsapp_notify_critical" value="1" id="waCrit"
+                                       <?= $alertOn('whatsapp_notify_critical', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="waCrit">WhatsApp</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="email_notify_critical" value="1" id="emCrit"
+                                       <?= $alertOn('email_notify_critical', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="emCrit">Email</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded p-3 h-100">
                             <div class="fw-semibold mb-2"><i class="bi bi-person-plus me-1"></i>Alta de usuario</div>
                             <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="telegram_notify_alta" value="1" id="tgAlta"

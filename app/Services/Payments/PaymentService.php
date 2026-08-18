@@ -57,11 +57,15 @@ final class PaymentService
     {
         $gw = $this->makeGateway($gateway, $tenantId);
         if (!$gw) {
+            $this->alertWebhookFailure($tenantId, $gateway, 'Gateway no soportado');
+
             return ['ok' => false, 'error' => 'Gateway no soportado'];
         }
 
         $result = $gw->handleWebhook($payload, $headers);
         if ($result === null) {
+            $this->alertWebhookFailure($tenantId, $gateway, 'Firma de webhook inválida o payload ilegible');
+
             return ['ok' => false, 'error' => 'Firma de webhook inválida o payload ilegible'];
         }
 
@@ -115,5 +119,17 @@ final class PaymentService
 
         Logger::info('Payment processed', ['gateway' => $gateway, 'amount' => $result['amount']]);
         return ['ok' => true];
+    }
+
+    private function alertWebhookFailure(int $tenantId, string $gateway, string $error): void
+    {
+        try {
+            (new \App\Services\Notifications\AdminCriticalAlertService())->notifyPaymentWebhookFailure(
+                $tenantId,
+                $gateway,
+                $error
+            );
+        } catch (\Throwable) {
+        }
     }
 }

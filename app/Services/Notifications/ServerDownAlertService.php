@@ -20,6 +20,8 @@ use GuzzleHttp\Exception\RequestException;
  */
 final class ServerDownAlertService
 {
+    private const RECENT_CHECK_SECONDS = 7200; // 2h — comparación en PHP (evita desfase TZ MySQL)
+
     public function __construct(
         private NotificationService $notifications = new NotificationService(),
         private AlertSettingsService $alerts = new AlertSettingsService(),
@@ -34,43 +36,67 @@ final class ServerDownAlertService
         ]);
     }
 
-    /** @return array{alerted: int, skipped: int, cleared: int} */
+    /**
+     * @return array{
+     *   alerted: int,
+     *   skipped: int,
+     *   cleared: int,
+     *   details: array<int, array{server: string, result: string, reason: string, channels?: array<int, string>}>
+     * }
+     */
     public function processOfflineServers(int $tenantId = 1): array
     {
-        $stats = ['alerted' => 0, 'skipped' => 0, 'cleared' => 0];
+        $stats = ['alerted' => 0, 'skipped' => 0, 'cleared' => 0, 'details' => []];
 
+        // offline + error (legacy): sync fallido siempre debería ser offline tras el fix.
         $offlineRows = Database::getInstance()->fetchAll(
             "SELECT * FROM servers
-             WHERE tenant_id = ? AND status = 'offline' AND deleted_at IS NULL
-               AND last_check_at > DATE_SUB(NOW(), INTERVAL 20 MINUTE)",
+             WHERE tenant_id = ? AND status IN ('offline', 'error') AND deleted_at IS NULL",
             [$tenantId]
         );
 
         $state = $this->alerts->getServerDownState($tenantId);
         $offlineIds = [];
+        $stateDirty = false;
+        $nowTs = time();
 
         foreach ($offlineRows as $row) {
             $server = new Server($row);
+            $checkedAt = strtotime((string) ($server->last_check_at ?? ''));
+            if ($checkedAt === false || $checkedAt < ($nowTs - self::RECENT_CHECK_SECONDS)) {
+                $stats['skipped']++;
+                $stats['details'][] = [
+                    'server' => (string) $server->name,
+                    'result' => 'skipped',
+                    'reason' => 'last_check_at stale or missing',
+                ];
+                continue;
+            }
+
             $offlineIds[] = (string) $server->id;
-            $result = $this->maybeAlert($tenantId, $server, $state);
-            if ($result === 'alerted') {
+            $result = $this->maybeAlert($tenantId, $server, $state, $stateDirty);
+            if ($result['result'] === 'alerted') {
                 $stats['alerted']++;
             } else {
                 $stats['skipped']++;
             }
+            $stats['details'][] = [
+                'server' => (string) $server->name,
+                'result' => $result['result'],
+                'reason' => $result['reason'],
+                'channels' => $result['channels'] ?? [],
+            ];
         }
 
-        // Limpiar estado de servidores que ya no están offline.
-        $changed = false;
         foreach (array_keys($state) as $id) {
             if (!in_array((string) $id, $offlineIds, true)) {
                 unset($state[(string) $id]);
-                $changed = true;
+                $stateDirty = true;
                 $stats['cleared']++;
             }
         }
 
-        if ($changed || $stats['alerted'] > 0) {
+        if ($stateDirty || $stats['alerted'] > 0) {
             $this->alerts->saveServerDownState($tenantId, $state);
         }
 
@@ -79,9 +105,9 @@ final class ServerDownAlertService
 
     /**
      * @param array<string, array{first_seen_at: string, last_alert_at: string, level: int}> $state
-     * @return 'alerted'|'skipped'
+     * @return array{result: 'alerted'|'skipped', reason: string, channels?: array<int, string>}
      */
-    private function maybeAlert(int $tenantId, Server $server, array &$state): string
+    private function maybeAlert(int $tenantId, Server $server, array &$state, bool &$stateDirty): array
     {
         $id = (string) $server->id;
         $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
@@ -93,6 +119,7 @@ final class ServerDownAlertService
                 'last_alert_at' => '',
                 'level' => -1,
             ];
+            $stateDirty = true;
         }
 
         $firstSeen = DateTimeImmutable::createFromFormat(
@@ -106,17 +133,49 @@ final class ServerDownAlertService
         $currentLevel = (int) ($state[$id]['level'] ?? -1);
         $nextLevel = $currentLevel + 1;
 
+        // Recuperación: escalado agotado tras envíos fallidos → reintentar nivel 0 una vez.
         if (!isset($levels[$nextLevel])) {
-            Logger::debug('Server down alert capped (no more escalations)', [
-                'server_id' => $server->id,
-                'elapsed_min' => $elapsedMin,
-            ]);
-            return 'skipped';
+            if ($this->hasSuccessfulDownNotification($tenantId, (int) $server->id, (string) ($state[$id]['first_seen_at'] ?? ''))) {
+                return ['result' => 'skipped', 'reason' => 'escalation capped'];
+            }
+            $state[$id]['level'] = -1;
+            $state[$id]['first_seen_at'] = $nowSql;
+            $stateDirty = true;
+            $nextLevel = 0;
+            $elapsedMin = 0;
+            $firstSeen = $now;
         }
 
         $requiredMin = (int) $levels[$nextLevel];
         if ($elapsedMin < $requiredMin) {
-            return 'skipped';
+            return [
+                'result' => 'skipped',
+                'reason' => "waiting escalation #{$nextLevel} ({$elapsedMin}/{$requiredMin} min)",
+            ];
+        }
+
+        // Evitar doble aviso: el sync FAIL del mismo cron ya mandó el lote crítico.
+        if ($nextLevel === 0 && $this->recentSyncFailAlert($tenantId)) {
+            $state[$id]['level'] = 0;
+            $state[$id]['last_alert_at'] = $nowSql;
+            $stateDirty = true;
+
+            return [
+                'result' => 'skipped',
+                'reason' => 'covered by sync FAIL alert (escalation armed)',
+            ];
+        }
+
+        $channels = $this->notifications->adminServerDownChannels($tenantId);
+        if ($channels === []) {
+            Logger::debug('Server down alert skipped: no channels enabled/configured', [
+                'server_id' => $server->id,
+            ]);
+
+            return [
+                'result' => 'skipped',
+                'reason' => 'no channels configured (telegram chat admin / SMTP / whatsapp)',
+            ];
         }
 
         $diagnosis = $this->diagnose($server);
@@ -125,15 +184,7 @@ final class ServerDownAlertService
             ? 'Servidor caído'
             : 'Servidor sigue caído';
 
-        $channels = $this->notifications->adminServerDownChannels($tenantId);
-        if ($channels === []) {
-            Logger::debug('Server down alert skipped: no channels enabled', [
-                'server_id' => $server->id,
-            ]);
-            return 'skipped';
-        }
-
-        $this->notifications->notify(
+        $results = $this->notifications->notify(
             'server.down',
             $title,
             $body,
@@ -149,17 +200,86 @@ final class ServerDownAlertService
             $tenantId
         );
 
+        $sent = [];
+        foreach ($results as $channel => $ok) {
+            if ($ok) {
+                $sent[] = (string) $channel;
+            }
+        }
+
+        if ($sent === []) {
+            Logger::warning('Server down alert send failed on all channels', [
+                'server_id' => $server->id,
+                'channels' => $channels,
+                'results' => $results,
+            ]);
+
+            // No avanzar escalado si nadie recibió el aviso (la 1ª vez debe poder reintentar).
+            return [
+                'result' => 'skipped',
+                'reason' => 'send failed on all channels (' . implode(',', $channels) . ')',
+                'channels' => $channels,
+            ];
+        }
+
         $state[$id]['level'] = $nextLevel;
         $state[$id]['last_alert_at'] = $nowSql;
+        $stateDirty = true;
 
         Logger::info('Server down alert sent', [
             'server_id' => $server->id,
             'escalation_level' => $nextLevel,
             'elapsed_min' => $elapsedMin,
-            'channels' => $channels,
+            'channels' => $sent,
         ]);
 
-        return 'alerted';
+        return [
+            'result' => 'alerted',
+            'reason' => 'sent via ' . implode(',', $sent),
+            'channels' => $sent,
+        ];
+    }
+
+    private function hasSuccessfulDownNotification(int $tenantId, int $serverId, string $sinceSql): bool
+    {
+        try {
+            $row = Database::getInstance()->fetchOne(
+                "SELECT id FROM notifications
+                 WHERE tenant_id = ? AND type = 'server.down' AND status = 'sent'
+                   AND created_at >= ?
+                   AND (data LIKE ? OR data LIKE ?)
+                 ORDER BY id DESC LIMIT 1",
+                [
+                    $tenantId,
+                    $sinceSql !== '' ? $sinceSql : '1970-01-01 00:00:00',
+                    '%"server_id":' . $serverId . '%',
+                    '%"server_id": ' . $serverId . '%',
+                ]
+            );
+
+            return $row !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** True si acabamos de avisar un sync FAIL (mismo ciclo / minutos recientes). */
+    private function recentSyncFailAlert(int $tenantId, int $withinMinutes = 10): bool
+    {
+        $state = $this->alerts->getCriticalAlertState($tenantId);
+        $now = time();
+        foreach ($state as $fp => $row) {
+            if (!is_string($fp) || !str_starts_with($fp, 'sync_fail:')) {
+                continue;
+            }
+            $lastAt = (string) ($row['last_sent_at'] ?? '');
+            $last = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $lastAt, new DateTimeZone('UTC'));
+            if ($last instanceof DateTimeImmutable && ($now - $last->getTimestamp()) <= ($withinMinutes * 60)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed> */

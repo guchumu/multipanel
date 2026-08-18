@@ -30,6 +30,11 @@ return [
     'telegram_notify_digest' => true,
     'email_notify_server_down' => true,
 
+    // Eventos críticos (sync FAIL, cron, backup, streams, Stripe…). Default ON.
+    'telegram_notify_critical' => true,
+    'whatsapp_notify_critical' => true,
+    'email_notify_critical' => true,
+
     // Escalado servidor caído (minutos desde la primera detección). Tras el último, no se reenvía.
     'server_down_escalation_minutes' => [0, 5, 15, 30],
 ];

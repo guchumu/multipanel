@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\ServerRepository;
+use App\Services\Notifications\AdminCriticalAlertService;
 use App\Services\Notifications\AdminDigestService;
 use App\Services\Notifications\ExpiryNotificationService;
 use Core\Database;
@@ -34,12 +35,12 @@ final class CronService
             ],
             'sync' => [
                 'title' => 'Sincronizar servidores',
-                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones.',
+                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones. FAIL → alerta admin.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp según toggles (diagnóstico + escalado 5/15/30 min).',
+                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp (diagnóstico + escalado 0/5/15/30 min).',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
@@ -59,7 +60,7 @@ final class CronService
             ],
             'backup' => [
                 'title' => 'Backup',
-                'description' => 'Genera copia de seguridad y limpia backups antiguos según retención.',
+                'description' => 'Genera copia de seguridad y limpia backups antiguos según retención. Fallo → alerta admin.',
                 'schedule' => 'Diario de madrugada',
             ],
             'jobs' => [
@@ -89,7 +90,7 @@ final class CronService
             ],
             'streams' => [
                 'title' => 'Límite de streams',
-                'description' => 'Detecta excesos de streams, los registra en Incumplimientos y corta solo si la aplicación automática está activa.',
+                'description' => 'Detecta excesos de streams, los registra en Incumplimientos y corta solo si la aplicación automática está activa. Nuevos → alerta admin.',
                 'schedule' => 'Cada 5–15 minutos (o con En directo abierto)',
             ],
         ];
@@ -108,21 +109,30 @@ final class CronService
             $lines[] = $line;
         };
 
-        match ($task) {
-            'sync' => $this->runServerSync($tenantId, $capture),
-            'automation' => $this->runAutomation($tenantId, $capture),
-            'billing' => $this->runBilling($tenantId, $capture),
-            'backup' => $this->runBackup($tenantId, $capture),
-            'jobs' => $this->runJobs($capture),
-            'gdpr' => $this->runGdpr($capture),
-            'cleanup' => $this->runCleanup($capture),
-            'expiry' => $this->runExpiryNotifications($tenantId, $capture),
-            'digest' => $this->runAdminDigest($tenantId, $capture),
-            'migrate' => $this->runMigrations($capture),
-            'health' => $capture('Health OK'),
-            'streams' => $this->runStreamLimits($tenantId, $capture),
-            'all' => $this->runAll($tenantId, $capture),
-        };
+        try {
+            match ($task) {
+                'sync' => $this->runServerSync($tenantId, $capture),
+                'automation' => $this->runAutomation($tenantId, $capture),
+                'billing' => $this->runBilling($tenantId, $capture),
+                'backup' => $this->runBackup($tenantId, $capture),
+                'jobs' => $this->runJobs($capture),
+                'gdpr' => $this->runGdpr($capture),
+                'cleanup' => $this->runCleanup($capture),
+                'expiry' => $this->runExpiryNotifications($tenantId, $capture),
+                'digest' => $this->runAdminDigest($tenantId, $capture),
+                'migrate' => $this->runMigrations($tenantId, $capture),
+                'health' => $capture('Health OK'),
+                'streams' => $this->runStreamLimits($tenantId, $capture),
+                'all' => $this->runAll($tenantId, $capture),
+            };
+        } catch (\Throwable $e) {
+            $capture('FATAL: ' . $e->getMessage());
+            $this->logAlertResult(
+                $capture,
+                'cron',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, $task, $e->getMessage())
+            );
+        }
 
         return ['ok' => true, 'task' => $task, 'lines' => $lines];
     }
@@ -130,7 +140,7 @@ final class CronService
     /** @param callable(string): void $out */
     private function runAll(int $tenantId, callable $out): void
     {
-        $this->runMigrations($out);
+        $this->runMigrations($tenantId, $out);
         $this->runBilling($tenantId, $out);
         $this->runServerSync($tenantId, $out);
         $this->runAutomation($tenantId, $out);
@@ -157,11 +167,16 @@ final class CronService
             ));
         } catch (\Throwable $e) {
             $out('  Stream limits failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'streams',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'streams', $e->getMessage())
+            );
         }
     }
 
     /** @param callable(string): void $out */
-    private function runMigrations(callable $out): void
+    private function runMigrations(int $tenantId, callable $out): void
     {
         $out('Running pending database migrations...');
         try {
@@ -175,6 +190,11 @@ final class CronService
             }
         } catch (\Throwable $e) {
             $out('  Migrations failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'migrate',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'migrate', $e->getMessage())
+            );
         }
     }
 
@@ -198,8 +218,24 @@ final class CronService
                 $stats['errors'],
                 $stats['deactivated']
             ));
+            if ((int) ($stats['errors'] ?? 0) > 0) {
+                $this->logAlertResult(
+                    $out,
+                    'expiry',
+                    (new AdminCriticalAlertService())->notifyCronFailure(
+                        $tenantId,
+                        'expiry',
+                        (string) ($stats['errors'] ?? 0) . ' errores enviando avisos de caducidad'
+                    )
+                );
+            }
         } catch (\Throwable $e) {
             $out('  Expiry notifications failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'expiry',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'expiry', $e->getMessage())
+            );
         }
     }
 
@@ -225,6 +261,11 @@ final class CronService
             }
             if (!empty($stats['error'])) {
                 $out('  Digest failed: ' . $stats['error']);
+                $this->logAlertResult(
+                    $out,
+                    'digest',
+                    (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'digest', (string) $stats['error'])
+                );
                 return;
             }
             $channels = isset($stats['channels']) && is_array($stats['channels'])
@@ -233,6 +274,11 @@ final class CronService
             $out('  Sent: ' . (int) ($stats['sent'] ?? 0) . " ({$channels})");
         } catch (\Throwable $e) {
             $out('  Admin digest failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'digest',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'digest', $e->getMessage())
+            );
         }
     }
 
@@ -242,10 +288,19 @@ final class CronService
         $out('Syncing servers...');
         $sync = new ServerSyncService();
         $repo = new ServerRepository();
+        $failedNames = [];
 
         foreach ($repo->allByTenant($tenantId) as $server) {
             $result = $sync->sync($server);
             $out('  Server ' . $server->name . ': ' . ($result ? 'OK' : 'FAIL'));
+            if (!$result) {
+                $failedNames[] = (string) $server->name;
+            }
+        }
+
+        if ($failedNames !== []) {
+            $alert = (new AdminCriticalAlertService())->notifySyncFailures($tenantId, $failedNames);
+            $this->logAlertResult($out, 'sync FAIL (' . implode(', ', $failedNames) . ')', $alert);
         }
     }
 
@@ -253,35 +308,90 @@ final class CronService
     private function runAutomation(int $tenantId, callable $out): void
     {
         $out('Running automation engine...');
-        $count = (new AutomationEngine())->runAll($tenantId);
-        $out("  Rules executed: {$count}");
+        try {
+            $result = (new AutomationEngine())->runAllWithStats($tenantId);
+            $out('  Rules executed: ' . (int) ($result['rules_executed'] ?? 0));
+            $down = $result['server_down'] ?? ['alerted' => 0, 'skipped' => 0, 'details' => []];
+            $out(sprintf(
+                '  Server-down alerts: alerted=%d skipped=%d cleared=%d',
+                (int) ($down['alerted'] ?? 0),
+                (int) ($down['skipped'] ?? 0),
+                (int) ($down['cleared'] ?? 0)
+            ));
+            foreach ($down['details'] ?? [] as $detail) {
+                if (!is_array($detail)) {
+                    continue;
+                }
+                $server = (string) ($detail['server'] ?? '?');
+                $res = (string) ($detail['result'] ?? '');
+                $reason = (string) ($detail['reason'] ?? '');
+                if ($res === 'alerted') {
+                    $channels = isset($detail['channels']) && is_array($detail['channels'])
+                        ? implode(',', $detail['channels'])
+                        : '';
+                    $out("  Server {$server} offline — alert sent via {$channels}");
+                } else {
+                    $out("  Server {$server} offline — alert skipped: {$reason}");
+                }
+            }
+        } catch (\Throwable $e) {
+            $out('  Automation failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'automation',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'automation', $e->getMessage())
+            );
+        }
     }
 
     /** @param callable(string): void $out */
     private function runBilling(int $tenantId, callable $out): void
     {
         $out('Processing billing...');
-        $billing = new BillingService();
-        $pastDue = $billing->markPastDue($tenantId);
-        $out("  Subscriptions marked past_due: {$pastDue}");
-        $overdue = $billing->getOverdueSubscriptions($tenantId);
-        $out('  Overdue subscriptions: ' . count($overdue));
+        try {
+            $billing = new BillingService();
+            $pastDue = $billing->markPastDue($tenantId);
+            $out("  Subscriptions marked past_due: {$pastDue}");
+            $overdue = $billing->getOverdueSubscriptions($tenantId);
+            $out('  Overdue subscriptions: ' . count($overdue));
+        } catch (\Throwable $e) {
+            $out('  Billing failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'billing',
+                (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'billing', $e->getMessage())
+            );
+        }
     }
 
     /** @param callable(string): void $out */
     private function runBackup(int $tenantId, callable $out): void
     {
         $out('Creating backup...');
-        $service = new BackupService();
-        $result = $service->create($tenantId);
-        if ($result) {
-            $out('  Backup created: ' . ($result['filename'] ?? 'ok'));
-            $pruned = $service->prune($tenantId);
-            if ($pruned > 0) {
-                $out("  Old backups pruned: {$pruned}");
+        try {
+            $service = new BackupService();
+            $result = $service->create($tenantId);
+            if ($result) {
+                $out('  Backup created: ' . ($result['filename'] ?? 'ok'));
+                $pruned = $service->prune($tenantId);
+                if ($pruned > 0) {
+                    $out("  Old backups pruned: {$pruned}");
+                }
+            } else {
+                $out('  Backup failed');
+                $this->logAlertResult(
+                    $out,
+                    'backup',
+                    (new AdminCriticalAlertService())->notifyBackupFailure($tenantId)
+                );
             }
-        } else {
-            $out('  Backup failed');
+        } catch (\Throwable $e) {
+            $out('  Backup failed: ' . $e->getMessage());
+            $this->logAlertResult(
+                $out,
+                'backup',
+                (new AdminCriticalAlertService())->notifyBackupFailure($tenantId, $e->getMessage())
+            );
         }
     }
 
@@ -309,5 +419,19 @@ final class CronService
         Database::getInstance()->query('DELETE FROM server_stats WHERE recorded_at < DATE_SUB(NOW(), INTERVAL 90 DAY)');
         Database::getInstance()->query("DELETE FROM notifications WHERE status = 'sent' AND created_at < DATE_SUB(NOW(), INTERVAL 30 DAY)");
         $out('  Cleanup complete.');
+    }
+
+    /**
+     * @param callable(string): void $out
+     * @param array{ok: bool, skipped: bool, reason: string, channels: array<int, string>} $result
+     */
+    private function logAlertResult(callable $out, string $label, array $result): void
+    {
+        if (!empty($result['ok'])) {
+            $via = implode(',', $result['channels'] ?? []) ?: '—';
+            $out("  Alert [{$label}] sent via {$via}");
+            return;
+        }
+        $out('  Alert [' . $label . '] skipped: ' . (string) ($result['reason'] ?? 'unknown'));
     }
 }

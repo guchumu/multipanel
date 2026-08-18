@@ -25,6 +25,19 @@ final class AutomationEngine
 
     public function runAll(int $tenantId = 1): int
     {
+        $result = $this->runAllWithStats($tenantId);
+
+        return (int) ($result['rules_executed'] ?? 0);
+    }
+
+    /**
+     * @return array{
+     *   rules_executed: int,
+     *   server_down: array{alerted: int, skipped: int, cleared: int, details: array<int, mixed>, ran: bool, reason?: string}
+     * }
+     */
+    public function runAllWithStats(int $tenantId = 1): array
+    {
         $rules = Database::getInstance()->fetchAll(
             'SELECT * FROM automation_rules WHERE tenant_id = ? AND is_active = 1 ORDER BY priority DESC',
             [$tenantId]
@@ -52,9 +65,12 @@ final class AutomationEngine
             }
         }
 
-        $this->runBuiltInRules($tenantId);
+        $serverDown = $this->runBuiltInRules($tenantId);
 
-        return $executed;
+        return [
+            'rules_executed' => $executed,
+            'server_down' => $serverDown,
+        ];
     }
 
     /** @param array<string, mixed> $rule */
@@ -229,7 +245,10 @@ final class AutomationEngine
         );
     }
 
-    private function runBuiltInRules(int $tenantId): void
+    /**
+     * @return array{alerted: int, skipped: int, cleared: int, details: array<int, mixed>, ran: bool, reason?: string}
+     */
+    private function runBuiltInRules(int $tenantId): array
     {
         // Caducar usuarios solo si hay una regla activa con ese trigger
         // (así desactivar reglas = se quedan desactivadas de verdad).
@@ -245,14 +264,15 @@ final class AutomationEngine
             }
         }
 
-        // Aviso servidor caído: diagnóstico + Telegram + email + WhatsApp (CallMeBot opcional)
-        // con escalado 0/5/15/30 min. Solo si la regla server.offline/down está activa.
-        if ($this->hasActiveTrigger($tenantId, ['server.offline', 'server.down'])) {
-            $stats = (new ServerDownAlertService($this->notifications))->processOfflineServers($tenantId);
-            if (($stats['alerted'] ?? 0) > 0 || ($stats['cleared'] ?? 0) > 0) {
-                Logger::info('Built-in: server down alerts', $stats);
-            }
+        // Aviso servidor caído: siempre se evalúa (ya no depende solo de la regla notify),
+        // para que un sync FAIL marque offline y avise en el mismo cron.
+        $stats = (new ServerDownAlertService($this->notifications))->processOfflineServers($tenantId);
+        $stats['ran'] = true;
+        if (($stats['alerted'] ?? 0) > 0 || ($stats['cleared'] ?? 0) > 0) {
+            Logger::info('Built-in: server down alerts', $stats);
         }
+
+        return $stats;
     }
 
     /** @param array<int, string> $triggers */

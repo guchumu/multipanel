@@ -359,11 +359,14 @@ class SettingsController extends Controller
                 'whatsapp_notify_renew',
                 'whatsapp_notify_server_down',
                 'whatsapp_notify_digest',
+                'whatsapp_notify_critical',
                 'telegram_notify_alta',
                 'telegram_notify_renew',
                 'telegram_notify_server_down',
                 'telegram_notify_digest',
+                'telegram_notify_critical',
                 'email_notify_server_down',
+                'email_notify_critical',
             ],
             'peticiones' => [
                 'peticiones_db_host',
@@ -407,11 +410,14 @@ class SettingsController extends Controller
                 'whatsapp_notify_renew',
                 'whatsapp_notify_server_down',
                 'whatsapp_notify_digest',
+                'whatsapp_notify_critical',
                 'telegram_notify_alta',
                 'telegram_notify_renew',
                 'telegram_notify_server_down',
                 'telegram_notify_digest',
+                'telegram_notify_critical',
                 'email_notify_server_down',
+                'email_notify_critical',
             ];
             foreach ($checkboxKeys as $checkboxKey) {
                 $this->saveSetting(
@@ -431,11 +437,14 @@ class SettingsController extends Controller
             'whatsapp_notify_renew',
             'whatsapp_notify_server_down',
             'whatsapp_notify_digest',
+            'whatsapp_notify_critical',
             'telegram_notify_alta',
             'telegram_notify_renew',
             'telegram_notify_server_down',
             'telegram_notify_digest',
+            'telegram_notify_critical',
             'email_notify_server_down',
+            'email_notify_critical',
         ];
 
         foreach ($fields as $field) {

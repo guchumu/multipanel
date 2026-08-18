@@ -84,7 +84,7 @@ final class ServerSyncService
             Logger::info('Server synced', ['server_id' => $server->id, 'users' => $userStats]);
             return true;
         } catch (\Throwable $e) {
-            return $this->failSync($server, $e->getMessage(), 'error');
+            return $this->failSync($server, $e->getMessage());
         }
     }
 
@@ -124,20 +124,28 @@ final class ServerSyncService
 
             return true;
         } catch (\Throwable $e) {
-            return $this->failSync($server, $e->getMessage(), 'error');
+            return $this->failSync($server, $e->getMessage());
         }
     }
 
-    private function failSync(Server $server, string $error, string $status = 'offline'): bool
+    /**
+     * Marca el servidor offline tras sync fallido (siempre offline, no "error").
+     * Así ServerDownAlertService / cron pueden notificar la caída.
+     */
+    private function failSync(Server $server, string $error): bool
     {
-        $server->status = $status;
+        $server->status = 'offline';
         $server->last_error = $error;
         $server->last_check_at = now()->format('Y-m-d H:i:s');
         $this->refreshDbCounts($server);
         $this->persistDebugLight($server, false, $error);
         $server->save();
 
-        Logger::error('Server sync failed', ['server_id' => $server->id, 'error' => $error]);
+        Logger::error('Server sync failed', [
+            'server_id' => $server->id,
+            'error' => $error,
+            'status' => $server->status,
+        ]);
         return false;
     }
 

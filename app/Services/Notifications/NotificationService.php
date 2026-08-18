@@ -125,20 +125,47 @@ final class NotificationService
 
     /**
      * Canales de alerta servidor caído (Telegram / email / WhatsApp según toggles).
+     * Solo incluye canales realmente configurados (evita marcar "alerted" sin envío).
      *
      * @return array<int, string>
      */
     public function adminServerDownChannels(?int $tenantId = null): array
     {
         $channels = [];
-        if ($this->alerts->telegramNotifyServerDown($tenantId)) {
+        if ($this->alerts->telegramNotifyServerDown($tenantId) && $this->alerts->telegramConfigured($tenantId)) {
             $channels[] = 'telegram';
         }
-        if ($this->alerts->emailNotifyServerDown($tenantId)) {
+        if ($this->alerts->emailNotifyServerDown($tenantId) && $this->alerts->emailConfigured($tenantId)) {
             $channels[] = 'email';
         }
         if ($this->alerts->whatsappNotifyServerDown($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
+        }
+
+        return $channels;
+    }
+
+    /**
+     * Canales para “todo lo que no sea bueno” (sync FAIL, cron, backup, streams, Stripe…).
+     *
+     * @return array<int, string>
+     */
+    public function adminCriticalChannels(?int $tenantId = null): array
+    {
+        $channels = [];
+        if ($this->alerts->telegramNotifyCritical($tenantId) && $this->alerts->telegramConfigured($tenantId)) {
+            $channels[] = 'telegram';
+        }
+        if ($this->alerts->emailNotifyCritical($tenantId) && $this->alerts->emailConfigured($tenantId)) {
+            $channels[] = 'email';
+        }
+        if ($this->alerts->whatsappNotifyCritical($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
+            $channels[] = 'whatsapp';
+        }
+
+        // Fallback: si no hay toggles críticos explícitos útiles, reutilizar server-down.
+        if ($channels === []) {
+            return $this->adminServerDownChannels($tenantId);
         }
 
         return $channels;

@@ -6,6 +6,8 @@ namespace App\Services;
 
 use Core\Database;
 use Core\Session;
+use App\Services\TelegramConfig;
+use App\Services\MailConfig;
 
 /**
  * Ajustes de alertas admin y ventana de avisos de caducidad.
@@ -106,6 +108,26 @@ final class AlertSettingsService
             && $this->whatsappApiKey($tenantId) !== '';
     }
 
+    /** Bot token + chat admin (no sandbox): necesario para alertas de servidor caído. */
+    public function telegramConfigured(?int $tenantId = null): bool
+    {
+        $tenantId ??= $this->tenantId();
+        $cfg = TelegramConfig::forTenant($tenantId);
+
+        return trim((string) ($cfg['bot_token'] ?? '')) !== ''
+            && trim((string) ($cfg['admin_chat_id'] ?? '')) !== '';
+    }
+
+    /** SMTP host + destinatario de alertas. */
+    public function emailConfigured(?int $tenantId = null): bool
+    {
+        $tenantId ??= $this->tenantId();
+        $mail = MailConfig::forTenant($tenantId);
+        $to = $this->alertEmail($tenantId);
+
+        return trim((string) ($mail['host'] ?? '')) !== '' && $to !== '';
+    }
+
     /**
      * Preferencias por tipo de aviso admin.
      * WhatsApp: digest + server-down + alta ON por defecto; renovación OFF.
@@ -155,6 +177,60 @@ final class AlertSettingsService
     public function emailNotifyServerDown(?int $tenantId = null): bool
     {
         return $this->alertFlag('email_notify_server_down', true, $tenantId);
+    }
+
+    /** Telegram para incumplimientos de streams / eventos críticos. Default ON. */
+    public function telegramNotifyCritical(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('telegram_notify_critical', true, $tenantId);
+    }
+
+    /** WhatsApp para eventos críticos (streams, sync FAIL, cron). Default ON. */
+    public function whatsappNotifyCritical(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_notify_critical', true, $tenantId);
+    }
+
+    /** Email para eventos críticos. Default ON. */
+    public function emailNotifyCritical(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('email_notify_critical', true, $tenantId);
+    }
+
+    /**
+     * Debounce de alertas críticas (fingerprint → last_sent_at UTC).
+     *
+     * @return array<string, array{last_sent_at: string, title?: string}>
+     */
+    public function getCriticalAlertState(int $tenantId): array
+    {
+        $raw = $this->get($tenantId, 'alerts', 'critical_alert_state');
+        if ($raw === null || trim($raw) === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /** @param array<string, array{last_sent_at: string, title?: string}> $state */
+    public function saveCriticalAlertState(int $tenantId, array $state): void
+    {
+        // Conservar como máximo ~200 fingerprints recientes.
+        if (count($state) > 200) {
+            uasort($state, static fn ($a, $b): int => strcmp(
+                (string) ($b['last_sent_at'] ?? ''),
+                (string) ($a['last_sent_at'] ?? '')
+            ));
+            $state = array_slice($state, 0, 200, true);
+        }
+        $this->set(
+            $tenantId,
+            'alerts',
+            'critical_alert_state',
+            json_encode($state, JSON_UNESCAPED_UNICODE),
+            'json'
+        );
     }
 
     /**

@@ -215,6 +215,19 @@ final class ConcurrentStreamLimitService
                 $clientIps
             );
 
+            try {
+                (new \App\Services\Notifications\AdminCriticalAlertService())->notifyStreamLimitViolation(
+                    $tenantId,
+                    $username,
+                    $count,
+                    $limit,
+                    $killedIds !== [],
+                    $fingerprint
+                );
+            } catch (\Throwable) {
+                // No bloquear el corte/registro si falla el aviso admin.
+            }
+
             AuditService::log(
                 $killedIds !== [] ? 'media_user.stream_limit_enforced' : 'media_user.stream_limit_detected',
                 'media_user',

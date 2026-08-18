@@ -40,7 +40,10 @@ final class TelegramChannel implements NotificationChannelInterface
     public function send(string $title, string $message, array $data = []): bool
     {
         $tenantId = isset($data['tenant_id']) ? (int) $data['tenant_id'] : (int) (Session::getInstance()->get('tenant_id') ?? 1);
-        $intended = trim((string) ($data['chat_id'] ?? $this->adminChatId));
+        $cfg = TelegramConfig::forTenant($tenantId);
+        $botToken = trim((string) ($this->botTokenOverride ?: $cfg['bot_token']));
+        $adminChatId = trim((string) ($this->chatIdOverride ?: $cfg['admin_chat_id']));
+        $intended = trim((string) ($data['chat_id'] ?? $adminChatId));
         $isUserMessage = !empty($data['media_user_id']) || !empty($data['log_message']) || !empty($data['user_message']);
 
         // Mensajes a usuarios: respetan sandbox. Alertas admin usan chat admin directo.
@@ -48,12 +51,19 @@ final class TelegramChannel implements NotificationChannelInterface
             ? TelegramConfig::resolveOutboundChatIds($intended, $tenantId)
             : ($intended !== '' ? [$intended] : []);
 
-        if ($this->botToken === '' || $targets === []) {
-            Logger::warning('Telegram not configured');
+        if ($botToken === '' || $targets === []) {
+            Logger::warning('Telegram not configured', [
+                'tenant_id' => $tenantId,
+                'has_token' => $botToken !== '',
+                'has_admin_chat' => $adminChatId !== '',
+            ]);
             return false;
         }
 
-        $cfg = TelegramConfig::forTenant($tenantId);
+        // Usar token resuelto en este envío (cron no tiene Session).
+        $this->botToken = $botToken;
+        $this->adminChatId = $adminChatId;
+
         $sandboxNote = null;
         if ($isUserMessage && $cfg['sandbox_enabled'] && $cfg['sandbox_chat_id'] !== '') {
             $userHint = !empty($data['media_user_id']) ? 'user ' . (int) $data['media_user_id'] : 'user';
