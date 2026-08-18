@@ -338,13 +338,19 @@ class MediaUserRepository
         return $this->hasColumn('media_users', 'on_server');
     }
 
+    /** @var array<string, bool> */
+    private static array $columnCache = [];
+
+    public static function clearColumnCache(): void
+    {
+        self::$columnCache = [];
+    }
+
     private function hasColumn(string $table, string $column): bool
     {
-        static $cache = [];
-
         $key = $table . '.' . $column;
-        if (array_key_exists($key, $cache)) {
-            return $cache[$key];
+        if (array_key_exists($key, self::$columnCache)) {
+            return self::$columnCache[$key];
         }
 
         try {
@@ -356,12 +362,12 @@ class MediaUserRepository
                    AND COLUMN_NAME = ?',
                 [$table, $column]
             );
-            $cache[$key] = ((int) ($row['total'] ?? 0)) > 0;
+            self::$columnCache[$key] = ((int) ($row['total'] ?? 0)) > 0;
         } catch (\Throwable) {
-            $cache[$key] = false;
+            self::$columnCache[$key] = false;
         }
 
-        return $cache[$key];
+        return self::$columnCache[$key];
     }
 
     public function ensureTelegramChatIdColumn(): void
@@ -389,6 +395,7 @@ class MediaUserRepository
                     throw $e;
                 }
             }
+            self::clearColumnCache();
         }
 
         $ensured = true;

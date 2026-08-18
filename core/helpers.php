@@ -155,15 +155,23 @@ if (!function_exists('now')) {
 }
 
 if (!function_exists('e')) {
-    function e(?string $value): string
+    function e(mixed $value): string
     {
-        return htmlspecialchars($value ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        if ($value === null || is_bool($value)) {
+            return htmlspecialchars($value === true ? '1' : '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        }
+
+        if (is_scalar($value)) {
+            return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        }
+
+        return '';
     }
 }
 
 if (!function_exists('esc')) {
     /** Alias de e() para escape HTML en vistas. */
-    function esc(?string $value): string
+    function esc(mixed $value): string
     {
         return e($value);
     }
@@ -184,9 +192,14 @@ if (!function_exists('listen')) {
 }
 
 if (!function_exists('days_left')) {
-    function days_left(?string $expiresAt): ?int
+    function days_left(mixed $expiresAt): ?int
     {
-        if ($expiresAt === null || trim($expiresAt) === '') {
+        if ($expiresAt === null) {
+            return null;
+        }
+
+        $expiresAt = trim((string) $expiresAt);
+        if ($expiresAt === '' || str_starts_with($expiresAt, '0000-00-00')) {
             return null;
         }
 
@@ -205,7 +218,7 @@ if (!function_exists('days_left')) {
 
 if (!function_exists('days_left_badge')) {
     /** @return array{label: string, class: string} */
-    function days_left_badge(?string $expiresAt): array
+    function days_left_badge(mixed $expiresAt): array
     {
         $days = days_left($expiresAt);
 

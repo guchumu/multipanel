@@ -372,9 +372,20 @@ final class SqlInsertParser
             return null;
         }
 
-        if (is_numeric($token)) {
-            return str_contains($token, '.') ? (float) $token : (int) $token;
-        }
+if (is_numeric($token)) {
+    if (str_contains($token, '.')) {
+        return (float) $token;
+    }
+
+    // Keep long numeric IDs (Telegram, Plex) as strings so views/JSON
+    // never see ints and precision is preserved.
+    $digits = ltrim($token, '+-');
+    if (strlen($digits) >= 10) {
+        return $token;
+    }
+
+    return (int) $token;
+}
 
         return $token;
     }

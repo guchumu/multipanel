@@ -135,7 +135,7 @@ ob_start();
                 <div class="row g-2 mb-3">
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-telegram me-1"></i>Telegram Chat ID</label>
-                        <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e($mediaUser->telegram_chat_id ?? '') ?>" placeholder="Ej. 2023182976">
+                        <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e((string) ($mediaUser->telegram_chat_id ?? '')) ?>" placeholder="Ej. 2023182976">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-whatsapp me-1"></i>WhatsApp</label>

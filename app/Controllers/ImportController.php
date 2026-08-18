@@ -17,6 +17,9 @@ use Core\Session;
  */
 class ImportController extends Controller
 {
+    /** Soft app ceiling for uploaded SQL (bytes). Align with public/.user.ini (64M). */
+    private const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+
     public function __construct(
         private AuthService $auth = new AuthService(),
         private ImportService $import = new ImportService(),
@@ -26,7 +29,25 @@ class ImportController extends Controller
 
     public function show(Request $request): Response
     {
-        return $this->view('import.index', ['title' => 'Importar / Exportar']);
+        $importsDir = base_path('storage/imports');
+        $serverFiles = [];
+        if (is_dir($importsDir)) {
+            foreach (glob($importsDir . '/*.{sql,txt,SQL,TXT}', GLOB_BRACE) ?: [] as $file) {
+                if (is_file($file)) {
+                    $serverFiles[] = [
+                        'name' => basename($file),
+                        'bytes' => (int) filesize($file),
+                    ];
+                }
+            }
+        }
+
+        return $this->view('import.index', [
+            'title' => 'Importar / Exportar',
+            'serverFiles' => $serverFiles,
+            'phpUploadMax' => (string) ini_get('upload_max_filesize'),
+            'phpPostMax' => (string) ini_get('post_max_size'),
+        ]);
     }
 
     public function upload(Request $request): Response
@@ -46,26 +67,66 @@ class ImportController extends Controller
 
     private function handleUpload(Request $request): Response
     {
-        $file = $request->file('file');
-        if (!$file || !isset($file['error'])) {
-            Session::getInstance()->flash('error', 'No se recibió ningún archivo.');
-            return $this->redirect('/import');
-        }
-
-        $uploadError = (int) $file['error'];
-        if ($uploadError !== UPLOAD_ERR_OK) {
-            Session::getInstance()->flash('error', $this->uploadErrorMessage($uploadError));
-            return $this->redirect('/import');
-        }
-
         $type = (string) $request->input('type', 'csv');
-        $originalName = strtolower((string) ($file['name'] ?? ''));
-        if ($type !== 'plex_manager' && (str_ends_with($originalName, '.sql') || str_contains($originalName, 'plex_manager'))) {
-            $type = 'plex_manager';
+        $serverPathInput = trim((string) $request->input('server_path', ''));
+        $tmpPath = null;
+        $originalName = '';
+
+        if ($serverPathInput !== '') {
+            $resolved = $this->resolveImportServerPath($serverPathInput);
+            if ($resolved === null) {
+                Session::getInstance()->flash(
+                    'error',
+                    'No se encontró el archivo en storage/imports/. Sube por FTP el SQL a esa carpeta (solo el nombre del archivo, ej. plex_manager.sql).'
+                );
+                return $this->redirect('/import');
+            }
+            $tmpPath = $resolved;
+            $originalName = strtolower(basename($resolved));
+            if ($type !== 'plex_manager' && (str_ends_with($originalName, '.sql') || str_contains($originalName, 'plex_manager'))) {
+                $type = 'plex_manager';
+            }
+        } else {
+            $file = $request->file('file');
+            $contentLength = (int) ($request->header('Content-Length') ?? ($_SERVER['CONTENT_LENGTH'] ?? 0));
+
+            if (!$file || !isset($file['error'])) {
+                Session::getInstance()->flash('error', $this->missingUploadMessage($contentLength));
+                return $this->redirect('/import');
+            }
+
+            $uploadError = (int) $file['error'];
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                Session::getInstance()->flash('error', $this->uploadErrorMessage($uploadError, $contentLength, $file));
+                return $this->redirect('/import');
+            }
+
+            $size = (int) ($file['size'] ?? 0);
+            if ($size <= 0 && is_uploaded_file((string) ($file['tmp_name'] ?? ''))) {
+                $size = (int) (@filesize((string) $file['tmp_name']) ?: 0);
+            }
+
+            if ($size > self::MAX_UPLOAD_BYTES) {
+                Session::getInstance()->flash(
+                    'error',
+                    sprintf(
+                        'Archivo de %.1f MB supera el límite de la app (%d MB). Súbelo por FTP a storage/imports/ e impórtalo con el nombre del archivo.',
+                        $size / 1048576,
+                        (int) (self::MAX_UPLOAD_BYTES / 1048576)
+                    )
+                );
+                return $this->redirect('/import');
+            }
+
+            $originalName = strtolower((string) ($file['name'] ?? ''));
+            if ($type !== 'plex_manager' && (str_ends_with($originalName, '.sql') || str_contains($originalName, 'plex_manager'))) {
+                $type = 'plex_manager';
+            }
+
+            $tmpPath = (string) $file['tmp_name'];
         }
 
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $tmpPath = (string) $file['tmp_name'];
 
         if ($type === 'plex_manager') {
             $modeInput = (string) $request->input('mode', PlexManagerImportService::MODE_FULL);
@@ -88,7 +149,7 @@ class ImportController extends Controller
                 );
 
                 if ($kb === 0) {
-                    $detail .= ' El archivo llegó vacío — revisa upload_max_filesize/post_max_size en Plesk (necesitas ~256 KB mínimo).';
+                    $detail .= ' El archivo llegó vacío — revisa upload_max_filesize/post_max_size en Plesk, o usa FTP → storage/imports/.';
                 } elseif (empty($probe['has_servers_marker']) && empty($probe['has_users_marker'])) {
                     $detail .= ' El contenido no parece un plex_manager.sql de phpMyAdmin.';
                 } elseif (!empty($probe['has_servers_marker']) || !empty($probe['has_users_marker'])) {
@@ -176,13 +237,113 @@ class ImportController extends Controller
         exit;
     }
 
-    private function uploadErrorMessage(int $code): string
+    /**
+     * Only basenames under storage/imports/ (FTP-safe path).
+     */
+    private function resolveImportServerPath(string $input): ?string
     {
-        return match ($code) {
-            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'Archivo demasiado grande. Sube el SQL por FTP o aumenta upload_max_filesize/post_max_size en PHP (Plesk).',
-            UPLOAD_ERR_PARTIAL => 'La subida se interrumpió. Vuelve a intentarlo.',
-            UPLOAD_ERR_NO_FILE => 'No seleccionaste ningún archivo.',
-            default => 'Error al subir el archivo (código ' . $code . ').',
+        $importsDir = realpath(base_path('storage/imports'));
+        if ($importsDir === false || !is_dir($importsDir)) {
+            @mkdir(base_path('storage/imports'), 0775, true);
+            $importsDir = realpath(base_path('storage/imports'));
+            if ($importsDir === false) {
+                return null;
+            }
+        }
+
+        $normalized = str_replace('\\', '/', trim($input));
+        $base = basename($normalized);
+        if ($base === '' || $base === '.' || $base === '..' || str_contains($base, "\0")) {
+            return null;
+        }
+
+        if (!preg_match('/^[A-Za-z0-9._-]+$/', $base)) {
+            return null;
+        }
+
+        $candidate = $importsDir . DIRECTORY_SEPARATOR . $base;
+        $real = realpath($candidate);
+        if ($real === false || !is_file($real)) {
+            return null;
+        }
+
+        $importsPrefix = $importsDir . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($real, $importsPrefix) && $real !== $importsDir) {
+            return null;
+        }
+
+        return $real;
+    }
+
+    private function parseIniSize(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+
+        if (!preg_match('/^(\d+)\s*([KMG])?B?$/i', $value, $m)) {
+            return (int) $value;
+        }
+
+        $n = (int) $m[1];
+        return match (strtoupper($m[2] ?? '')) {
+            'G' => $n * 1024 * 1024 * 1024,
+            'M' => $n * 1024 * 1024,
+            'K' => $n * 1024,
+            default => $n,
         };
+    }
+
+    /** @param array<string, mixed> $file */
+    private function uploadErrorMessage(int $code, int $contentLength, array $file): string
+    {
+        $uploadMax = (string) ini_get('upload_max_filesize');
+        $postMax = (string) ini_get('post_max_size');
+        $uploadBytes = $this->parseIniSize($uploadMax);
+        $postBytes = $this->parseIniSize($postMax);
+        $limits = sprintf('Límites PHP actuales: upload_max_filesize=%s, post_max_size=%s.', $uploadMax ?: '?', $postMax ?: '?');
+        $ftpHint = ' Alternativa: sube el SQL por FTP a storage/imports/ e impórtalo escribiendo el nombre del archivo (ej. plex_manager.sql).';
+
+        if ($code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE) {
+            if ($contentLength > 0 && $uploadBytes > 0 && $contentLength < $uploadBytes && $contentLength < max($postBytes, $uploadBytes)) {
+                return 'La subida falló con error de tamaño, pero Content-Length ('
+                    . round($contentLength / 1048576, 2) . ' MB) es menor que los límites PHP. '
+                    . 'Puede ser un proxy/nginx (client_max_body_size) o un php.ini distinto al de Plesk. '
+                    . $limits . $ftpHint;
+            }
+
+            return 'Archivo demasiado grande para la subida HTTP. ' . $limits . $ftpHint;
+        }
+
+        return match ($code) {
+            UPLOAD_ERR_PARTIAL => 'La subida se interrumpió. Vuelve a intentarlo o usa FTP → storage/imports/.',
+            UPLOAD_ERR_NO_FILE => 'No seleccionaste ningún archivo.',
+            default => 'Error al subir el archivo (código ' . $code . '). ' . $limits . $ftpHint,
+        };
+    }
+
+    private function missingUploadMessage(int $contentLength): string
+    {
+        $uploadMax = (string) ini_get('upload_max_filesize');
+        $postMax = (string) ini_get('post_max_size');
+        $postBytes = $this->parseIniSize($postMax);
+        $ftpHint = ' Sube el SQL por FTP a storage/imports/ e impórtalo con el nombre del archivo.';
+
+        if ($contentLength > 0 && $postBytes > 0 && $contentLength > $postBytes) {
+            return sprintf(
+                'La petición (%s MB) supera post_max_size (%s). Aumenta post_max_size/upload_max_filesize en Plesk o usa FTP.%s',
+                round($contentLength / 1048576, 2),
+                $postMax,
+                $ftpHint
+            );
+        }
+
+        if ($contentLength > 0) {
+            return 'No se recibió el archivo (POST vacío). Límites PHP: upload_max_filesize='
+                . ($uploadMax ?: '?') . ', post_max_size=' . ($postMax ?: '?') . '.' . $ftpHint;
+        }
+
+        return 'No se recibió ningún archivo. Selecciona un SQL o indica un fichero en storage/imports/.';
     }
 }

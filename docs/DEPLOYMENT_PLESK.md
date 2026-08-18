@@ -101,6 +101,7 @@ Panel: `https://quizzical-beaver.212-227-98-60.plesk.page/dashboard`
 | BD connection | Revisa `.env` DB_* y que el usuario tenga permisos en Plesk |
 | Permisos | `chown -R usuario-dominio:psacln multipanel && chmod -R 775 storage` |
 | PHP antiguo | Cambia a PHP 8.3 en Plesk para este dominio |
+| SQL import demasiado grande | FTP a `storage/imports/` + campo «Archivo en servidor»; o sube `upload_max_filesize`/`post_max_size` (ver `public/.user.ini`) |
 
 ## Opcional (cuando tengas más RAM o dominio final)
 

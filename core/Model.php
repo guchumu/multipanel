@@ -50,7 +50,9 @@ abstract class Model
      */
     public function __isset(string $name): bool
     {
-        return array_key_exists($name, $this->attributes);
+        // isset() (not array_key_exists): null attributes must be "not set" so
+        // empty()/?? behave like normal properties and views show defaults.
+        return isset($this->attributes[$name]);
     }
 
     public function __unset(string $name): void

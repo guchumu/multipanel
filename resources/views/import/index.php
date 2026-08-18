@@ -3,6 +3,9 @@ use Core\Session;
 
 ob_start();
 $importErrors = Session::getInstance()->getFlash('import_errors');
+$serverFiles = $serverFiles ?? [];
+$phpUploadMax = $phpUploadMax ?? (string) ini_get('upload_max_filesize');
+$phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
 ?>
 <h4 class="mb-4">Importar / Exportar usuarios</h4>
 
@@ -17,6 +20,14 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
     <code>payments_history.service</code> o por el nombre del servidor legacy (Server10/Nucbox).
     Flujo limpio: <a href="/media-users/limpieza">Usuarios → Limpieza / reinicio</a>
     (borrar todos → sync → importar fechas).
+</div>
+
+<div class="alert alert-info small">
+    <strong>Límites PHP de este request:</strong>
+    <code>upload_max_filesize=<?= e($phpUploadMax) ?></code>,
+    <code>post_max_size=<?= e($phpPostMax) ?></code>.
+    Si el navegador falla al subir (~2 MB+), usa <strong>FTP → <code>storage/imports/</code></strong>
+    y el campo «Archivo en servidor» (solo el nombre, ej. <code>plex_manager.sql</code>).
 </div>
 
 <div class="row g-4">
@@ -36,7 +47,24 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
                             <option value="overlay" selected>Solo fechas/datos sobre usuarios ya sincronizados (recomendado tras wipe+sync)</option>
                         </select>
                     </div>
-                    <div class="mb-3"><input type="file" name="file" class="form-control" accept=".sql,.txt" required></div>
+                    <div class="mb-3">
+                        <label class="form-label small">Archivo SQL (subida HTTP)</label>
+                        <input type="file" name="file" class="form-control" accept=".sql,.txt">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">O archivo en servidor (FTP → <code>storage/imports/</code>)</label>
+                        <input type="text" name="server_path" class="form-control form-control-sm" list="importServerFiles" placeholder="plex_manager.sql" autocomplete="off">
+                        <?php if ($serverFiles !== []): ?>
+                        <datalist id="importServerFiles">
+                            <?php foreach ($serverFiles as $sf): ?>
+                            <option value="<?= e($sf['name']) ?>"><?= e($sf['name']) ?> (<?= e((string) round($sf['bytes'] / 1048576, 2)) ?> MB)</option>
+                            <?php endforeach; ?>
+                        </datalist>
+                        <p class="small text-muted mb-0 mt-1">Detectados: <?= e(implode(', ', array_column($serverFiles, 'name'))) ?></p>
+                        <?php else: ?>
+                        <p class="small text-muted mb-0 mt-1">Ningún <code>.sql</code> en <code>storage/imports/</code> todavía.</p>
+                        <?php endif; ?>
+                    </div>
                     <button class="btn btn-primary">Importar plex_manager.sql</button>
                 </form>
             </div>
@@ -69,11 +97,17 @@ $importErrors = Session::getInstance()->getFlash('import_errors');
                     <li><strong>servers</strong> → Servidores Plex (URL, token, machine_id) — solo modo completo</li>
                     <li><strong>users</strong> → Usuarios media + clientes CRM (filtrados por servicio 1/5)</li>
                     <li><strong>servicio / service / payments_history</strong> → 1=Server10, 5=NucBox</li>
-                    <li><strong>end_date</strong> → Fecha expiración</li>
+                    <li><strong>end_date</strong> → Fecha expiración (<code>media_users.expires_at</code>)</li>
                     <li><strong>start_date</strong> → Fecha contratación (suscripción)</li>
                     <li><strong>telegram_chat_id / telegram_id</strong> → Chat ID Telegram del usuario media (<code>media_users.telegram_chat_id</code>)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
                 </ul>
+                <h6>SQL grande por FTP</h6>
+                <ol class="small text-muted mb-3">
+                    <li>Sube <code>plex_manager.sql</code> por FTP/SFTP a <code>storage/imports/</code> del proyecto.</li>
+                    <li>En este formulario, deja el file vacío y escribe <code>plex_manager.sql</code> en «Archivo en servidor».</li>
+                    <li>Elige modo overlay o completo e importa.</li>
+                </ol>
                 <h6>Exportar</h6>
                 <ul class="list-unstyled">
                     <li class="mb-2"><a href="/logs/export" class="btn btn-outline-secondary btn-sm w-100">Logs auditoría (CSV)</a></li>

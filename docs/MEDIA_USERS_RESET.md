@@ -42,4 +42,15 @@ IMPORT_SERVICIO_5_SERVERS=nucbox,nuc box
 ```
 
 ## Relacionado
+## SQL grande (FTP)
 
+Si la subida por el navegador falla («Archivo demasiado grande» u otros errores de
+`upload_max_filesize` / `post_max_size`):
+
+1. Sube `plex_manager.sql` por FTP/SFTP a `storage/imports/` en el servidor.
+2. En **Importar / Exportar** o en Limpieza, deja el file vacío y escribe
+   `plex_manager.sql` en el campo «Archivo en servidor».
+3. Importa en modo overlay (tras wipe+sync) o completo.
+
+Límites orientativos en `public/.user.ini` (64M). En Plesk también puedes subir
+`upload_max_filesize` y `post_max_size` en Configuración de PHP del dominio.

@@ -384,8 +384,31 @@ final class PlexManagerImportService
              ORDER BY id DESC LIMIT 1',
             [$tenantId, $serverId, $username]
         );
+        if ($byUsername) {
+            return $byUsername;
+        }
 
-        return $byUsername ?: null;
+        // Fallback: mismo email/username en otro server_id del tenant (mapping servicio imperfecto).
+        $byEmailAny = $db->fetchOne(
+            'SELECT id FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL AND LOWER(email) = LOWER(?)
+             ORDER BY (server_id = ?) DESC, id DESC LIMIT 1',
+            [$tenantId, $email, $serverId]
+        );
+        if ($byEmailAny) {
+            return $byEmailAny;
+        }
+
+        if ($username === '') {
+            return null;
+        }
+
+        return $db->fetchOne(
+            'SELECT id FROM media_users
+             WHERE tenant_id = ? AND deleted_at IS NULL AND LOWER(username) = LOWER(?)
+             ORDER BY (server_id = ?) DESC, id DESC LIMIT 1',
+            [$tenantId, $username, $serverId]
+        ) ?: null;
     }
 
     /** @param array<string, mixed> $legacy */
@@ -406,9 +429,10 @@ final class PlexManagerImportService
             [$tenantId, $email]
         );
 
+        $resolvedTelegram = $this->resolveTelegramChatId($legacy);
         $metadata = [
             'telegram_id' => $legacy['telegram_id'] ?? null,
-            'telegram_chat_id' => $legacy['telegram_chat_id'] ?? null,
+            'telegram_chat_id' => $resolvedTelegram ?? ($legacy['telegram_chat_id'] ?? null),
             'legacy_plex_manager_id' => $legacy['id'] ?? null,
             'plex_user_id' => $legacy['plex_user_id'] ?? null,
             'email_type' => $legacy['email_type'] ?? null,
@@ -520,29 +544,73 @@ final class PlexManagerImportService
             return null;
         }
 
-        $dateStr = (string) $date;
-        if (strlen($dateStr) === 10) {
-            return $dateStr . ' ' . $time;
+        $dateStr = trim((string) $date);
+        if ($dateStr === '' || str_starts_with($dateStr, '0000-00-00')) {
+            return null;
         }
 
-        return $dateStr;
+        $formats = [
+            'Y-m-d H:i:s',
+            'Y-m-d H:i',
+            'Y-m-d',
+            'd/m/Y H:i:s',
+            'd/m/Y H:i',
+            'd/m/Y',
+            'd-m-Y H:i:s',
+            'd-m-Y',
+            'Y/m/d H:i:s',
+            'Y/m/d',
+            'Y-m-d\TH:i:sP',
+            'Y-m-d\TH:i:s.u\Z',
+            'Y-m-d\TH:i:s\Z',
+            'Y-m-d\TH:i:s',
+        ];
+
+        foreach ($formats as $format) {
+            $dt = \DateTimeImmutable::createFromFormat('!' . $format, $dateStr);
+            if (!$dt instanceof \DateTimeImmutable) {
+                continue;
+            }
+            $errors = \DateTimeImmutable::getLastErrors();
+            if (is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0)) {
+                continue;
+            }
+
+            $dateOnly = in_array($format, ['Y-m-d', 'd/m/Y', 'd-m-Y', 'Y/m/d'], true);
+            return $dateOnly
+                ? $dt->format('Y-m-d') . ' ' . $time
+                : $dt->format('Y-m-d H:i:s');
+        }
+
+        try {
+            $dt = new \DateTimeImmutable($dateStr);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr) === 1
+                || preg_match('/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/', $dateStr) === 1) {
+                return $dt->format('Y-m-d') . ' ' . $time;
+            }
+
+            return $dt->format('Y-m-d H:i:s');
+        } catch (\Exception) {
+            return null;
+        }
     }
 
     /** @param array<string, mixed> $legacy */
     private function resolveTelegramChatId(array $legacy): ?string
     {
-        $chatId = trim((string) ($legacy['telegram_chat_id'] ?? ''));
-        if ($this->isValidTelegramChatId($chatId)) {
-            return $chatId;
-        }
-
-        $telegramId = trim((string) ($legacy['telegram_id'] ?? ''));
-        if ($this->isValidTelegramChatId($telegramId)) {
-            return $telegramId;
-        }
-
-        foreach (['idcliente', 'client_id'] as $field) {
-            $value = trim((string) ($legacy[$field] ?? ''));
+        foreach (['telegram_chat_id', 'telegram_id', 'idcliente', 'client_id'] as $field) {
+            if (!array_key_exists($field, $legacy)) {
+                continue;
+            }
+            $raw = $legacy[$field];
+            if ($raw === null || $raw === '') {
+                continue;
+            }
+            // Avoid scientific notation from float casts of long IDs.
+            if (is_float($raw)) {
+                continue;
+            }
+            $value = trim((string) $raw);
             if ($this->isValidTelegramChatId($value)) {
                 return $value;
             }
@@ -570,10 +638,12 @@ final class PlexManagerImportService
             $db->pdo()->exec(
                 'ALTER TABLE `media_users` ADD COLUMN `telegram_chat_id` VARCHAR(50) NULL AFTER `email`'
             );
+            \App\Repositories\MediaUserRepository::clearColumnCache();
         } catch (\Throwable $e) {
             if (!str_contains(strtolower($e->getMessage()), 'duplicate column')) {
                 throw $e;
             }
+            \App\Repositories\MediaUserRepository::clearColumnCache();
         }
     }
 

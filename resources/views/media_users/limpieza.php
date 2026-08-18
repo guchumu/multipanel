@@ -104,11 +104,15 @@ $servicioMap = $servicioMap ?? [];
             <?= csrf_field() ?>
             <input type="hidden" name="type" value="plex_manager">
             <input type="hidden" name="mode" value="overlay">
-            <div class="col-md-6">
+            <div class="col-md-5">
                 <label class="form-label small">Archivo SQL</label>
-                <input type="file" name="file" class="form-control form-control-sm" accept=".sql,.txt" required>
+                <input type="file" name="file" class="form-control form-control-sm" accept=".sql,.txt">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <label class="form-label small">O en servidor (<code>storage/imports/</code>)</label>
+                <input type="text" name="server_path" class="form-control form-control-sm" placeholder="plex_manager.sql">
+            </div>
+            <div class="col-md-3">
                 <button class="btn btn-outline-primary btn-sm">
                     <i class="bi bi-upload me-1"></i>Importar fechas/datos (servicio 1 y 5)
                 </button>

@@ -19,8 +19,11 @@
 !/storage/invoices/.gitkeep
 /storage/realtime/*
 !/storage/realtime/.gitkeep
+/storage/imports/*
+!/storage/imports/.gitkeep
 /public/uploads/*
 !.gitkeep
+plex_manager.sql
 .phpunit.result.cache
 composer.lock
 .DS_Store
