@@ -55,9 +55,10 @@ class PlaybackStopMessageController extends Controller
         return $this->redirect('/settings/stop-messages');
     }
 
-    public function update(Request $request, int $id): Response
+    public function update(Request $request, int|string $id): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $id = (int) $id;
         $setDefault = $request->input('is_default') !== null;
 
         try {
@@ -81,9 +82,10 @@ class PlaybackStopMessageController extends Controller
         return $this->redirect('/settings/stop-messages');
     }
 
-    public function setDefault(Request $request, int $id): Response
+    public function setDefault(Request $request, int|string $id): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $id = (int) $id;
         $ok = $this->messages->setDefault($tenantId, $id);
 
         Session::getInstance()->flash(
@@ -94,9 +96,10 @@ class PlaybackStopMessageController extends Controller
         return $this->redirect('/settings/stop-messages');
     }
 
-    public function destroy(Request $request, int $id): Response
+    public function destroy(Request $request, int|string $id): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $id = (int) $id;
         $ok = $this->messages->delete($tenantId, $id);
 
         Session::getInstance()->flash(
@@ -110,9 +113,10 @@ class PlaybackStopMessageController extends Controller
     /**
      * Envía el mensaje al detener al Sandbox Chat ID (siempre sandbox) para previsualizar el texto.
      */
-    public function test(Request $request, int $id): Response
+    public function test(Request $request, int|string $id): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $id = (int) $id;
         $msg = $this->messages->findForTenant($tenantId, $id);
 
         if ($msg === null) {
