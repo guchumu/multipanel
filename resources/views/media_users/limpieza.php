@@ -143,6 +143,30 @@ $servicioMap = $servicioMap ?? [];
         </form>
     </div>
 </div>
+
+<?php $portalDefaultPassword = $portalDefaultPassword ?? '123456@'; ?>
+<div class="card border-0 shadow-sm mt-4">
+    <div class="card-body">
+        <h6><i class="bi bi-key me-1"></i>Contraseña del portal (todos los usuarios)</h6>
+        <p class="small text-muted mb-2">
+            Pone la misma contraseña a <strong>todos</strong> los usuarios media activos:
+            login con <strong>email</strong> + <code><?= e((string) $portalDefaultPassword) ?></code>.
+            También es la que se reenvía por Telegram desde el login del portal.
+        </p>
+        <form method="POST" action="/media-users/limpieza/portal-password"
+              onsubmit="return confirm('¿Asignar la contraseña <?= e((string) $portalDefaultPassword) ?> a TODOS los usuarios del portal?');">
+            <?= csrf_field() ?>
+            <label class="form-label small">Escribe <code>PONER PASSWORD PORTAL</code> para confirmar</label>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="text" name="confirm" class="form-control form-control-sm" style="max-width: 16rem;"
+                       required autocomplete="off" placeholder="PONER PASSWORD PORTAL">
+                <button type="submit" class="btn btn-warning btn-sm">
+                    <i class="bi bi-key me-1"></i>Actualizar contraseñas en BD
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 <?php
 $content = ob_get_clean();
 include base_path('resources/views/layouts/app.php');

@@ -16,8 +16,8 @@
             <form method="POST" action="/portal/login" autocomplete="on">
                 <?= csrf_field() ?>
                 <div class="mb-3">
-                    <label class="form-label" for="portal-username">Usuario o email</label>
-                    <input id="portal-username" name="username" class="form-control form-control-lg" required autofocus autocomplete="username">
+                    <label class="form-label" for="portal-username">Email</label>
+                    <input id="portal-username" name="username" type="email" class="form-control form-control-lg" required autofocus autocomplete="username" placeholder="tu@email.com">
                 </div>
                 <div class="mb-4">
                     <label class="form-label" for="portal-password">Contraseña</label>
@@ -25,7 +25,18 @@
                 </div>
                 <button class="btn btn-primary btn-lg w-100" type="submit">Entrar</button>
             </form>
-            <p class="text-muted small text-center mt-4 mb-0">Si no recuerdas la contraseña, contacta con tu administrador.</p>
+
+            <hr class="my-4">
+
+            <h2 class="h6 mb-2">¿No recuerdas la contraseña?</h2>
+            <p class="text-muted small mb-3">Introduce tu email y te la enviamos por Telegram (si tienes el chat vinculado).</p>
+            <form method="POST" action="/portal/login/send-password" class="d-grid gap-2">
+                <?= csrf_field() ?>
+                <input type="email" name="email" class="form-control" required placeholder="tu@email.com" autocomplete="email">
+                <button type="submit" class="btn btn-outline-primary">
+                    <i class="bi bi-telegram me-1"></i>Recibir contraseña por Telegram
+                </button>
+            </form>
         </div>
     </div>
 </div>

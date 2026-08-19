@@ -83,6 +83,7 @@ $router->get('/cron/run/{task}', [CronController::class, 'run'], 'cron.run.task'
 // Portal (client self-service)
 $router->get('/portal/login', [PortalController::class, 'showLogin'], 'portal.login');
 $router->post('/portal/login', [PortalController::class, 'login'], null, [CsrfMiddleware::class]);
+$router->post('/portal/login/send-password', [PortalController::class, 'sendPasswordTelegram'], 'portal.login.send_password', [CsrfMiddleware::class]);
 $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::class]], function ($router) {
     $router->get('', [PortalController::class, 'dashboard'], 'portal.dashboard');
     $router->post('/logout', [PortalController::class, 'logout'], 'portal.logout', [CsrfMiddleware::class]);
@@ -151,6 +152,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
     $router->get('/media-users/limpieza', [MediaUserController::class, 'cleanupHub'], 'media_users.limpieza');
     $router->post('/media-users/limpieza/wipe', [MediaUserController::class, 'wipeAll'], 'media_users.wipe_all', [CsrfMiddleware::class]);
+    $router->post('/media-users/limpieza/portal-password', [MediaUserController::class, 'setPortalDefaultPasswords'], 'media_users.portal_password', [CsrfMiddleware::class]);
     // IPTV cleanup UI ocultada (pruebas); reactivar si se necesita.
     // $router->get('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptv'], 'media_users.cleanup_iptv');
     // $router->post('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptvApply'], 'media_users.cleanup_iptv.apply', [CsrfMiddleware::class]);

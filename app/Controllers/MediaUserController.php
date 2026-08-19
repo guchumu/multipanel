@@ -23,6 +23,7 @@ use App\Services\MediaUserActivityService;
 use App\Services\MediaUserProvisioningService;
 use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
+use App\Services\PortalDefaultPasswordService;
 use App\Services\ServerSyncService;
 use App\Services\StreamLimitSettingsService;
 use App\Services\SubscriptionPeriod;
@@ -58,6 +59,7 @@ class MediaUserController extends Controller
         private MediaUserWipeService $wipe = new MediaUserWipeService(),
         private ServerSyncService $serverSync = new ServerSyncService(),
         private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
+        private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
     ) {
     }
 
@@ -83,6 +85,7 @@ class MediaUserController extends Controller
             'confirmPhrase' => MediaUserWipeService::CONFIRM_PHRASE,
             'servicioLabels' => config('import_servicio.labels', [1 => 'Server10', 5 => 'NucBox']),
             'servicioMap' => config('import_servicio.map', []),
+            'portalDefaultPassword' => PortalDefaultPasswordService::DEFAULT_PASSWORD,
         ]);
     }
 
@@ -101,6 +104,26 @@ class MediaUserController extends Controller
             'Soft-delete de %d usuarios media en el panel. No se borró nadie en Plex/Jellyfin. Siguiente paso: Forzar sincronización.',
             $result['deleted']
         ));
+
+        return $this->redirect('/media-users/limpieza');
+    }
+
+    /** Asigna la contraseña de portal por defecto a todos los usuarios media. */
+    public function setPortalDefaultPasswords(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $confirm = trim((string) $request->input('confirm', ''));
+        $expected = 'PONER PASSWORD PORTAL';
+        if ($confirm !== $expected) {
+            Session::getInstance()->flash('error', 'Escribe exactamente: ' . $expected);
+            return $this->redirect('/media-users/limpieza');
+        }
+
+        $result = $this->portalPasswords->setDefaultForAllUsers($tenantId);
+        Session::getInstance()->flash(
+            !empty($result['success']) ? 'success' : 'error',
+            (string) ($result['message'] ?? 'Hecho')
+        );
 
         return $this->redirect('/media-users/limpieza');
     }

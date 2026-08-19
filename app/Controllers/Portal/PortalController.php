@@ -10,6 +10,7 @@ use App\Services\PasswordService;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesService;
 use App\Services\PortalAuthService;
+use App\Services\PortalDefaultPasswordService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Database;
@@ -27,6 +28,7 @@ class PortalController extends Controller
         private StreamingActivityService $streaming = new StreamingActivityService(),
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
         private PasswordService $passwords = new PasswordService(),
+        private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
     ) {
     }
 
@@ -52,6 +54,25 @@ class PortalController extends Controller
         }
 
         return $this->redirect('/portal');
+    }
+
+    /** Envía la contraseña del portal por Telegram tras introducir el email. */
+    public function sendPasswordTelegram(Request $request): Response
+    {
+        if ($this->auth->check()) {
+            return $this->redirect('/portal');
+        }
+
+        $email = trim((string) $request->input('email', ''));
+        $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+        $result = $this->portalPasswords->sendPasswordByEmail($email, $ip !== '' ? $ip : null);
+
+        Session::getInstance()->flash(
+            !empty($result['success']) ? 'success' : 'error',
+            (string) ($result['message'] ?? 'No se pudo completar la solicitud.')
+        );
+
+        return $this->redirect('/portal/login');
     }
 
     public function logout(Request $request): Response
