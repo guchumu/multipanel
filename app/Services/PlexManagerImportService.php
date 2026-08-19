@@ -360,7 +360,7 @@ final class PlexManagerImportService
 
         $telegramBackfilled = $this->backfillTelegramChatIds($tenantId);
         Cache::forget('media_user_dedupe_ran_' . $tenantId);
-        $verified = $this->verifyPanelPanelFields($tenantId);
+        $verified = $this->verifyTenantPanelFields($tenantId);
 
         Logger::info('plex_manager SQL import', compact(
             'serversImported',
