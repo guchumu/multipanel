@@ -39,6 +39,7 @@ use App\Controllers\InvoiceController;
 use App\Controllers\SecurityController;
 use App\Controllers\CronController;
 use App\Controllers\PaymentLinkController;
+use App\Controllers\PortalLoginLinkController;
 use App\Controllers\PeticionesController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
@@ -66,6 +67,7 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 
 // Short payment links (public redirect to Stripe checkout)
 $router->get('/p/{code}', [PaymentLinkController::class, 'show'], 'payment_link.show');
+$router->get('/u/{code}', [PortalLoginLinkController::class, 'enter'], 'portal.magic');
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
@@ -191,6 +193,9 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/jellyfin-password/regenerate', [MediaUserController::class, 'regenerateJellyfinPassword'], 'media_users.jellyfin_password.regenerate', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/jellyfin-credentials/send', [MediaUserController::class, 'sendJellyfinCredentials'], 'media_users.jellyfin_credentials.send', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/stripe-checkout', [MediaUserController::class, 'stripeCheckout'], 'media_users.stripe_checkout', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/portal-link', [MediaUserController::class, 'createPortalLink'], 'media_users.portal_link', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/portal-link/revoke', [MediaUserController::class, 'revokePortalLink'], 'media_users.portal_link.revoke', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/portal-link/send', [MediaUserController::class, 'sendPortalLink'], 'media_users.portal_link.send', [CsrfMiddleware::class]);
     $router->get('/media-users/{uuid}/messages', [MediaUserController::class, 'messages'], 'media_users.messages');
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);
 

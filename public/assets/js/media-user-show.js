@@ -298,6 +298,90 @@
         window.open(waLink(`Hola! Para renovar tu acceso, completa el pago aquí:\n${link}`), '_blank');
     });
 
+    document.getElementById('btnPortalLinkCreate')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btnPortalLinkCreate');
+        btn.disabled = true;
+        try {
+            const data = await post(`/media-users/${uuid}/portal-link`, {
+                purpose: document.getElementById('portalLinkPurpose')?.value || 'home',
+                days: parseInt(document.getElementById('portalLinkDays')?.value || '30', 10),
+            });
+            if (data.success === false || !data.__httpOk) {
+                throw new Error(data.message || data.error || 'No se pudo generar el enlace');
+            }
+            const box = document.getElementById('portalLinkBox');
+            const input = document.getElementById('portalLinkUrl');
+            if (input) input.value = data.url || '';
+            box?.classList.remove('d-none');
+            const status = document.getElementById('portalLinkStatus');
+            if (status) {
+                const until = (data.expires_at || '').toString().slice(0, 10);
+                status.className = 'small mb-2 text-success';
+                status.textContent = until
+                    ? `Enlace activo hasta ${until}. Cópialo ahora.`
+                    : 'Enlace activo. Cópialo ahora.';
+            }
+            toast(data.message || 'Enlace generado');
+        } catch (err) {
+            toast(err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('btnPortalLinkRevoke')?.addEventListener('click', async () => {
+        if (!confirm('¿Cancelar el enlace activo? El cliente ya no podrá entrar con él.')) return;
+        try {
+            const data = await post(`/media-users/${uuid}/portal-link/revoke`);
+            if (data.success === false || !data.__httpOk) throw new Error(data.message || 'Error');
+            document.getElementById('portalLinkBox')?.classList.add('d-none');
+            const input = document.getElementById('portalLinkUrl');
+            if (input) input.value = '';
+            const status = document.getElementById('portalLinkStatus');
+            if (status) {
+                status.className = 'small mb-2 text-muted';
+                status.textContent = 'No hay enlace activo.';
+            }
+            toast(data.message || 'Enlace cancelado');
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
+    document.getElementById('btnCopyPortalLink')?.addEventListener('click', () => {
+        const input = document.getElementById('portalLinkUrl');
+        if (!input?.value) return;
+        navigator.clipboard?.writeText(input.value).then(() => toast('Enlace copiado')).catch(() => {
+            input.select();
+            document.execCommand('copy');
+            toast('Enlace copiado');
+        });
+    });
+
+    document.getElementById('btnSendPortalTelegram')?.addEventListener('click', async () => {
+        const url = document.getElementById('portalLinkUrl')?.value || '';
+        if (!url) {
+            toast('Genera primero el enlace.');
+            return;
+        }
+        try {
+            const data = await post(`/media-users/${uuid}/portal-link/send`, { url });
+            if (data.success === false || !data.__httpOk) throw new Error(data.message || 'Error');
+            toast(data.message || 'Enviado');
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
+    document.getElementById('btnSendPortalWhatsapp')?.addEventListener('click', () => {
+        const url = document.getElementById('portalLinkUrl')?.value || '';
+        if (!url) {
+            toast('Genera primero el enlace.');
+            return;
+        }
+        window.open(waLink(`Hola! Entra a tu cuenta (sin contraseña):\n${url}`), '_blank');
+    });
+
     document.getElementById('btnSendMsg')?.addEventListener('click', async () => {
         try {
             const data = await post(`/media-users/${uuid}/send-message`, {

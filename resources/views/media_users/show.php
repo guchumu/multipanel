@@ -180,6 +180,69 @@ ob_start();
             </div>
         </div>
 
+        <div class="card border-0 shadow-sm mb-4" id="portal-link">
+            <div class="card-header bg-white"><strong><i class="bi bi-key me-1"></i>Enlace al portal (sin contraseña)</strong></div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    El cliente abre el enlace y entra directo a su cuenta: ver ficha, comprar, pedir peli…
+                    Quien tenga el enlace entra como este usuario. Caduca; generar uno nuevo cancela el anterior.
+                    La URL completa solo se muestra al crearla (no se puede recuperar).
+                </p>
+                <?php
+                $pl = is_array($portalLink ?? null) ? $portalLink : [];
+                $plActive = !empty($pl['has_active']);
+                ?>
+                <p class="small mb-2 <?= $plActive ? 'text-success' : 'text-muted' ?>" id="portalLinkStatus">
+                    <?php if ($plActive): ?>
+                    Hay un enlace activo<?= !empty($pl['expires_at']) ? ' hasta ' . e(substr((string) $pl['expires_at'], 0, 10)) : '' ?><?= ($pl['purpose'] ?? '') === 'pay' ? ' · abre en Comprar' : '' ?>.
+                    <?php else: ?>
+                    No hay enlace activo.
+                    <?php endif; ?>
+                </p>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label class="form-label small" for="portalLinkPurpose">Al abrir</label>
+                        <select id="portalLinkPurpose" class="form-select form-select-sm">
+                            <option value="home">Inicio del portal</option>
+                            <option value="pay">Directo a Comprar</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small" for="portalLinkDays">Válido</label>
+                        <select id="portalLinkDays" class="form-select form-select-sm">
+                            <option value="7">7 días</option>
+                            <option value="30" selected>30 días</option>
+                            <option value="90">90 días</option>
+                            <option value="365">1 año</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-primary" id="btnPortalLinkCreate">
+                        <i class="bi bi-link-45deg me-1"></i>Generar enlace
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="btnPortalLinkRevoke">
+                        Cancelar enlace
+                    </button>
+                </div>
+                <div id="portalLinkBox" class="d-none">
+                    <label class="form-label small">Cópialo ahora</label>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" id="portalLinkUrl" class="form-control" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="btnCopyPortalLink" title="Copiar"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-success flex-fill" id="btnSendPortalWhatsapp">
+                            <i class="bi bi-whatsapp me-1"></i>WhatsApp
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info flex-fill" id="btnSendPortalTelegram" <?= $mediaUser->telegram_chat_id ? '' : 'disabled title="Sin Telegram"' ?>>
+                            <i class="bi bi-telegram me-1"></i>Telegram
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm mb-4" id="stripe">
             <div class="card-header bg-white"><strong><i class="bi bi-credit-card me-1"></i>Cobro con Stripe</strong></div>
             <div class="card-body">

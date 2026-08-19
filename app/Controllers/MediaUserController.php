@@ -24,6 +24,7 @@ use App\Services\MediaUserProvisioningService;
 use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\PortalDefaultPasswordService;
+use App\Services\PortalLoginLinkService;
 use App\Services\ServerSyncService;
 use App\Services\StreamLimitSettingsService;
 use App\Services\SubscriptionPeriod;
@@ -60,6 +61,7 @@ class MediaUserController extends Controller
         private ServerSyncService $serverSync = new ServerSyncService(),
         private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
         private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
+        private PortalLoginLinkService $portalLinks = new PortalLoginLinkService(),
     ) {
     }
 
@@ -236,6 +238,7 @@ class MediaUserController extends Controller
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
             'defaultMaxStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
+            'portalLink' => $this->portalLinks->activeInfo((int) $user->id),
         ]);
     }
 
@@ -856,6 +859,102 @@ class MediaUserController extends Controller
         $result = $this->billing->createRenewalCheckout($user, $amount, $currency !== '' ? $currency : 'EUR', $days);
 
         return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function createPortalLink(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $purpose = (string) $request->input('purpose', 'home');
+        $days = (int) $request->input('days', PortalLoginLinkService::DEFAULT_TTL_DAYS);
+        $result = $this->portalLinks->create($user, $purpose, $days);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    public function revokePortalLink(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $n = $this->portalLinks->revokeActive((int) $user->id);
+        AuditService::log('media_user.portal_link_revoked', 'media_user', (int) $user->id, null, [
+            'revoked' => $n,
+        ]);
+
+        return $this->json([
+            'success' => true,
+            'message' => $n > 0 ? 'Enlace cancelado. Ya no se puede entrar con él.' : 'No había ningún enlace activo.',
+        ]);
+    }
+
+    public function sendPortalLink(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $url = trim((string) $request->input('url', ''));
+        $code = $this->extractPortalLinkCode($url);
+        if ($code === '' || !$this->portalLinkBelongsToUser($user, $code)) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Genera el enlace primero y envíalo sin modificar la URL.',
+            ], 422);
+        }
+
+        $expires = $this->portalLinks->activeInfo((int) $user->id)['expires_at'];
+        $expiresLabel = $expires ? substr($expires, 0, 10) : '';
+        $name = trim((string) ($user->display_name ?: $user->username ?: 'hola'));
+        $body = "Hola {$name},\n\nEntra a tu cuenta sin contraseña"
+            . ($expiresLabel !== '' ? " (válido hasta el {$expiresLabel})" : '')
+            . ":\n{$url}\n\nAhí puedes ver tu ficha y contratar más tiempo.";
+
+        $sent = $this->management->sendClientNotice($user, 'Tu acceso al portal', $body, 'portal_link');
+
+        return $this->json($sent, !empty($sent['success']) ? 200 : 422);
+    }
+
+    private function extractPortalLinkCode(string $url): string
+    {
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+        if (!preg_match('#/u/([A-Za-z0-9]{16,48})/?$#', $path, $m)) {
+            return '';
+        }
+
+        return $m[1];
+    }
+
+    private function portalLinkBelongsToUser(MediaUser $user, string $code): bool
+    {
+        if (!PortalLoginLinkService::isValidCode($code)) {
+            return false;
+        }
+
+        try {
+            $row = \Core\Database::getInstance()->fetchOne(
+                'SELECT media_user_id, revoked_at, expires_at FROM portal_login_links WHERE token_hash = ? LIMIT 1',
+                [PortalLoginLinkService::hashCode($code)]
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($row === null || (int) ($row['media_user_id'] ?? 0) !== (int) $user->id) {
+            return false;
+        }
+        if (!empty($row['revoked_at'])) {
+            return false;
+        }
+        $expiresTs = strtotime((string) ($row['expires_at'] ?? ''));
+
+        return $expiresTs !== false && $expiresTs >= time();
     }
 
     public function removeFromServer(Request $request, string $uuid): Response
