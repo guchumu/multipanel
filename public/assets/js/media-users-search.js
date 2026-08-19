@@ -95,8 +95,14 @@
                 ? `<span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
                 : '<span class="text-muted">—</span>';
             const actionBtn = active
-                ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')"><i class="bi bi-pause"></i></button>`
-                : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')"><i class="bi bi-play"></i></button>`;
+                ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')" title="Pausar"><i class="bi bi-pause"></i></button>`
+                : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')" title="Activar"><i class="bi bi-play"></i></button>`;
+            const statusMenu = active
+                ? `<li><button type="button" class="dropdown-item text-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')">Pausar acceso</button></li>`
+                : `<li><button type="button" class="dropdown-item text-success" onclick="activateUser('${escapeHtml(u.uuid)}')">Activar acceso</button></li>`;
+            const renewItems = [7, 15, 30, 90, 365].map((d) =>
+                `<li><button type="button" class="dropdown-item btn-quick-renew" data-uuid="${escapeHtml(u.uuid)}" data-days="${d}">+${d} días</button></li>`
+            ).join('');
             const expiresDate = u.expires_at ? String(u.expires_at).slice(0, 10) : '';
             const dl = daysLeftBadge(expiresDate);
             const mb = membershipBadge(u.on_server);
@@ -119,7 +125,25 @@
                 </td>
                 <td class="small d-none d-md-table-cell text-truncate media-users-email">${escapeHtml(u.email || '-')}</td>
                 <td class="small d-none d-xl-table-cell">${serverBadge}</td>
-                <td><span class="badge ${statusBadgeClass(u.status)}">${escapeHtml(statusLabel(u.status))}</span></td>
+                <td>
+                    <div class="dropdown">
+                        <button type="button" class="badge ${statusBadgeClass(u.status)} border-0 dropdown-toggle media-users-status-toggle"
+                                data-bs-toggle="dropdown" aria-expanded="false"
+                                title="Actualizar / renovar o cambiar estado">
+                            ${escapeHtml(statusLabel(u.status))}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-start shadow-sm">
+                            <li><h6 class="dropdown-header">Actualizar / renovar</h6></li>
+                            ${renewItems}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button type="button" class="dropdown-item" onclick="focusExpiresInput('${escapeHtml(u.uuid)}')">Cambiar fecha…</button></li>
+                            <li><hr class="dropdown-divider"></li>
+                            ${statusMenu}
+                            <li><a class="dropdown-item" href="/media-users/${escapeHtml(u.uuid)}">Abrir ficha</a></li>
+                            <li><a class="dropdown-item" href="/media-users/${escapeHtml(u.uuid)}/messages">Mensajes</a></li>
+                        </ul>
+                    </div>
+                </td>
                 <td class="d-none d-xl-table-cell">
                     <span class="badge text-truncate d-inline-block media-users-membership-badge ${mb.cls}" title="${escapeHtml(mb.label)}">${escapeHtml(mb.label)}</span>
                 </td>
@@ -138,6 +162,17 @@
                     <div class="btn-group btn-group-sm">
                         <a href="/media-users/${escapeHtml(u.uuid)}" class="btn btn-outline-secondary" title="Abrir ficha"><i class="bi bi-person"></i></a>
                         <a href="/media-users/${escapeHtml(u.uuid)}/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" title="Actualizar / renovar">
+                                <i class="bi bi-calendar-plus"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                <li><h6 class="dropdown-header">Sumar días</h6></li>
+                                ${renewItems}
+                                <li><hr class="dropdown-divider"></li>
+                                <li><button type="button" class="dropdown-item" onclick="focusExpiresInput('${escapeHtml(u.uuid)}')">Cambiar fecha…</button></li>
+                            </ul>
+                        </div>
                         ${actionBtn}
                         ${deleteBtn}
                     </div>

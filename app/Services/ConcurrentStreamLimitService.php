@@ -126,19 +126,15 @@ final class ConcurrentStreamLimitService
             $allSessionIds = [];
             $allIps = [];
 
+            // Snapshot completo de TODAS las reproducciones concurrentes (no solo las cortadas).
             foreach ($indexes as $idx) {
-                $allSessionIds[] = (string) ($sessions[$idx]['session_id'] ?? '');
+                $sid = (string) ($sessions[$idx]['session_id'] ?? '');
+                $allSessionIds[] = $sid;
                 $ip = (string) ($sessions[$idx]['client_ip'] ?? '');
                 if ($ip !== '') {
                     $allIps[$ip] = true;
                 }
-                $titles[] = [
-                    'title' => (string) ($sessions[$idx]['title'] ?? ''),
-                    'player' => (string) ($sessions[$idx]['player'] ?? ''),
-                    'server' => (string) ($sessions[$idx]['server_name'] ?? ''),
-                    'session_id' => (string) ($sessions[$idx]['session_id'] ?? ''),
-                    'ip' => $ip,
-                ];
+                $titles[] = $this->sessionDetailForLog($sessions[$idx], false);
             }
 
             $clientIps = array_values(array_keys($allIps));
@@ -175,6 +171,15 @@ final class ConcurrentStreamLimitService
                         $killedIds[] = $sessionId;
                         $killedTotal++;
                     }
+                }
+            }
+
+            // Marcar en el detalle qué sesiones se cortaron.
+            if ($killedIds !== []) {
+                $killedSet = array_fill_keys($killedIds, true);
+                foreach ($titles as $ti => $detail) {
+                    $sid = (string) ($detail['session_id'] ?? '');
+                    $titles[$ti]['killed'] = $sid !== '' && isset($killedSet[$sid]);
                 }
             }
 
@@ -222,7 +227,8 @@ final class ConcurrentStreamLimitService
                     $count,
                     $limit,
                     $killedIds !== [],
-                    $fingerprint
+                    $fingerprint,
+                    $titles
                 );
             } catch (\Throwable) {
                 // No bloquear el corte/registro si falla el aviso admin.
@@ -238,6 +244,7 @@ final class ConcurrentStreamLimitService
                     'limit' => $limit,
                     'count_mode' => $countMode,
                     'client_ips' => $clientIps,
+                    'sessions' => $titles,
                     'killed_session_ids' => $killedIds,
                     'action' => $action,
                     'server_id' => $serverId,
@@ -396,6 +403,33 @@ final class ConcurrentStreamLimitService
             'checked' => (int) ($snapshot['total_count'] ?? count($snapshot['sessions'] ?? [])),
             'killed' => (int) ($snapshot['stream_limit_killed'] ?? 0),
             'violations' => (int) ($snapshot['stream_limit_violations'] ?? 0),
+        ];
+    }
+
+    /**
+     * Detalle completo de una reproducción para el log de incumplimiento.
+     *
+     * @param array<string, mixed> $session
+     * @return array<string, mixed>
+     */
+    private function sessionDetailForLog(array $session, bool $killed): array
+    {
+        return [
+            'title' => (string) ($session['title'] ?? ''),
+            'subtitle' => (string) ($session['subtitle'] ?? ''),
+            'player' => (string) ($session['player'] ?? ''),
+            'product' => (string) ($session['product'] ?? ''),
+            'platform' => (string) ($session['platform'] ?? ''),
+            'state' => (string) ($session['state'] ?? ''),
+            'server' => (string) ($session['server_name'] ?? ''),
+            'session_id' => (string) ($session['session_id'] ?? ''),
+            'ip' => (string) ($session['client_ip'] ?? ''),
+            'progress' => (int) ($session['progress'] ?? 0),
+            'play_method' => (string) ($session['play_method'] ?? ''),
+            'media_type' => (string) ($session['media_type'] ?? ''),
+            'location' => (string) ($session['location'] ?? ''),
+            'bandwidth' => (string) ($session['bandwidth'] ?? ''),
+            'killed' => $killed,
         ];
     }
 

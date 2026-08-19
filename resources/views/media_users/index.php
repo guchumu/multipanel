@@ -318,9 +318,54 @@ ob_start();
                         <?php endif; ?>
                     </td>
                     <td>
-                        <span class="badge <?= e($statusBadgeClass((string) $u->status)) ?>">
-                            <?= e($statusLabel((string) $u->status)) ?>
-                        </span>
+                        <div class="dropdown">
+                            <button type="button"
+                                    class="badge <?= e($statusBadgeClass((string) $u->status)) ?> border-0 dropdown-toggle media-users-status-toggle"
+                                    data-bs-toggle="dropdown" aria-expanded="false"
+                                    title="Actualizar / renovar o cambiar estado">
+                                <?= e($statusLabel((string) $u->status)) ?>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-start shadow-sm">
+                                <li><h6 class="dropdown-header">Actualizar / renovar</h6></li>
+                                <?php foreach ([7, 15, 30, 90, 365] as $d): ?>
+                                <li>
+                                    <button type="button" class="dropdown-item btn-quick-renew"
+                                            data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>">
+                                        +<?= (int) $d ?> días
+                                    </button>
+                                </li>
+                                <?php endforeach; ?>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <button type="button" class="dropdown-item"
+                                            onclick="focusExpiresInput('<?= e($u->uuid) ?>')">
+                                        Cambiar fecha…
+                                    </button>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <?php if ($u->status === 'active'): ?>
+                                <li>
+                                    <button type="button" class="dropdown-item text-warning"
+                                            onclick="suspendUser('<?= e($u->uuid) ?>')">
+                                        Pausar acceso
+                                    </button>
+                                </li>
+                                <?php else: ?>
+                                <li>
+                                    <button type="button" class="dropdown-item text-success"
+                                            onclick="activateUser('<?= e($u->uuid) ?>')">
+                                        Activar acceso
+                                    </button>
+                                </li>
+                                <?php endif; ?>
+                                <li>
+                                    <a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>">Abrir ficha</a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>/messages">Mensajes</a>
+                                </li>
+                            </ul>
+                        </div>
                     </td>
                     <td class="d-none d-xl-table-cell">
                         <span class="badge text-truncate d-inline-block media-users-membership-badge <?= e($mb['class']) ?>" title="<?= e($mb['label']) ?><?= e($u->membership_synced_at ? ' · Última sync: ' . $u->membership_synced_at : ' · Aún no se ha forzado sync') ?>">
@@ -347,10 +392,34 @@ ob_start();
                         <div class="btn-group btn-group-sm">
                             <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-secondary" title="Abrir ficha"><i class="bi bi-person"></i></a>
                             <a href="/media-users/<?= e($u->uuid) ?>/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary dropdown-toggle"
+                                        data-bs-toggle="dropdown" aria-expanded="false" title="Actualizar / renovar">
+                                    <i class="bi bi-calendar-plus"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                    <li><h6 class="dropdown-header">Sumar días</h6></li>
+                                    <?php foreach ([7, 15, 30, 90, 365] as $d): ?>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-quick-renew"
+                                                data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>">
+                                            +<?= (int) $d ?> días
+                                        </button>
+                                    </li>
+                                    <?php endforeach; ?>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item"
+                                                onclick="focusExpiresInput('<?= e($u->uuid) ?>')">
+                                            Cambiar fecha…
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
                             <?php if ($u->status === 'active'): ?>
-                            <button class="btn btn-outline-warning" onclick="suspendUser('<?= e($u->uuid) ?>')"><i class="bi bi-pause"></i></button>
+                            <button class="btn btn-outline-warning" onclick="suspendUser('<?= e($u->uuid) ?>')" title="Pausar"><i class="bi bi-pause"></i></button>
                             <?php else: ?>
-                            <button class="btn btn-outline-success" onclick="activateUser('<?= e($u->uuid) ?>')"><i class="bi bi-play"></i></button>
+                            <button class="btn btn-outline-success" onclick="activateUser('<?= e($u->uuid) ?>')" title="Activar"><i class="bi bi-play"></i></button>
                             <?php endif; ?>
                             <?php if (isset($u->on_server) && (int) $u->on_server === 0): ?>
                             <form method="POST" action="/media-users/<?= e($u->uuid) ?>" class="d-inline"
@@ -451,6 +520,45 @@ function suspendUser(uuid) {
 function activateUser(uuid) {
     toggleUserStatus(uuid, 'activate');
 }
+function focusExpiresInput(uuid) {
+    const input = document.querySelector(`.expires-input[data-uuid="${uuid}"]`);
+    if (!input) return;
+    input.focus();
+    input.showPicker?.();
+}
+async function renewUserDays(uuid, days) {
+    days = Number(days);
+    if (!uuid || !days) return;
+    if (!confirm(`¿Sumar ${days} días a este usuario?`)) return;
+    try {
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        const res = await fetch(`/media-users/${uuid}/add-days`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'X-Csrf-Token': csrf,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ _token: csrf, days }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const msg = (typeof data.message === 'string' && data.message)
+            || (typeof data.error === 'string' && data.error)
+            || (res.ok ? 'Días añadidos.' : 'No se pudo renovar (HTTP ' + res.status + ').');
+        alert(msg);
+        if (res.ok) location.reload();
+    } catch (err) {
+        alert('Error de red: ' + err.message);
+    }
+}
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.btn-quick-renew');
+    if (!btn) return;
+    e.preventDefault();
+    renewUserDays(btn.dataset.uuid, btn.dataset.days);
+});
 </script>
 JS;
 $scripts .= '<script src="' . e(asset('js/media-users-search.js')) . '"></script>';

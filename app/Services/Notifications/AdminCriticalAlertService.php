@@ -190,14 +190,31 @@ final class AdminCriticalAlertService
         int $limit,
         bool $enforced,
         string $fingerprint,
+        array $sessions = [],
     ): array {
         $action = $enforced ? 'corte aplicado' : 'solo detectado';
+        $lines = ["Usuario \"{$username}\" con {$count}/{$limit} streams ({$action})."];
+
+        foreach ($sessions as $i => $s) {
+            if (!is_array($s)) {
+                continue;
+            }
+            $n = $i + 1;
+            $title = trim((string) ($s['title'] ?? '')) ?: 'Sin título';
+            $ip = trim((string) ($s['ip'] ?? '')) ?: 'IP ?';
+            $player = trim((string) ($s['player'] ?? '')) ?: 'reproductor ?';
+            $product = trim((string) ($s['product'] ?? ''));
+            $platform = trim((string) ($s['platform'] ?? ''));
+            $device = trim(implode(' / ', array_filter([$player, $product, $platform], static fn (string $x): bool => $x !== '')));
+            $killed = !empty($s['killed']) ? ' [cortada]' : '';
+            $lines[] = "#{$n}: {$title} · {$ip} · {$device}{$killed}";
+        }
 
         return $this->notify(
             $tenantId,
             'stream_limit:' . $fingerprint,
             'Exceso de streams',
-            "Usuario \"{$username}\" con {$count}/{$limit} streams ({$action}).",
+            implode("\n", $lines),
             ['debounce_minutes' => 15]
         );
     }
