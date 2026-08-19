@@ -35,8 +35,13 @@ $dateFmt = static function (?string $d): string {
     }
     return date('d/m/Y', $ts);
 };
+$serverInfo = is_array($serverInfo ?? null) ? $serverInfo : ['name' => '—', 'type_label' => '—'];
 $canPay = !empty($stripeConfigured) && !empty($renewalPresets);
 $firstPreset = $canPay ? $renewalPresets[0] : null;
+$maxStreams = (int) ($portalUser->max_streams ?? 0);
+if ($maxStreams <= 0) {
+    $maxStreams = 2;
+}
 ob_start();
 ?>
 <section class="portal-hero portal-hero--<?= e($accountStatus['class'] ?? 'secondary') ?>">
@@ -50,7 +55,7 @@ ob_start();
         </span>
         <?php if (!empty($expiry['date'])): ?>
         <div class="portal-expiry">
-            <span class="portal-expiry-label">Caduca</span>
+            <span class="portal-expiry-label">Hasta</span>
             <span class="portal-expiry-date"><?= $dateFmt($expiry['date']) ?></span>
             <span class="portal-expiry-days"><?= e($expiry['label'] ?? '') ?></span>
         </div>
@@ -71,29 +76,60 @@ ob_start();
                 Renovar · <?= e($firstPreset['label']) ?> (<?= number_format((float) $firstPreset['price'], 2) ?> €)
             </button>
         </form>
-        <a href="/portal/subscription" class="btn btn-outline-light">Ver todas las opciones</a>
+        <a href="/portal/subscription" class="btn btn-outline-light">Ver precios</a>
         <?php else: ?>
         <a href="/portal/subscription" class="btn btn-light btn-lg portal-cta-primary">Renovar / pagar</a>
         <?php endif; ?>
     </div>
 </section>
 
+<div class="card portal-card mt-3">
+    <div class="card-body">
+        <h2 class="portal-section-title">Tu servicio</h2>
+        <div class="row g-3 portal-service-grid">
+            <div class="col-6 col-md-3">
+                <div class="portal-kv">
+                    <span class="portal-kv-label">Tipo</span>
+                    <span class="portal-kv-value"><?= e($serverInfo['type_label'] ?? '—') ?></span>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="portal-kv">
+                    <span class="portal-kv-label">Servidor</span>
+                    <span class="portal-kv-value text-truncate" title="<?= e($serverInfo['name'] ?? '') ?>"><?= e($serverInfo['name'] ?? '—') ?></span>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="portal-kv">
+                    <span class="portal-kv-label">Caduca</span>
+                    <span class="portal-kv-value"><?= !empty($expiry['date']) ? $dateFmt($expiry['date']) : '—' ?></span>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="portal-kv">
+                    <span class="portal-kv-label">Streams</span>
+                    <span class="portal-kv-value"><?= count($liveStreams ?? []) ?> / <?= (int) $maxStreams ?></span>
+                </div>
+            </div>
+        </div>
+        <?php if (!empty($portalUser->email)): ?>
+        <p class="small text-muted mb-0 mt-3">Cuenta: <?= e((string) $portalUser->email) ?></p>
+        <?php endif; ?>
+    </div>
+</div>
+
 <nav class="portal-quick" aria-label="Accesos rápidos">
-    <a href="/portal/profile" class="portal-quick-item"><i class="bi bi-person"></i><span>Mi perfil</span></a>
+    <a href="/portal/subscription" class="portal-quick-item"><i class="bi bi-credit-card"></i><span>Renovar</span></a>
     <a href="/portal/peticiones" class="portal-quick-item"><i class="bi bi-film"></i><span>Peticiones</span></a>
     <a href="/portal/tickets" class="portal-quick-item"><i class="bi bi-life-preserver"></i><span>Soporte</span></a>
-    <a href="/portal/subscription" class="portal-quick-item"><i class="bi bi-credit-card"></i><span>Pagar</span></a>
+    <a href="/portal/profile" class="portal-quick-item"><i class="bi bi-person"></i><span>Perfil</span></a>
 </nav>
 
 <div class="row g-3 mt-1">
     <div class="col-12 col-md-6">
         <div class="card portal-card h-100">
             <div class="card-body">
-                <h2 class="portal-section-title">Streams en curso</h2>
-                <p class="mb-2">
-                    <span class="fs-3 fw-semibold"><?= count($liveStreams ?? []) ?></span>
-                    <span class="text-muted"> / <?= (int) ($portalUser->max_streams ?? 0) ?> máx.</span>
-                </p>
+                <h2 class="portal-section-title">Ahora mismo</h2>
                 <?php if (!empty($liveStreams)): ?>
                 <ul class="list-unstyled small mb-0 portal-stream-list">
                     <?php foreach (array_slice($liveStreams, 0, 4) as $s): ?>
@@ -101,7 +137,7 @@ ob_start();
                     <?php endforeach; ?>
                 </ul>
                 <?php else: ?>
-                <p class="small text-muted mb-0">Ninguna reproducción activa ahora.</p>
+                <p class="small text-muted mb-0">Ninguna reproducción activa.</p>
                 <?php endif; ?>
             </div>
         </div>
@@ -111,8 +147,8 @@ ob_start();
         <div class="card portal-card h-100">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h2 class="portal-section-title mb-0">Renovar</h2>
-                    <a href="/portal/subscription" class="small">Más opciones</a>
+                    <h2 class="portal-section-title mb-0">Renovar / pagar</h2>
+                    <a href="/portal/subscription" class="small">Todas</a>
                 </div>
                 <?php if ($canPay): ?>
                 <div class="d-grid gap-2">
@@ -128,7 +164,7 @@ ob_start();
                     <?php endforeach; ?>
                 </div>
                 <?php else: ?>
-                <p class="small text-muted mb-2">El pago online no está disponible ahora. Contacta con soporte o prueba más tarde.</p>
+                <p class="small text-muted mb-2">Pago online no disponible. Abre un ticket o contacta con soporte.</p>
                 <a href="/portal/tickets/create" class="btn btn-outline-primary btn-sm">Abrir ticket</a>
                 <?php endif; ?>
             </div>
@@ -169,7 +205,7 @@ ob_start();
             </div>
             <ul class="list-group list-group-flush">
                 <?php if (empty($tickets)): ?>
-                <li class="list-group-item text-muted text-center small">Sin tickets abiertos</li>
+                <li class="list-group-item text-muted text-center small">Sin tickets</li>
                 <?php else: ?>
                 <?php foreach ($tickets as $t): ?>
                 <li class="list-group-item d-flex justify-content-between gap-2">

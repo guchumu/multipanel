@@ -88,13 +88,47 @@ class PortalController extends Controller
         $db = Database::getInstance();
         $tenantId = (int) ($user->tenant_id ?? 1);
 
-        $subscription = $db->fetchOne(
-            "SELECT s.*, p.name as plan_name, p.price, p.interval
-             FROM subscriptions s
-             JOIN subscription_plans p ON p.id = s.plan_id
-             WHERE s.media_user_id = ? ORDER BY s.created_at DESC LIMIT 1",
-            [$user->id]
-        );
+        $subscription = null;
+        try {
+            $subscription = $db->fetchOne(
+                "SELECT s.*, p.name as plan_name, p.price, p.interval
+                 FROM subscriptions s
+                 JOIN subscription_plans p ON p.id = s.plan_id
+                 WHERE s.media_user_id = ? ORDER BY s.created_at DESC LIMIT 1",
+                [$user->id]
+            );
+        } catch (\Throwable) {
+            $subscription = null;
+        }
+
+        $serverInfo = [
+            'name' => 'Sin servidor',
+            'type' => null,
+            'type_label' => '—',
+        ];
+        if (!empty($user->server_id)) {
+            try {
+                $srow = $db->fetchOne(
+                    'SELECT name, type FROM servers WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+                    [(int) $user->server_id]
+                );
+                if ($srow) {
+                    $type = strtolower((string) ($srow['type'] ?? ''));
+                    $serverInfo = [
+                        'name' => (string) ($srow['name'] ?? 'Servidor'),
+                        'type' => $type,
+                        'type_label' => match ($type) {
+                            'plex' => 'Plex',
+                            'jellyfin' => 'Jellyfin',
+                            'emby' => 'Emby',
+                            default => $type !== '' ? ucfirst($type) : 'Media',
+                        },
+                    ];
+                }
+            } catch (\Throwable) {
+                // ignore
+            }
+        }
 
         $tickets = [];
         try {
@@ -133,6 +167,7 @@ class PortalController extends Controller
             'title' => 'Mi cuenta',
             'portalUser' => $user,
             'subscription' => $subscription,
+            'serverInfo' => $serverInfo,
             'tickets' => $tickets,
             'liveStreams' => $liveStreams,
             'expiry' => $expiry,
@@ -152,6 +187,30 @@ class PortalController extends Controller
         $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
+        $serverInfo = ['name' => 'Sin servidor', 'type_label' => '—'];
+        if (!empty($user->server_id)) {
+            try {
+                $srow = Database::getInstance()->fetchOne(
+                    'SELECT name, type FROM servers WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+                    [(int) $user->server_id]
+                );
+                if ($srow) {
+                    $type = strtolower((string) ($srow['type'] ?? ''));
+                    $serverInfo = [
+                        'name' => (string) ($srow['name'] ?? 'Servidor'),
+                        'type_label' => match ($type) {
+                            'plex' => 'Plex',
+                            'jellyfin' => 'Jellyfin',
+                            'emby' => 'Emby',
+                            default => $type !== '' ? ucfirst($type) : 'Media',
+                        },
+                    ];
+                }
+            } catch (\Throwable) {
+                // ignore
+            }
+        }
+
         $plans = [];
         try {
             $plans = Database::getInstance()->fetchAll(
@@ -167,6 +226,7 @@ class PortalController extends Controller
             'portalUser' => $user,
             'plans' => $plans,
             'expiry' => $expiry,
+            'serverInfo' => $serverInfo,
             'renewalPresets' => $renewalPresets,
             'stripeConfigured' => $stripeConfigured,
             'navActive' => 'pay',

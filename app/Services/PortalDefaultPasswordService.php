@@ -109,23 +109,44 @@ final class PortalDefaultPasswordService
             ];
         }
 
-        $row = Database::getInstance()->fetchOne(
+        $rows = Database::getInstance()->fetchAll(
             'SELECT * FROM `media_users`
-             WHERE LOWER(`email`) = ? AND `deleted_at` IS NULL
+             WHERE LOWER(TRIM(`email`)) = ? AND `deleted_at` IS NULL
              ORDER BY `id` DESC
-             LIMIT 1',
+             LIMIT 20',
             [$email]
         );
 
         // Respuesta genérica si no existe (no filtrar emails).
-        if ($row === null) {
+        if ($rows === []) {
             return [
                 'success' => true,
                 'message' => 'Si ese email está registrado y tiene Telegram vinculado, recibirás la contraseña en unos segundos.',
             ];
         }
 
-        $user = new MediaUser($row);
+        $plain = self::DEFAULT_PASSWORD;
+        $hash = $this->passwords->hash($plain);
+
+        // Misma contraseña en TODAS las filas con ese email (evita login con fila antigua).
+        Database::getInstance()->query(
+            'UPDATE `media_users`
+             SET `password` = ?
+             WHERE LOWER(TRIM(`email`)) = ? AND `deleted_at` IS NULL',
+            [$hash, $email]
+        );
+
+        $user = null;
+        foreach ($rows as $row) {
+            $candidate = new MediaUser($row);
+            $tg = normalize_telegram_chat_id($candidate->telegram_chat_id ?? null);
+            if ($tg !== '') {
+                $user = $candidate;
+                break;
+            }
+        }
+        $user ??= new MediaUser($rows[0]);
+
         $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
         if ($chatId === '') {
             return [
@@ -134,15 +155,10 @@ final class PortalDefaultPasswordService
             ];
         }
 
-        // Reaplicar siempre la contraseña por defecto y enviarla.
-        $plain = self::DEFAULT_PASSWORD;
-        $user->password = $this->passwords->hash($plain);
-        $user->save();
-
         $body = "Tu acceso al portal MultiPanel:\n"
             . "Email: {$email}\n"
             . "Contraseña: {$plain}\n\n"
-            . "Entra en /portal/login y cámbiala en Perfil si quieres.";
+            . "Entra en /portal/login con tu email y esa contraseña.";
 
         $sent = $this->management->sendTelegramMessage($user, 'Contraseña del portal', $body);
         if (empty($sent['sent'])) {
@@ -154,7 +170,7 @@ final class PortalDefaultPasswordService
 
         return [
             'success' => true,
-            'message' => 'Contraseña enviada a tu Telegram. Revisa el chat del bot.',
+            'message' => 'Contraseña enviada a tu Telegram. Entra con tu email y esa contraseña.',
         ];
     }
 

@@ -17,17 +17,42 @@ final class PasswordService
 
     public function hash(string $password): string
     {
-        return password_hash($password, PASSWORD_ARGON2ID, self::OPTIONS);
+        $hash = @password_hash($password, PASSWORD_ARGON2ID, self::OPTIONS);
+        if (is_string($hash) && $hash !== '') {
+            return $hash;
+        }
+
+        // Fallback (hosting sin Argon2id o memoria insuficiente).
+        $hash = password_hash($password, PASSWORD_BCRYPT);
+        if (!is_string($hash) || $hash === '') {
+            throw new \RuntimeException('No se pudo generar el hash de la contraseña.');
+        }
+
+        return $hash;
     }
 
     public function verify(string $password, string $hash): bool
     {
+        $hash = trim($hash);
+        if ($hash === '') {
+            return false;
+        }
+
         return password_verify($password, $hash);
     }
 
     public function needsRehash(string $hash): bool
     {
-        return password_needs_rehash($hash, PASSWORD_ARGON2ID, self::OPTIONS);
+        $hash = trim($hash);
+        if ($hash === '') {
+            return true;
+        }
+        if (str_starts_with($hash, '$2y$') || str_starts_with($hash, '$2a$')) {
+            // Preferir Argon2 si el host lo soporta.
+            return defined('PASSWORD_ARGON2ID');
+        }
+
+        return @password_needs_rehash($hash, PASSWORD_ARGON2ID, self::OPTIONS);
     }
 
     public function generate(int $length = 16): string

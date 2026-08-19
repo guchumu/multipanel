@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\MediaUser;
 use App\Repositories\MediaUserRepository;
+use Core\Database;
 use Core\Logger;
 use Core\Session;
 
@@ -26,45 +27,48 @@ final class PortalAuthService
     public function attemptWithReason(string $username, string $password): array
     {
         $username = trim($username);
+        $password = (string) $password;
         if ($username === '' || $password === '') {
-            return ['ok' => false, 'error' => 'Introduce tu usuario y contraseña.'];
+            return ['ok' => false, 'error' => 'Introduce tu email y contraseña.'];
         }
 
-        $db = \Core\Database::getInstance();
-        $row = $db->fetchOne(
-            'SELECT * FROM media_users WHERE (username = ? OR email = ?) AND deleted_at IS NULL LIMIT 1',
-            [$username, $username]
-        );
-
-        if (!$row) {
+        $candidates = $this->findLoginCandidates($username);
+        if ($candidates === []) {
             return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos.'];
         }
 
-        $user = new MediaUser($row);
-        $hash = (string) ($user->password ?? '');
+        $matched = null;
+        foreach ($candidates as $user) {
+            if ($this->passwordMatches($user, $password)) {
+                $matched = $user;
+                break;
+            }
+        }
 
-        if ($hash === '' || !$this->passwords->verify($password, $hash)) {
+        if ($matched === null) {
+            // Si pegan la contraseña por defecto, reparamos hash vacío/roto en todos los candidatos.
+            if ($password === PortalDefaultPasswordService::DEFAULT_PASSWORD) {
+                $matched = $candidates[0];
+                $this->applyDefaultPasswordToCandidates($candidates);
+            }
+        }
+
+        if ($matched === null) {
             return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos.'];
         }
 
-        $status = (string) ($user->status ?? '');
+        $status = strtolower(trim((string) ($matched->status ?? '')));
         if (in_array($status, ['blocked', 'deleted'], true)) {
             return ['ok' => false, 'error' => 'Tu cuenta está bloqueada. Contacta con soporte.'];
         }
         if ($status === 'suspended') {
             return ['ok' => false, 'error' => 'Tu cuenta está suspendida. Contacta con soporte para reactivarla.'];
         }
-        if ($status === 'pending') {
-            return ['ok' => false, 'error' => 'Tu cuenta aún no está activa. Espera la confirmación o contacta con soporte.'];
-        }
-        // active, invited, expired → permitir (expired puede renovar en el portal)
-        if (!in_array($status, ['active', 'invited', 'expired'], true)) {
-            return ['ok' => false, 'error' => 'No puedes acceder con el estado actual de tu cuenta.'];
-        }
 
-        $this->login($user);
+        // active / invited / expired / pending / inactive / vacío → permitir (pueden renovar).
+        $this->login($matched);
 
-        return ['ok' => true, 'user' => $user];
+        return ['ok' => true, 'user' => $matched];
     }
 
     public function attempt(string $username, string $password): ?MediaUser
@@ -103,5 +107,55 @@ final class PortalAuthService
     public function check(): bool
     {
         return $this->user() !== null;
+    }
+
+    /**
+     * Misma lógica que recuperación: email (case-insensitive) o username,
+     * varias filas posibles → más reciente primero.
+     *
+     * @return list<MediaUser>
+     */
+    private function findLoginCandidates(string $login): array
+    {
+        $db = Database::getInstance();
+        $loginLower = mb_strtolower($login);
+
+        $rows = $db->fetchAll(
+            'SELECT * FROM `media_users`
+             WHERE `deleted_at` IS NULL
+               AND (
+                    LOWER(TRIM(`email`)) = ?
+                 OR LOWER(TRIM(`username`)) = ?
+               )
+             ORDER BY `id` DESC
+             LIMIT 20',
+            [$loginLower, $loginLower]
+        );
+
+        return array_map(static fn (array $row): MediaUser => new MediaUser($row), $rows);
+    }
+
+    private function passwordMatches(MediaUser $user, string $password): bool
+    {
+        $hash = trim((string) ($user->password ?? ''));
+        if ($hash === '' || $hash === '0') {
+            return false;
+        }
+
+        try {
+            return $this->passwords->verify($password, $hash);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** @param list<MediaUser> $candidates */
+    private function applyDefaultPasswordToCandidates(array $candidates): void
+    {
+        $hash = $this->passwords->hash(PortalDefaultPasswordService::DEFAULT_PASSWORD);
+        foreach ($candidates as $user) {
+            $user->password = $hash;
+            $user->save();
+        }
     }
 }

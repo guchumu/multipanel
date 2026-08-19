@@ -6,24 +6,29 @@ $dateFmt = static function (?string $d): string {
     $ts = strtotime(substr($d, 0, 10));
     return $ts === false ? e($d) : date('d/m/Y', $ts);
 };
+$serverInfo = is_array($serverInfo ?? null) ? $serverInfo : ['name' => '—', 'type_label' => '—'];
 $canPay = !empty($stripeConfigured) && !empty($renewalPresets);
 ob_start();
 ?>
 <h1 class="portal-page-title">Renovar / pagar</h1>
-<p class="portal-page-lead">Elige un periodo para ampliar tu acceso. El cobro se realiza de forma segura.</p>
+<p class="portal-page-lead">Amplía tu acceso. El cobro es seguro y los días se suman a tu cuenta al completar el pago.</p>
 
-<?php if (!empty($expiry['date'])): ?>
-<div class="alert alert-light border portal-alert mb-3">
-    Caducidad actual: <strong><?= $dateFmt($expiry['date']) ?></strong>
-    · <?= e($expiry['label'] ?? '') ?>
+<div class="card portal-card mb-3">
+    <div class="card-body py-3">
+        <div class="row g-2 small">
+            <div class="col-6 col-md-3"><span class="text-muted">Servicio</span><div class="fw-semibold"><?= e($serverInfo['type_label'] ?? '—') ?></div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">Servidor</span><div class="fw-semibold text-truncate"><?= e($serverInfo['name'] ?? '—') ?></div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">Caduca</span><div class="fw-semibold"><?= !empty($expiry['date']) ? $dateFmt($expiry['date']) : '—' ?></div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">Estado</span><div class="fw-semibold"><?= e($expiry['label'] ?? '—') ?></div></div>
+        </div>
+    </div>
 </div>
-<?php endif; ?>
 
 <?php if ($canPay): ?>
 <div class="card portal-card mb-4">
     <div class="card-body">
-        <h2 class="portal-section-title">Opciones rápidas</h2>
-        <p class="small text-muted mb-3">Pulsa y te llevamos a la pasarela de pago. Al completar el cobro, se suman los días a tu cuenta.</p>
+        <h2 class="portal-section-title">Elige periodo</h2>
+        <p class="small text-muted mb-3">Pulsa y te llevamos a la pasarela. Al pagar, se amplía tu caducidad.</p>
         <div class="row g-3">
             <?php foreach ($renewalPresets as $preset): ?>
             <div class="col-12 col-sm-6 col-lg-4">
@@ -45,8 +50,7 @@ ob_start();
 <?php else: ?>
 <div class="card portal-card mb-4">
     <div class="card-body">
-        <p class="mb-2">El pago online con Stripe no está configurado todavía.</p>
-        <p class="small text-muted mb-3">Puedes abrir un ticket de soporte para renovar manualmente, o probar los planes de abajo si hay pasarelas alternativas.</p>
+        <p class="mb-2">El pago online no está disponible ahora.</p>
         <a href="/portal/tickets/create" class="btn btn-primary btn-sm">Contactar soporte</a>
     </div>
 </div>
@@ -71,7 +75,6 @@ ob_start();
                     <input type="hidden" name="plan_id" value="<?= (int) $plan['id'] ?>">
                     <div class="d-grid gap-2">
                         <button name="gateway" value="stripe" class="btn btn-primary btn-sm">Pagar con tarjeta</button>
-                        <button name="gateway" value="bizum" class="btn btn-outline-success btn-sm">Bizum</button>
                     </div>
                 </form>
             </div>
