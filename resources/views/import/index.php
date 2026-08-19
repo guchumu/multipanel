@@ -70,6 +70,33 @@ $phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
             </div>
         </div>
 
+        <div class="card border-0 shadow-sm border-success mb-3">
+            <div class="card-body">
+                <h6><i class="bi bi-cloud-download me-1"></i>Sincronizar desde series.clientes</h6>
+                <p class="text-muted small mb-2">
+                    Usa la <strong>misma BD remota</strong> que Peticiones (<code>series.clientes</code>).
+                    Rellena Telegram, email y caducidad sobre usuarios ya sincronizados.
+                </p>
+                <ul class="small text-muted mb-3">
+                    <li><code>servicio</code> <strong>1 y 5</strong> (Plex) → <code>expires_at</code>, email, notas limpias, Telegram</li>
+                    <li>Otros servicios (IPTV…) → solo Telegram si falta; <strong>no</strong> usan su <code>fechafinal</code> como vencimiento Plex</li>
+                    <li>Match por email1–4, <code>idusuariotelegram</code> o username = parte local del email</li>
+                    <li>Por defecto no pisa datos mejores; marca «Sobrescribir» para forzar</li>
+                </ul>
+                <form method="POST" action="/import/series-clientes">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="redirect" value="/import">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="overwrite" value="1" id="seriesOverwrite">
+                        <label class="form-check-label small" for="seriesOverwrite">Sobrescribir Telegram / fechas / email / notas ya rellenados</label>
+                    </div>
+                    <button class="btn btn-success">
+                        <i class="bi bi-arrow-repeat me-1"></i>Sincronizar vencimientos remotas
+                    </button>
+                </form>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6>Importar CSV / JSON</h6>
@@ -102,6 +129,13 @@ $phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
                     <li><strong>telegram_chat_id / telegram_id</strong> (tabla <code>users</code>) → Chat ID (<code>media_users.telegram_chat_id</code>); si falta, se completa desde <code>payments_history</code>, <code>telegram_messages_history</code> o <code>notification_log</code></li>
                     <li><strong>private_notes / notes / admin_notes</strong> → Notas (<code>media_users.notes</code>)</li>
                     <li><strong>plex_username / plex_user_id</strong> → usuario e ID externo</li>
+                </ul>
+                <h6>Overlay series.clientes (remoto)</h6>
+                <ul class="small text-muted mb-3">
+                    <li><code>idusuariotelegram</code> → Telegram (ignora <code>chatid</code>)</li>
+                    <li><code>email1</code>…<code>email4</code> → match; escribe email1 si el panel está vacío</li>
+                    <li><code>fechafinal</code> → caducidad solo si <code>servicio IN (1,5)</code> (MAX por cliente)</li>
+                    <li><code>notas</code>/<code>notas2</code> → notas sin credenciales IPTV</li>
                 </ul>
                 <h6>SQL grande por FTP</h6>
                 <ol class="small text-muted mb-3">

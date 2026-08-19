@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Services\AuthService;
 use App\Services\ImportService;
 use App\Services\PlexManagerImportService;
+use App\Services\SeriesClientesOverlayService;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
@@ -24,6 +25,7 @@ class ImportController extends Controller
         private AuthService $auth = new AuthService(),
         private ImportService $import = new ImportService(),
         private PlexManagerImportService $plexManager = new PlexManagerImportService(),
+        private SeriesClientesOverlayService $seriesClientes = new SeriesClientesOverlayService(),
     ) {
     }
 
@@ -262,6 +264,50 @@ class ImportController extends Controller
         echo "username,email,password,display_name,status,max_streams,max_devices,expires_at,telegram_chat_id,notes,servicio\n";
         echo "usuario1,usuario1@email.com,,Usuario Uno,active,1,5,2026-12-31,2023182976,,1\n";
         exit;
+    }
+
+    /**
+     * Overlay en vivo desde series.clientes (BD remota de peticiones).
+     */
+    public function syncSeriesClientes(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $overwrite = (string) $request->input('overwrite', '') === '1'
+            || (string) $request->input('overwrite', '') === 'on';
+        $redirectTo = trim((string) $request->input('redirect', '/import'));
+        if ($redirectTo === '' || !str_starts_with($redirectTo, '/') || str_starts_with($redirectTo, '//')) {
+            $redirectTo = '/import';
+        }
+
+        try {
+            $result = $this->seriesClientes->syncFromRemote($tenantId, $overwrite);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('series.clientes overlay failed', ['error' => $e->getMessage()]);
+            Session::getInstance()->flash('error', 'Error al sincronizar series.clientes: ' . $e->getMessage());
+            return $this->redirect($redirectTo);
+        }
+
+        $msg = (string) ($result['message'] ?? 'Sincronización series.clientes finalizada.');
+        if (!empty($result['sample_updated_ids']) && is_array($result['sample_updated_ids'])) {
+            $msg .= ' Ids ej.: ' . $this->formatSampleIds($result['sample_updated_ids']) . '.';
+        }
+
+        if (!($result['ok'] ?? false)) {
+            Session::getInstance()->flash('error', $msg);
+        } elseif ((int) ($result['matched'] ?? 0) === 0 && (int) ($result['remote_rows'] ?? 0) === 0) {
+            Session::getInstance()->flash('error', $msg);
+        } else {
+            Session::getInstance()->flash('success', $msg);
+        }
+
+        if (!empty($result['errors']) && is_array($result['errors'])) {
+            Session::getInstance()->flash(
+                'import_errors',
+                implode("\n", array_slice($result['errors'], 0, 15))
+            );
+        }
+
+        return $this->redirect($redirectTo);
     }
 
     /**

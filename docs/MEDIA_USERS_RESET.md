@@ -17,12 +17,13 @@ caducidades del importador (solo servicio 1 y 5).
 2. **Forzar sincronización** de cada servidor (o “todos”).
    - Recrea en el panel solo quienes estén en la biblioteca remota.
    - Al recrear, intenta recuperar email/Telegram/caducidad/notas de gemelos soft-deleted.
-3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay).
+3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay) **o** sincronizar desde **`series.clientes`**.
    - Solo filas con `servicio` / `service` **1** o **5** (o inferidos por nombre de servidor legacy / pagos).
    - 1 → Servitron / Server10, 5 → NucBox (match por nombre de servidor).
    - Actualiza **todas** las filas coincidentes (`plex_user_id`→`external_id`, email, username/`display_name`, o parte local del email), priorizando `on_server=1`.
    - Mapa columnas: `email`←`users.email`, `telegram_chat_id`←coalesce(`telegram_chat_id`,`telegram_id`), `expires_at`←`end_date`, `notes`←`private_notes`.
    - El flash muestra «Telegram escritos» (writes) **y** «BD tras import» (conteo real en `media_users`).
+   - **Overlay remoto** (`POST /import/series-clientes`): misma BD que Peticiones; `idusuariotelegram`→Telegram, `email1..4` match, `fechafinal` solo servicio 1/5 (MAX), IPTV solo Telegram.
 
 ## Filtro servicio
 

@@ -121,6 +121,28 @@ $servicioMap = $servicioMap ?? [];
         </form>
     </div>
 </div>
+
+<div class="card border-0 shadow-sm mt-4 border-success">
+    <div class="card-body">
+        <h6><i class="bi bi-cloud-download me-1"></i>Paso 3b — Sincronizar desde series.clientes (BD remota)</h6>
+        <p class="small text-muted mb-2">
+            Alternativa al SQL de plex_manager: lee en vivo <code>series.clientes</code> (misma conexión que Peticiones).
+            Servicio <strong>1 y 5</strong> aportan caducidad/email/notas; el resto solo puede rellenar Telegram.
+        </p>
+        <form method="POST" action="/import/series-clientes" class="d-flex flex-wrap gap-3 align-items-center">
+            <?= csrf_field() ?>
+            <input type="hidden" name="redirect" value="/media-users/limpieza">
+            <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" name="overwrite" value="1" id="seriesOverwriteLimpieza">
+                <label class="form-check-label small" for="seriesOverwriteLimpieza">Sobrescribir campos ya rellenados</label>
+            </div>
+            <button class="btn btn-success btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i>Sincronizar vencimientos remotas
+            </button>
+            <a href="/import" class="btn btn-link btn-sm">Ir a Importar / Exportar</a>
+        </form>
+    </div>
+</div>
 <?php
 $content = ob_get_clean();
 include base_path('resources/views/layouts/app.php');

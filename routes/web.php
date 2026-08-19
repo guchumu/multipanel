@@ -289,6 +289,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Import/Export
     $router->get('/import', [ImportController::class, 'show'], 'import.index');
     $router->post('/import', [ImportController::class, 'upload'], 'import.upload', [CsrfMiddleware::class]);
+    $router->post('/import/series-clientes', [ImportController::class, 'syncSeriesClientes'], 'import.series_clientes', [CsrfMiddleware::class]);
     $router->get('/import/template', [ImportController::class, 'template'], 'import.template');
 
     // Peticiones (BD remota legacy)
