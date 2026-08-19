@@ -349,3 +349,23 @@
         font-size: 1.85rem;
     }
 }
+
+.portal-kv-label {
+    display: block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6c757d;
+    margin-bottom: 0.15rem;
+}
+
+.portal-kv-value {
+    display: block;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--portal-ink);
+}
+
+.portal-service-grid .portal-kv {
+    padding: 0.35rem 0;
+}
