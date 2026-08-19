@@ -73,6 +73,36 @@ final class BillingSettingsService
         $this->set($tenantId, 'renewal_presets', json_encode($clean, JSON_UNESCAPED_UNICODE), 'json');
     }
 
+    public function getExtraAccountPrice(int $tenantId): float
+    {
+        $raw = $this->get($tenantId, 'shop_extra_account_price');
+        if ($raw === null || trim($raw) === '') {
+            return PortalShopService::DEFAULT_EXTRA_ACCOUNT;
+        }
+        $n = (float) $raw;
+
+        return $n > 0 ? round($n, 2) : PortalShopService::DEFAULT_EXTRA_ACCOUNT;
+    }
+
+    public function getExtraStreamMonthlyPrice(int $tenantId): float
+    {
+        $raw = $this->get($tenantId, 'shop_extra_stream_month');
+        if ($raw === null || trim($raw) === '') {
+            return PortalShopService::DEFAULT_EXTRA_STREAM_MONTH;
+        }
+        $n = (float) $raw;
+
+        return $n > 0 ? round($n, 2) : PortalShopService::DEFAULT_EXTRA_STREAM_MONTH;
+    }
+
+    public function saveShopExtraPrices(int $tenantId, float $extraAccount, float $extraStreamMonth): void
+    {
+        $account = max(0.01, round($extraAccount, 2));
+        $stream = max(0.01, round($extraStreamMonth, 2));
+        $this->set($tenantId, 'shop_extra_account_price', (string) $account, 'string');
+        $this->set($tenantId, 'shop_extra_stream_month', (string) $stream, 'string');
+    }
+
     /**
      * Modo Stripe activo: test | live.
      * Migra claves legacy (stripe_secret_key única) la primera vez que se lee.

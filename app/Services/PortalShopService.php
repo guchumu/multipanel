@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace App\Services;
 
 /**
- * Tienda del portal: se compra tiempo (meses), no planes.
+ * Tienda del portal: se compra tiempo (meses) según los presets de Facturación.
  *
- * Cada usuario incluye 2 pantallas en la misma casa.
- * Usuarios extra y pantallas extra: 40 % de descuento.
+ * Cada cuenta individual incluye 2 visionados en el mismo hogar.
+ * Cuenta extra y visionado extra: precios de Ajustes → Facturación.
  */
 final class PortalShopService
 {
     public const INCLUDED_STREAMS = 2;
-    public const EXTRA_DISCOUNT = 0.40;
-    public const MAX_USERS = 6;
-    public const MAX_EXTRA_STREAMS = 4;
+
+    public const MAX_ACCOUNTS = 6;
+
+    public const MAX_STREAMS_PER_ACCOUNT = 6;
+
+    public const DEFAULT_EXTRA_ACCOUNT = 50.0;
+
+    public const DEFAULT_EXTRA_STREAM_MONTH = 4.0;
 
     public function __construct(
         private BillingSettingsService $billing = new BillingSettingsService(),
@@ -39,17 +44,8 @@ final class PortalShopService
             $mapped[$months] = [
                 'months' => $months,
                 'days' => $days,
-                'label' => $this->monthLabel($months),
+                'label' => (string) ($preset['label'] ?? $this->monthLabel($months)),
                 'price' => round($price, 2),
-            ];
-        }
-
-        if ($mapped === []) {
-            $mapped = [
-                1 => ['months' => 1, 'days' => 30, 'label' => '1 mes', 'price' => 15.0],
-                3 => ['months' => 3, 'days' => 90, 'label' => '3 meses', 'price' => 40.0],
-                6 => ['months' => 6, 'days' => 180, 'label' => '6 meses', 'price' => 70.0],
-                12 => ['months' => 12, 'days' => 365, 'label' => '1 año', 'price' => 130.0],
             ];
         }
 
@@ -58,8 +54,45 @@ final class PortalShopService
         return array_values($mapped);
     }
 
+    public function extraAccountPrice(int $tenantId): float
+    {
+        return $this->billing->getExtraAccountPrice($tenantId);
+    }
+
+    public function extraStreamMonthlyPrice(int $tenantId): float
+    {
+        return $this->billing->getExtraStreamMonthlyPrice($tenantId);
+    }
+
+    /**
+     * pack + (cuentas-1)×cuenta extra + visionados extra × €/mes × meses del preset.
+     *
+     * @return array{extra_users: int, extra_users_price: float, extra_streams_price: float, total: float}
+     */
+    public static function priceExtras(
+        float $packPrice,
+        int $periodMonths,
+        int $users,
+        int $extraStreams,
+        float $extraAccountUnit,
+        float $extraStreamMonth,
+    ): array {
+        $extraUsers = max(0, $users - 1);
+        $months = max(1, $periodMonths);
+        $extraUsersPrice = round($extraUsers * $extraAccountUnit, 2);
+        $extraStreamsPrice = round(max(0, $extraStreams) * $extraStreamMonth * $months, 2);
+
+        return [
+            'extra_users' => $extraUsers,
+            'extra_users_price' => $extraUsersPrice,
+            'extra_streams_price' => $extraStreamsPrice,
+            'total' => round($packPrice + $extraUsersPrice + $extraStreamsPrice, 2),
+        ];
+    }
+
     /**
      * @param list<string> $emails
+     * @param list<int|string> $streams
      * @return array{
      *   ok: bool,
      *   error?: string,
@@ -72,35 +105,64 @@ final class PortalShopService
      *   included_streams: int,
      *   total_streams: int,
      *   emails: list<string>,
+     *   streams: list<int>,
      *   pack_price: float,
      *   extra_users_price: float,
      *   extra_streams_price: float,
      *   extra_user_unit: float,
      *   extra_stream_unit: float,
-     *   discount: float,
+     *   extra_stream_month: float,
      *   total: float
      * }
      */
-    public function quote(int $tenantId, int $months, int $users, int $extraStreams, array $emails = []): array
+    public function quote(int $tenantId, int $months, array $emails = [], array $streams = []): array
     {
         $option = $this->optionForMonths($tenantId, $months);
         if ($option === null) {
-            return $this->emptyQuote($months, 'Elige 1, 3, 6 o 12 meses.');
+            return $this->emptyQuote($months, 'Elige una duración de las que hay en el panel.');
         }
 
-        $users = max(1, min(self::MAX_USERS, $users));
-        $extraStreams = max(0, min(self::MAX_EXTRA_STREAMS, $extraStreams));
-        $emails = $this->normalizeEmails($emails, $users);
+        $emailsIn = $emails;
+        $pairs = [];
+        $seen = [];
+        foreach ($emailsIn as $i => $raw) {
+            $email = mb_strtolower(trim((string) $raw));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || isset($seen[$email])) {
+                continue;
+            }
+            $seen[$email] = true;
+            $n = (int) ($streams[$i] ?? self::INCLUDED_STREAMS);
+            $pairs[] = [
+                $email,
+                max(self::INCLUDED_STREAMS, min(self::MAX_STREAMS_PER_ACCOUNT, $n)),
+            ];
+            if (count($pairs) >= self::MAX_ACCOUNTS) {
+                break;
+            }
+        }
+        if ($pairs === []) {
+            return $this->emptyQuote($months, 'Escribe el email de cada cuenta individual.');
+        }
+
+        $emails = array_column($pairs, 0);
+        $streamList = array_map('intval', array_column($pairs, 1));
+
+        $users = count($emails);
+        $extraUsers = max(0, $users - 1);
+        $extraStreams = 0;
+        foreach ($streamList as $n) {
+            $extraStreams += max(0, $n - self::INCLUDED_STREAMS);
+        }
 
         $pack = (float) $option['price'];
-        $payFactor = 1 - self::EXTRA_DISCOUNT;
-        $extraUserUnit = round($pack * $payFactor, 2);
-        $extraStreamUnit = round(($pack / 2) * $payFactor, 2);
-        $extraUsers = $users - 1;
-        $extraUsersPrice = round($extraUsers * $extraUserUnit, 2);
-        $extraStreamsPrice = round($extraStreams * $extraStreamUnit, 2);
+        $extraUserUnit = $this->extraAccountPrice($tenantId);
+        $streamMonth = $this->extraStreamMonthlyPrice($tenantId);
+        $periodMonths = max(1, (int) $option['months']);
+        $priced = self::priceExtras($pack, $periodMonths, $users, $extraStreams, $extraUserUnit, $streamMonth);
+        $extraUsersPrice = $priced['extra_users_price'];
+        $extraStreamsPrice = $priced['extra_streams_price'];
         $included = $users * self::INCLUDED_STREAMS;
-        $total = round($pack + $extraUsersPrice + $extraStreamsPrice, 2);
+        $total = $priced['total'];
 
         return [
             'ok' => true,
@@ -113,12 +175,13 @@ final class PortalShopService
             'included_streams' => $included,
             'total_streams' => $included + $extraStreams,
             'emails' => $emails,
+            'streams' => $streamList,
             'pack_price' => $pack,
             'extra_users_price' => $extraUsersPrice,
             'extra_streams_price' => $extraStreamsPrice,
             'extra_user_unit' => $extraUserUnit,
-            'extra_stream_unit' => $extraStreamUnit,
-            'discount' => self::EXTRA_DISCOUNT,
+            'extra_stream_unit' => round($streamMonth * $periodMonths, 2),
+            'extra_stream_month' => $streamMonth,
             'total' => $total,
         ];
     }
@@ -127,7 +190,7 @@ final class PortalShopService
      * @param list<string> $emails
      * @return list<string>
      */
-    public function normalizeEmails(array $emails, int $users): array
+    public function normalizeEmails(array $emails, int $max): array
     {
         $clean = [];
         foreach ($emails as $email) {
@@ -140,7 +203,7 @@ final class PortalShopService
             }
         }
 
-        return array_slice($clean, 0, max(1, $users));
+        return array_slice($clean, 0, max(1, $max));
     }
 
     /**
@@ -191,12 +254,13 @@ final class PortalShopService
             'included_streams' => self::INCLUDED_STREAMS,
             'total_streams' => self::INCLUDED_STREAMS,
             'emails' => [],
+            'streams' => [self::INCLUDED_STREAMS],
             'pack_price' => 0.0,
             'extra_users_price' => 0.0,
             'extra_streams_price' => 0.0,
             'extra_user_unit' => 0.0,
             'extra_stream_unit' => 0.0,
-            'discount' => self::EXTRA_DISCOUNT,
+            'extra_stream_month' => self::DEFAULT_EXTRA_STREAM_MONTH,
             'total' => 0.0,
         ];
     }

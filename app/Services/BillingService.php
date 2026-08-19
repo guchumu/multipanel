@@ -329,12 +329,31 @@ final class BillingService
     }
 
     /**
-     * Pantallas extra + emails extra contratados desde el simulador del portal.
+     * Cuentas individuales y visionados contratados desde la tienda del portal.
      *
      * @param array<string, mixed> $meta
      */
     private function applyShopExtras(MediaUser $buyer, array $meta, int $days): void
     {
+        $accounts = $meta['shop_accounts'] ?? null;
+        if (is_array($accounts) && $accounts !== []) {
+            foreach ($accounts as $i => $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $email = mb_strtolower(trim((string) ($row['email'] ?? '')));
+                $streams = $this->clampShopStreams((int) ($row['streams'] ?? PortalShopService::INCLUDED_STREAMS));
+                if ((int) $i === 0) {
+                    $buyer->max_streams = $streams;
+                    $buyer->save();
+                    continue;
+                }
+                $this->provisionShopAccount($buyer, $email, $streams, $days);
+            }
+
+            return;
+        }
+
         $extraStreams = max(0, (int) ($meta['extra_streams'] ?? 0));
         if ($extraStreams > 0) {
             $current = (int) ($buyer->max_streams ?? PortalShopService::INCLUDED_STREAMS);
@@ -350,64 +369,88 @@ final class BillingService
             return;
         }
 
+        foreach ($emails as $raw) {
+            $this->provisionShopAccount(
+                $buyer,
+                (string) $raw,
+                PortalShopService::INCLUDED_STREAMS,
+                $days
+            );
+        }
+    }
+
+    private function clampShopStreams(int $streams): int
+    {
+        return max(
+            PortalShopService::INCLUDED_STREAMS,
+            min(PortalShopService::MAX_STREAMS_PER_ACCOUNT, $streams)
+        );
+    }
+
+    private function provisionShopAccount(MediaUser $buyer, string $rawEmail, int $streams, int $days): void
+    {
+        $email = mb_strtolower(trim($rawEmail));
+        $buyerEmail = mb_strtolower(trim((string) ($buyer->email ?? '')));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $email === $buyerEmail) {
+            return;
+        }
+
         $db = Database::getInstance();
         $tenantId = (int) ($buyer->tenant_id ?? 1);
-        $passwords = new PasswordService();
-        $hash = $passwords->hash(PortalDefaultPasswordService::DEFAULT_PASSWORD);
-        $expires = $buyer->expires_at ?? null;
-        $buyerEmail = mb_strtolower(trim((string) ($buyer->email ?? '')));
-
-        foreach ($emails as $raw) {
-            $email = mb_strtolower(trim((string) $raw));
-            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $email === $buyerEmail) {
-                continue;
+        $exists = $db->fetchOne(
+            'SELECT id FROM media_users WHERE tenant_id = ? AND LOWER(TRIM(email)) = ? AND deleted_at IS NULL LIMIT 1',
+            [$tenantId, $email]
+        );
+        if ($exists) {
+            $other = MediaUser::find((int) $exists['id']);
+            if ($other === null) {
+                return;
+            }
+            if ($days > 0) {
+                (new MediaUserManagementService())->addDays($other, $days);
+            }
+            $current = (int) ($other->max_streams ?? PortalShopService::INCLUDED_STREAMS);
+            if ($streams > $current) {
+                $other->max_streams = $streams;
+                $other->save();
             }
 
-            $exists = $db->fetchOne(
-                'SELECT id FROM media_users WHERE tenant_id = ? AND LOWER(TRIM(email)) = ? AND deleted_at IS NULL LIMIT 1',
-                [$tenantId, $email]
-            );
-            if ($exists) {
-                $other = MediaUser::find((int) $exists['id']);
-                if ($other !== null && $days > 0) {
-                    (new MediaUserManagementService())->addDays($other, $days);
-                }
-                continue;
-            }
+            return;
+        }
 
-            $username = strtolower((string) preg_replace('/[^a-z0-9._-]/', '', $local));
-            if (strlen($username) < 3) {
-                $username = 'user' . bin2hex(random_bytes(2));
-            }
-            $dup = $db->fetchOne(
-                'SELECT id FROM media_users WHERE tenant_id = ? AND username = ? AND deleted_at IS NULL LIMIT 1',
-                [$tenantId, $username]
-            );
-            if ($dup) {
-                $username = substr($username, 0, 16) . '_' . bin2hex(random_bytes(2));
-            }
+        $local = explode('@', $email)[0] ?? '';
+        $username = strtolower((string) preg_replace('/[^a-z0-9._-]/', '', $local));
+        if (strlen($username) < 3) {
+            $username = 'user' . bin2hex(random_bytes(2));
+        }
+        $dup = $db->fetchOne(
+            'SELECT id FROM media_users WHERE tenant_id = ? AND username = ? AND deleted_at IS NULL LIMIT 1',
+            [$tenantId, $username]
+        );
+        if ($dup) {
+            $username = substr($username, 0, 16) . '_' . bin2hex(random_bytes(2));
+        }
 
-            try {
-                $db->insert('media_users', [
-                    'tenant_id' => $tenantId,
-                    'uuid' => Uuid::uuid4()->toString(),
-                    'server_id' => $buyer->server_id,
-                    'username' => $username,
-                    'email' => $email,
-                    'password' => $hash,
-                    'display_name' => $username,
-                    'status' => 'pending',
-                    'max_streams' => PortalShopService::INCLUDED_STREAMS,
-                    'max_devices' => 5,
-                    'expires_at' => $expires,
-                    'notes' => 'Contratado desde el portal por ' . ($buyer->email ?: $buyer->username),
-                ]);
-            } catch (\Throwable $e) {
-                Logger::warning('No se pudo crear usuario extra del portal', [
-                    'email' => $email,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+        try {
+            $db->insert('media_users', [
+                'tenant_id' => $tenantId,
+                'uuid' => Uuid::uuid4()->toString(),
+                'server_id' => $buyer->server_id,
+                'username' => $username,
+                'email' => $email,
+                'password' => (new PasswordService())->hash(PortalDefaultPasswordService::DEFAULT_PASSWORD),
+                'display_name' => $username,
+                'status' => 'pending',
+                'max_streams' => $streams,
+                'max_devices' => 5,
+                'expires_at' => $buyer->expires_at ?? null,
+                'notes' => 'Contratado desde el portal por ' . ($buyer->email ?: $buyer->username),
+            ]);
+        } catch (\Throwable $e) {
+            Logger::warning('No se pudo crear usuario extra del portal', [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

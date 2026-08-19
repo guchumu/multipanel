@@ -76,15 +76,15 @@ class PortalPaymentController extends Controller
         $user = $this->auth->user();
         $tenantId = (int) ($user->tenant_id ?? 1);
         $months = (int) $request->input('months', 0);
-        $usersCount = (int) $request->input('users', 1);
-        $extraStreams = (int) $request->input('extra_streams', 0);
         $emailsRaw = $request->input('emails', []);
+        $streamsRaw = $request->input('streams', []);
         $emails = is_array($emailsRaw) ? $emailsRaw : [];
+        $streams = is_array($streamsRaw) ? $streamsRaw : [];
 
         $shop = new \App\Services\PortalShopService();
-        $quote = $shop->quote($tenantId, $months, $usersCount, $extraStreams, $emails);
+        $quote = $shop->quote($tenantId, $months, $emails, $streams);
         if (empty($quote['ok'])) {
-            Session::getInstance()->flash('error', $quote['error'] ?? 'Revisa el simulador e inténtalo de nuevo.');
+            Session::getInstance()->flash('error', $quote['error'] ?? 'Revisa tu compra e inténtalo de nuevo.');
             return $this->redirect('/portal/subscription');
         }
 
@@ -106,6 +106,15 @@ class PortalPaymentController extends Controller
                 'users' => (int) $quote['users'],
                 'extra_streams' => (int) $quote['extra_streams'],
                 'extra_emails' => $extraEmails,
+                'account_streams' => $quote['streams'],
+                'shop_accounts' => array_map(
+                    static fn (string $email, int $i): array => [
+                        'email' => $email,
+                        'streams' => (int) ($quote['streams'][$i] ?? \App\Services\PortalShopService::INCLUDED_STREAMS),
+                    ],
+                    $quote['emails'],
+                    array_keys($quote['emails'])
+                ),
             ]
         );
 

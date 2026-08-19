@@ -12,6 +12,7 @@ use App\Services\Payments\StripeGateway;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesDatabase;
 use App\Services\PortalMessagingLinkService;
+use App\Services\PortalShopService;
 use App\Services\TelegramConfig;
 use App\Services\TelegramSandboxSender;
 use App\Services\TwoFactorService;
@@ -66,6 +67,8 @@ class SettingsController extends Controller
             'user' => $this->auth->user(),
             'paymentConcept' => $this->billingSettings->getPaymentConcept($tenantId),
             'renewalPresets' => $this->billingSettings->getRenewalPresets($tenantId),
+            'shopExtraAccountPrice' => $this->billingSettings->getExtraAccountPrice($tenantId),
+            'shopExtraStreamMonth' => $this->billingSettings->getExtraStreamMonthlyPrice($tenantId),
             'stripeMode' => $stripeMode,
             'stripeHasSecretKey' => $stripe['active_configured'],
             'stripeSecretKeyMasked' => (string) $activeStripe['secret_masked'],
@@ -316,6 +319,12 @@ class SettingsController extends Controller
         }
 
         $this->billingSettings->saveRenewalPresets($tenantId, $presets);
+
+        $this->billingSettings->saveShopExtraPrices(
+            $tenantId,
+            (float) $request->input('shop_extra_account_price', PortalShopService::DEFAULT_EXTRA_ACCOUNT),
+            (float) $request->input('shop_extra_stream_month', PortalShopService::DEFAULT_EXTRA_STREAM_MONTH)
+        );
 
         $stripeErrors = $this->billingSettings->saveStripeConfig($tenantId, [
             'mode' => (string) $request->input('stripe_mode', 'test'),

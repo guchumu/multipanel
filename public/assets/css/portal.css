@@ -388,6 +388,7 @@
 .ez-kicker { font-size: 0.95rem; opacity: 0.9; margin-bottom: 0.2rem; }
 .ez-hello { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.35rem; }
 .ez-hint { font-size: 1.05rem; opacity: 0.92; margin-bottom: 0; }
+.ez-hint-share { font-size: 0.92rem; opacity: 0.82; margin-top: 0.45rem; }
 
 .ez-facts {
     display: grid;
@@ -481,6 +482,24 @@
 .ez-stepper-val strong { display: block; font-size: 2rem; line-height: 1; }
 .ez-stepper-val span { font-size: 0.8rem; color: #6c7a89; }
 .ez-mail-label { font-weight: 700; }
+.ez-accounts { display: flex; flex-direction: column; gap: 0.75rem; }
+.ez-account-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.55rem 0.7rem;
+    padding: 0.75rem;
+    border: 1px solid #dce7f3;
+    border-radius: 14px;
+    background: #f7fbff;
+}
+.ez-account-email { flex: 1 1 12rem; min-width: 10rem; }
+.ez-account-vis { flex: 1 1 12rem; }
+.ez-account-sep { color: #8aa0b5; font-weight: 700; padding-bottom: 0.45rem; }
+.ez-mini-step { display: flex; align-items: center; gap: 0.55rem; }
+.ez-pm-sm { width: 2.4rem; height: 2.4rem; font-size: 1.25rem; }
+.ez-mini-step strong { font-size: 1.45rem; min-width: 1.5rem; text-align: center; }
+.ez-vis-hint { display: block; font-size: 0.78rem; color: #6c7a89; margin-top: 0.25rem; }
 .ez-ticket { border: 3px dashed rgba(255, 213, 106, 0.9) !important; }
 .ez-ticket-list { padding-left: 1.1rem; margin-bottom: 0.75rem; }
 .ez-ticket-list li { margin-bottom: 0.3rem; }

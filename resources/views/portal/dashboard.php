@@ -26,6 +26,7 @@ ob_start();
     <p class="ez-kicker">Tu cine en casa <?= $heroEmoji ?></p>
     <h1 class="ez-hello">Hola, <?= e($portalUser->display_name ?: ($portalUser->username ?? 'amigo')) ?></h1>
     <p class="ez-hint"><?= e($accountStatus['hint'] ?? 'Todo listo para ver.') ?></p>
+    <p class="ez-hint ez-hint-share">Cada cuenta individual tiene su historial. Si la compartes, todos veis lo mismo.</p>
 </section>
 
 <div class="ez-facts">
@@ -37,9 +38,9 @@ ob_start();
     </div>
     <div class="ez-fact">
         <span class="ez-fact-ico" aria-hidden="true">📺</span>
-        <span class="ez-fact-label">Pantallas en casa</span>
+        <span class="ez-fact-label">Visionados a la vez</span>
         <strong class="ez-fact-value"><?= (int) $maxStreams ?></strong>
-        <span class="ez-fact-sub">2 van incluidas · misma wifi</span>
+        <span class="ez-fact-sub">2 van incluidos · misma cuenta, mismo hogar</span>
     </div>
     <div class="ez-fact">
         <span class="ez-fact-ico" aria-hidden="true">🏠</span>

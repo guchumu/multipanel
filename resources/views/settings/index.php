@@ -691,7 +691,7 @@
                     </div>
 
                     <label class="form-label">Duraciones rápidas (uso interno)</label>
-                    <p class="form-text mt-0">Define las combinaciones de duración + precio que usarás para generar enlaces de pago rápidos desde la ficha de cada cliente. El precio y los días solo se usan internamente para saber cuánto sumar y cuánto se cobró.</p>
+                    <p class="form-text mt-0">Estas filas son los precios que ve el cliente en el portal (1 mes, 3 meses…). El precio y los días también se usan al generar cobros desde la ficha.</p>
                     <table class="table table-sm align-middle" id="presetsTable">
                         <thead class="table-light">
                             <tr>
@@ -713,6 +713,21 @@
                         </tbody>
                     </table>
                     <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="btnAddPreset"><i class="bi bi-plus-lg me-1"></i>Añadir duración</button>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Cuenta individual extra (EUR)</label>
+                            <input type="number" min="0.01" step="0.01" name="shop_extra_account_price" class="form-control"
+                                   value="<?= e(number_format((float) ($shopExtraAccountPrice ?? 50), 2, '.', '')) ?>">
+                            <div class="form-text">Se suma por cada cuenta extra, en el mismo periodo que elija el cliente.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Visionado extra (€ / mes)</label>
+                            <input type="number" min="0.01" step="0.01" name="shop_extra_stream_month" class="form-control"
+                                   value="<?= e(number_format((float) ($shopExtraStreamMonth ?? 4), 2, '.', '')) ?>">
+                            <div class="form-text">Cada cuenta incluye 2 visionados. El extra se multiplica por los meses del pack.</div>
+                        </div>
+                    </div>
                     <br>
                     <button class="btn btn-primary">Guardar facturación</button>
                 </form>

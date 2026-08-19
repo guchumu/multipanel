@@ -9,12 +9,13 @@ $dateFmt = static function (?string $d): string {
 $shopOptions = is_array($shopOptions ?? null) ? $shopOptions : [];
 $canPay = !empty($stripeConfigured) && $shopOptions !== [];
 $buyerEmail = trim((string) ($portalUser->email ?? ''));
-$discountPct = (int) ($shopDiscount ?? 40);
 $included = (int) ($includedStreams ?? 2);
+$extraAccount = (float) ($extraAccountPrice ?? 50);
+$extraStreamMonth = (float) ($extraStreamMonthly ?? 4);
 ob_start();
 ?>
-<h1 class="ez-page-title">Elige cuánto tiempo ⏳</h1>
-<p class="ez-page-lead">No hay planes raros. Solo meses. Cada persona trae <?= (int) $included ?> pantallas en la misma casa.</p>
+<h1 class="ez-page-title">Elige cuánto tiempo</h1>
+<p class="ez-page-lead">Cada <strong>cuenta individual</strong> incluye <?= (int) $included ?> visionados a la vez en el mismo hogar. Si compartes la cuenta, compartes lo que cada uno ve.</p>
 
 <?php if (!empty($expiry['date'])): ?>
 <p class="ez-now-until">Ahora mismo puedes ver hasta el <strong><?= $dateFmt($expiry['date']) ?></strong>.</p>
@@ -22,17 +23,17 @@ ob_start();
 
 <?php if ($canPay): ?>
 <form method="POST" action="/portal/payment/renew" id="ez-shop" class="ez-shop"
-      data-discount="<?= (int) $discountPct ?>"
       data-included="<?= (int) $included ?>"
+      data-extra-account="<?= e((string) $extraAccount) ?>"
+      data-extra-stream-month="<?= e((string) $extraStreamMonth) ?>"
       data-buyer-email="<?= e($buyerEmail) ?>">
     <?= csrf_field() ?>
     <input type="hidden" name="months" id="ez-months" value="<?= (int) ($shopOptions[0]['months'] ?? 1) ?>">
-    <input type="hidden" name="users" id="ez-users" value="1">
-    <input type="hidden" name="extra_streams" id="ez-extra-streams" value="0">
 
     <section class="card portal-card ez-step">
         <div class="card-body">
             <h2 class="ez-step-title"><span>1</span> ¿Cuántos meses?</h2>
+            <p class="ez-help">Precios del panel. Elige una duración.</p>
             <div class="ez-chips" role="group" aria-label="Meses">
                 <?php foreach ($shopOptions as $i => $opt): ?>
                 <button type="button" class="ez-chip<?= $i === 0 ? ' is-on' : '' ?>"
@@ -49,32 +50,21 @@ ob_start();
 
     <section class="card portal-card ez-step">
         <div class="card-body">
-            <h2 class="ez-step-title"><span>2</span> ¿Cuántas personas?</h2>
-            <p class="ez-help">La primera paga el precio entero. Las demás tienen un <?= (int) $discountPct ?>% de descuento.</p>
-            <div class="ez-stepper">
-                <button type="button" class="ez-pm" id="ez-users-minus" aria-label="Menos personas">−</button>
-                <div class="ez-stepper-val"><strong id="ez-users-n">1</strong><span>persona(s)</span></div>
-                <button type="button" class="ez-pm" id="ez-users-plus" aria-label="Más personas">+</button>
-            </div>
-            <div id="ez-emails" class="ez-emails mt-3"></div>
-        </div>
-    </section>
-
-    <section class="card portal-card ez-step">
-        <div class="card-body">
-            <h2 class="ez-step-title"><span>3</span> ¿Más pantallas?</h2>
-            <p class="ez-help">Cada persona ya trae <?= (int) $included ?> TVs en casa. Si quieres más, cuestan un <?= (int) $discountPct ?>% menos.</p>
-            <div class="ez-stepper">
-                <button type="button" class="ez-pm" id="ez-streams-minus" aria-label="Menos pantallas extra">−</button>
-                <div class="ez-stepper-val"><strong id="ez-streams-n">0</strong><span>pantalla(s) extra</span></div>
-                <button type="button" class="ez-pm" id="ez-streams-plus" aria-label="Más pantallas extra">+</button>
-            </div>
+            <h2 class="ez-step-title"><span>2</span> Cuentas individuales</h2>
+            <p class="ez-help">
+                La primera cuenta paga los meses. Cada cuenta extra: <?= number_format($extraAccount, 2, ',', '.') ?> €.
+                Cada visionado extra: <?= number_format($extraStreamMonth, 2, ',', '.') ?> €/mes (en esa cuenta, viendo lo mismo).
+            </p>
+            <div id="ez-accounts" class="ez-accounts"></div>
+            <button type="button" class="btn btn-outline-primary mt-2" id="ez-add-account">
+                Añadir cuenta individual (+ <?= number_format($extraAccount, 2, ',', '.') ?> €)
+            </button>
         </div>
     </section>
 
     <section class="card portal-card ez-ticket">
         <div class="card-body">
-            <h2 class="ez-step-title">Tu ticket 🧾</h2>
+            <h2 class="ez-step-title">Tu ticket</h2>
             <ul class="ez-ticket-list" id="ez-ticket-list"></ul>
             <p class="ez-total">Total a pagar: <strong id="ez-total">0 €</strong></p>
             <button type="submit" class="ez-btn-big w-100" id="ez-pay">Pagar y listo</button>
