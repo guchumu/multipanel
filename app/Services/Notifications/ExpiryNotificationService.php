@@ -6,6 +6,7 @@ namespace App\Services\Notifications;
 
 use App\Models\MediaUser;
 use App\Services\AlertSettingsService;
+use App\Services\MediaUserManagementService;
 use App\Services\NotificationTemplateService;
 use Core\Database;
 use Core\Logger;
@@ -23,6 +24,8 @@ final class ExpiryNotificationService
         private TelegramChannel $telegram = new TelegramChannel(),
         private NotificationTemplateService $templates = new NotificationTemplateService(),
         private AlertSettingsService $alertSettings = new AlertSettingsService(),
+        private MediaUserManagementService $management = new MediaUserManagementService(),
+        private ClientWhatsAppChannel $clientWhatsApp = new ClientWhatsAppChannel(),
     ) {
     }
 
@@ -91,10 +94,11 @@ final class ExpiryNotificationService
                 continue;
             }
 
-            $chatId = trim((string) ($user->telegram_chat_id ?? ''));
-            if ($chatId === '') {
+            $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
+            $canWhatsApp = $this->clientWhatsApp->canSend($user, $tenantId);
+            if ($chatId === '' && !$canWhatsApp) {
                 $stats['skipped']++;
-                Logger::debug('Expiry notice skipped: no Telegram chat ID', [
+                Logger::debug('Expiry notice skipped: no Telegram ni WhatsApp', [
                     'media_user_id' => $user->id,
                     'username' => $user->username,
                     'milestone' => $milestoneKey,
@@ -109,14 +113,8 @@ final class ExpiryNotificationService
             }
 
             $body = $this->renderTemplate($template, $user, (string) ($row['server_name'] ?? ''), $daysLeft);
-            $sent = $this->telegram->send($title, $body, [
-                'chat_id' => $chatId,
-                'media_user_id' => (int) $user->id,
-                'tenant_id' => (int) ($user->tenant_id ?? 1),
-                'message_type' => 'expiry_' . $milestoneKey,
-                'log_message' => true,
-                'user_message' => true,
-            ]);
+            $result = $this->management->sendClientNotice($user, $title, $body, 'expiry_' . $milestoneKey);
+            $sent = !empty($result['sent']);
 
             if ($sent) {
                 $this->recordSent((int) $user->id, $milestoneKey);

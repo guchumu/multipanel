@@ -17,6 +17,13 @@ return [
     'whatsapp_apikey' => env('WHATSAPP_CALLMEBOT_APIKEY', env('WHATSAPP_APIKEY', '')),
     'whatsapp_api_url' => env('WHATSAPP_CALLMEBOT_URL', 'https://api.callmebot.com/whatsapp.php'),
 
+    // Avisos a clientes (portal). Distinto del CallMeBot del admin.
+    'whatsapp_cloud_token' => env('WHATSAPP_CLOUD_TOKEN', ''),
+    'whatsapp_cloud_phone_id' => env('WHATSAPP_CLOUD_PHONE_ID', ''),
+    'whatsapp_cloud_display_phone' => env('WHATSAPP_CLOUD_DISPLAY_PHONE', ''),
+    'whatsapp_cloud_verify_token' => env('WHATSAPP_CLOUD_VERIFY_TOKEN', ''),
+    'whatsapp_client_alerts' => true,
+
     // Preferencias por evento (DB settings.group=alerts tiene prioridad).
     // WhatsApp: digest + server-down + alta ON; renovación OFF (menos spam CallMeBot).
     // Si la clave ya está en DB como 0, se respeta; solo aplica si falta la clave.

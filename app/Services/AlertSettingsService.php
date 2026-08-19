@@ -108,6 +108,65 @@ final class AlertSettingsService
             && $this->whatsappApiKey($tenantId) !== '';
     }
 
+    public function whatsappCloudToken(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $token = trim((string) ($alerts['whatsapp_cloud_token'] ?? ''));
+        if ($token === '') {
+            $token = trim((string) config('alerts.whatsapp_cloud_token', env('WHATSAPP_CLOUD_TOKEN', '')));
+        }
+
+        return $token;
+    }
+
+    public function whatsappCloudPhoneId(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $id = trim((string) ($alerts['whatsapp_cloud_phone_id'] ?? ''));
+        if ($id === '') {
+            $id = trim((string) config('alerts.whatsapp_cloud_phone_id', env('WHATSAPP_CLOUD_PHONE_ID', '')));
+        }
+
+        return $id;
+    }
+
+    public function whatsappCloudDisplayPhone(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $phone = trim((string) ($alerts['whatsapp_cloud_display_phone'] ?? ''));
+        if ($phone === '') {
+            $phone = trim((string) config('alerts.whatsapp_cloud_display_phone', env('WHATSAPP_CLOUD_DISPLAY_PHONE', '')));
+        }
+
+        return preg_replace('/\D+/', '', $phone) ?? '';
+    }
+
+    public function whatsappCloudVerifyToken(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $token = trim((string) ($alerts['whatsapp_cloud_verify_token'] ?? ''));
+        if ($token === '') {
+            $token = trim((string) config('alerts.whatsapp_cloud_verify_token', env('WHATSAPP_CLOUD_VERIFY_TOKEN', '')));
+        }
+
+        return $token;
+    }
+
+    public function whatsappClientAlertsEnabled(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('whatsapp_client_alerts', true, $tenantId);
+    }
+
+    public function whatsappCloudConfigured(?int $tenantId = null): bool
+    {
+        return $this->whatsappCloudToken($tenantId) !== ''
+            && $this->whatsappCloudPhoneId($tenantId) !== '';
+    }
+
     /** Bot token + chat admin (no sandbox): necesario para alertas de servidor caído. */
     public function telegramConfigured(?int $tenantId = null): bool
     {

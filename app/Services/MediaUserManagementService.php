@@ -10,6 +10,7 @@ use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\PlexService;
+use App\Services\Notifications\ClientWhatsAppChannel;
 use App\Services\Notifications\NotificationService;
 use App\Services\Notifications\TelegramChannel;
 
@@ -23,6 +24,7 @@ final class MediaUserManagementService
         private ServerRepository $servers = new ServerRepository(),
         private AuditService $audit = new AuditService(),
         private TelegramChannel $telegram = new TelegramChannel(),
+        private ClientWhatsAppChannel $clientWhatsApp = new ClientWhatsAppChannel(),
         private NotificationService $adminAlerts = new NotificationService(),
     ) {
     }
@@ -251,6 +253,58 @@ final class MediaUserManagementService
         ];
     }
 
+    /**
+     * Aviso al cliente: Telegram si está vinculado, WhatsApp si hay número + canal cliente.
+     *
+     * @return array{success: bool, message: string, sent: bool, telegram: bool, whatsapp: bool}
+     */
+    public function sendClientNotice(MediaUser $user, string $title, string $body, string $messageType = 'manual'): array
+    {
+        $telegram = false;
+        $whatsapp = false;
+        $errors = [];
+
+        $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
+        if ($chatId !== '') {
+            $telegram = $this->telegram->send($title, $body, [
+                'chat_id' => $chatId,
+                'media_user_id' => (int) $user->id,
+                'tenant_id' => (int) ($user->tenant_id ?? 1),
+                'message_type' => $messageType,
+                'log_message' => true,
+                'user_message' => true,
+            ]);
+            if (!$telegram) {
+                $errors[] = 'Telegram';
+            }
+        }
+
+        if ($this->clientWhatsApp->canSend($user)) {
+            $wa = $this->clientWhatsApp->send($user, $title, $body, $messageType);
+            $whatsapp = !empty($wa['sent']);
+            if (!$whatsapp) {
+                $errors[] = 'WhatsApp';
+            }
+        }
+
+        $sent = $telegram || $whatsapp;
+        $message = match (true) {
+            $sent && $telegram && $whatsapp => 'Aviso enviado por Telegram y WhatsApp.',
+            $sent && $telegram => 'Aviso enviado por Telegram.',
+            $sent && $whatsapp => 'Aviso enviado por WhatsApp.',
+            $chatId === '' && !$this->clientWhatsApp->canSend($user) => 'No hay Telegram ni WhatsApp para avisos.',
+            default => 'No se pudo enviar el aviso' . ($errors !== [] ? ' (' . implode(', ', $errors) . ')' : '.') ,
+        };
+
+        return [
+            'success' => $sent,
+            'message' => $message,
+            'sent' => $sent,
+            'telegram' => $telegram,
+            'whatsapp' => $whatsapp,
+        ];
+    }
+
     /** @return array{success: bool, message: string, removed: bool} */
     public function removeFromServer(MediaUser $user): array
     {
@@ -322,14 +376,14 @@ final class MediaUserManagementService
         ]);
 
         $chatId = trim((string) ($user->telegram_chat_id ?? ''));
-        if ($chatId !== '' && ($result['expires_at'] ?? '') !== '') {
+        if (($result['expires_at'] ?? '') !== '') {
             $body = sprintf(
                 "✅ Hemos recibido tu pago de %s %s.\nTu suscripción ha sido renovada hasta el %s.\n¡Gracias por confiar en nosotros!",
                 number_format($amount, 2, ',', '.'),
                 strtoupper($currency),
                 substr((string) $result['expires_at'], 0, 10)
             );
-            $this->sendTelegramMessage($user, 'Pago recibido ✅', $body);
+            $this->sendClientNotice($user, 'Pago recibido ✅', $body, 'payment');
         }
 
         return $result;

@@ -140,10 +140,12 @@ ob_start();
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-telegram me-1"></i>Telegram Chat ID</label>
                         <input type="text" id="telegramChatId" class="form-control form-control-sm" value="<?= e((string) ($mediaUser->telegram_chat_id ?? '')) ?>" placeholder="Ej. 2023182976">
+                        <div class="form-text">El cliente también puede vincularlo solo en el portal → Mi ficha (código de un uso).</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small"><i class="bi bi-whatsapp me-1"></i>WhatsApp</label>
                         <input type="text" id="whatsappPhone" class="form-control form-control-sm" value="<?= e($mediaUser->metaGet('whatsapp_phone') ?? '') ?>" placeholder="Ej. 34612345678 (con código de país, sin +)">
+                        <div class="form-text">Avisos automáticos a clientes: WhatsApp Cloud API en Configuración. CallMeBot de ajustes es solo admin.</div>
                     </div>
                 </div>
                 <div class="mb-3">

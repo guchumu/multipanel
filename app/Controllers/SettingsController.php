@@ -11,6 +11,7 @@ use App\Services\CronService;
 use App\Services\Payments\StripeGateway;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesDatabase;
+use App\Services\PortalMessagingLinkService;
 use App\Services\TelegramConfig;
 use App\Services\TelegramSandboxSender;
 use App\Services\TwoFactorService;
@@ -51,6 +52,13 @@ class SettingsController extends Controller
             || str_contains($appUrl, '127.0.0.1');
 
         $peticionesUi = PeticionesConfig::forSettingsUi($tenantId);
+        $tgCfg = TelegramConfig::forTenant($tenantId);
+        $webhookBase = rtrim($appUrl, '/');
+        if ($appUrlLooksLocal && isset($_SERVER['HTTP_HOST'])) {
+            $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+            $webhookBase = ($https ? 'https://' : 'http://') . (string) $_SERVER['HTTP_HOST'];
+        }
 
         return $this->view('settings.index', [
             'title' => 'Configuración',
@@ -73,6 +81,10 @@ class SettingsController extends Controller
             'cronTokenConfigured' => $cronToken !== '',
             'cronTokenMasked' => $cronToken !== '' ? $this->maskKey($cronToken) : '',
             'peticiones' => $peticionesUi,
+            'telegramBotUsername' => (string) ($tgCfg['bot_username'] ?? ''),
+            'telegramWebhookUrl' => ($webhookBase !== '' ? $webhookBase : '') . '/webhooks/telegram/' . $tenantId,
+            'telegramWebhookReady' => trim((string) ($tgCfg['webhook_secret'] ?? '')) !== '',
+            'whatsappCloudWebhookUrl' => ($webhookBase !== '' ? $webhookBase : '') . '/webhooks/whatsapp/' . $tenantId,
         ]);
     }
 
@@ -153,6 +165,18 @@ class SettingsController extends Controller
         } catch (GuzzleException $e) {
             Session::getInstance()->flash('error', 'Telegram: ' . TelegramSandboxSender::formatApiError($e));
         }
+
+        return $this->redirect('/settings#telegram');
+    }
+
+    public function activateTelegramWebhook(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $result = (new PortalMessagingLinkService())->ensureTelegramWebhook($tenantId);
+        Session::getInstance()->flash(
+            !empty($result['success']) ? 'success' : 'error',
+            (string) ($result['message'] ?? 'No se pudo activar.')
+        );
 
         return $this->redirect('/settings#telegram');
     }
@@ -336,6 +360,7 @@ class SettingsController extends Controller
             'smtp' => ['mail_host', 'mail_port', 'mail_username', 'mail_password', 'mail_from'],
             'telegram' => [
                 'telegram_bot_token',
+                'telegram_bot_username',
                 'telegram_chat_id',
                 'telegram_sandbox_enabled',
                 'telegram_sandbox_chat_id',
@@ -360,6 +385,11 @@ class SettingsController extends Controller
                 'whatsapp_notify_server_down',
                 'whatsapp_notify_digest',
                 'whatsapp_notify_critical',
+                'whatsapp_cloud_token',
+                'whatsapp_cloud_phone_id',
+                'whatsapp_cloud_display_phone',
+                'whatsapp_cloud_verify_token',
+                'whatsapp_client_alerts',
                 'telegram_notify_alta',
                 'telegram_notify_renew',
                 'telegram_notify_server_down',
@@ -418,6 +448,7 @@ class SettingsController extends Controller
                 'telegram_notify_critical',
                 'email_notify_server_down',
                 'email_notify_critical',
+                'whatsapp_client_alerts',
             ];
             foreach ($checkboxKeys as $checkboxKey) {
                 $this->saveSetting(
@@ -445,6 +476,7 @@ class SettingsController extends Controller
             'telegram_notify_critical',
             'email_notify_server_down',
             'email_notify_critical',
+            'whatsapp_client_alerts',
         ];
 
         foreach ($fields as $field) {
@@ -455,8 +487,9 @@ class SettingsController extends Controller
             if (in_array($field, $skipCheckboxes, true)) {
                 continue;
             }
-            // cron_token / whatsapp_apikey: vacío = no cambiar
-            if (in_array($field, ['cron_token', 'whatsapp_apikey'], true) && ($request->input($field) === null || $request->input($field) === '')) {
+            // cron_token / secrets: vacío = no cambiar
+            if (in_array($field, ['cron_token', 'whatsapp_apikey', 'whatsapp_cloud_token', 'whatsapp_cloud_verify_token'], true)
+                && ($request->input($field) === null || $request->input($field) === '')) {
                 continue;
             }
             $value = $request->input($field);

@@ -28,6 +28,7 @@ use App\Controllers\DocsController;
 use App\Controllers\OAuthController;
 use App\Controllers\CustomerController;
 use App\Controllers\WebhookController;
+use App\Controllers\MessagingWebhookController;
 use App\Controllers\RegistroController;
 use App\Controllers\PrivacyController;
 use App\Controllers\LocaleController;
@@ -68,6 +69,12 @@ $router->get('/p/{code}', [PaymentLinkController::class, 'show'], 'payment_link.
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
+$router->post('/webhooks/telegram', [MessagingWebhookController::class, 'telegram']);
+$router->post('/webhooks/telegram/{tenantId}', [MessagingWebhookController::class, 'telegram']);
+$router->get('/webhooks/whatsapp', [MessagingWebhookController::class, 'whatsapp']);
+$router->post('/webhooks/whatsapp', [MessagingWebhookController::class, 'whatsapp']);
+$router->get('/webhooks/whatsapp/{tenantId}', [MessagingWebhookController::class, 'whatsapp']);
+$router->post('/webhooks/whatsapp/{tenantId}', [MessagingWebhookController::class, 'whatsapp']);
 $router->get('/registro', [RegistroController::class, 'store'], 'registro.store');
 $router->post('/registro', [RegistroController::class, 'store'], 'registro.store.post');
 // Alias compatibles con SERVEROLD/guarda-registro.php
@@ -91,6 +98,9 @@ $router->group(['prefix' => '/portal', 'middleware' => [PortalAuthMiddleware::cl
     $router->get('/profile', [PortalController::class, 'profile'], 'portal.profile');
     $router->post('/profile', [PortalController::class, 'updateProfile'], 'portal.profile.update', [CsrfMiddleware::class]);
     $router->post('/profile/password', [PortalController::class, 'changePassword'], 'portal.profile.password', [CsrfMiddleware::class]);
+    $router->post('/profile/telegram', [PortalController::class, 'linkTelegram'], 'portal.profile.telegram', [CsrfMiddleware::class]);
+    $router->post('/profile/telegram/unlink', [PortalController::class, 'unlinkTelegram'], 'portal.profile.telegram.unlink', [CsrfMiddleware::class]);
+    $router->post('/profile/whatsapp', [PortalController::class, 'saveWhatsApp'], 'portal.profile.whatsapp', [CsrfMiddleware::class]);
     $router->get('/peticiones', [PortalController::class, 'peticiones'], 'portal.peticiones');
     $router->post('/peticiones', [PortalController::class, 'storePeticion'], 'portal.peticiones.store', [CsrfMiddleware::class]);
     $router->post('/payment/checkout', [PortalPaymentController::class, 'checkout'], 'portal.payment.checkout', [CsrfMiddleware::class]);
@@ -219,6 +229,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/settings', [SettingsController::class, 'index'], 'settings.index');
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
     $router->post('/settings/telegram/test', [SettingsController::class, 'testTelegram'], 'settings.telegram.test', [CsrfMiddleware::class]);
+    $router->post('/settings/telegram/webhook', [SettingsController::class, 'activateTelegramWebhook'], 'settings.telegram.webhook', [CsrfMiddleware::class]);
     $router->post('/settings/whatsapp/test', [SettingsController::class, 'testWhatsApp'], 'settings.whatsapp.test', [CsrfMiddleware::class]);
     $router->post('/settings/peticiones/test', [SettingsController::class, 'testPeticionesDb'], 'settings.peticiones.test', [CsrfMiddleware::class]);
     $router->post('/settings/stripe/test', [SettingsController::class, 'testStripe'], 'settings.stripe.test', [CsrfMiddleware::class]);

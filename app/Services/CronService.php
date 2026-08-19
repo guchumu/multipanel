@@ -45,7 +45,7 @@ final class CronService
             ],
             'expiry' => [
                 'title' => 'Avisos de caducidad',
-                'description' => 'Envía plantillas Telegram según días restantes (solo ~09:00 Europe/Madrid; fuera de hora no marca enviado). Puede desactivar caducados.',
+                'description' => 'Plantillas de caducidad a clientes por Telegram y/o WhatsApp si los tienen vinculados. Solo ~09:00 Europe/Madrid; fuera de hora no marca enviado. Puede desactivar caducados.',
                 'schedule' => 'Incluido en all; solo envía a las 09:00 Madrid',
             ],
             'digest' => [

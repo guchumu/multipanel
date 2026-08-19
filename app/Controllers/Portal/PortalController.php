@@ -11,6 +11,7 @@ use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesService;
 use App\Services\PortalAuthService;
 use App\Services\PortalDefaultPasswordService;
+use App\Services\PortalMessagingLinkService;
 use App\Services\StreamingActivityService;
 use Core\Controller;
 use Core\Database;
@@ -29,6 +30,7 @@ class PortalController extends Controller
         private BillingSettingsService $billingSettings = new BillingSettingsService(),
         private PasswordService $passwords = new PasswordService(),
         private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
+        private PortalMessagingLinkService $messaging = new PortalMessagingLinkService(),
     ) {
     }
 
@@ -177,6 +179,8 @@ class PortalController extends Controller
             'stripeConfigured' => $stripeConfigured,
             'peticiones' => $peticiones,
             'navActive' => 'home',
+            'needsMessagingLink' => normalize_telegram_chat_id($user->telegram_chat_id ?? null) === ''
+                && $this->messaging->whatsappStatus($user)['phone'] === '',
         ]);
     }
 
@@ -228,10 +232,26 @@ class PortalController extends Controller
 
     public function profile(Request $request): Response
     {
+        $user = $this->auth->user();
+        $telegram = $this->messaging->telegramStatus($user);
+        $whatsapp = $this->messaging->whatsappStatus($user);
+        $pendingLink = Session::getInstance()->get('_portal_tg_link');
+        if (is_array($pendingLink)) {
+            Session::getInstance()->remove('_portal_tg_link');
+            $telegram = array_merge($telegram, $pendingLink);
+        }
+        $pendingWa = Session::getInstance()->get('_portal_wa_link');
+        if (is_string($pendingWa) && $pendingWa !== '') {
+            Session::getInstance()->remove('_portal_wa_link');
+            $whatsapp['wa_link'] = $pendingWa;
+        }
+
         return $this->view('portal.profile', [
             'title' => 'Mi perfil',
-            'portalUser' => $this->auth->user(),
+            'portalUser' => $user,
             'navActive' => 'profile',
+            'telegramLink' => $telegram,
+            'whatsappLink' => $whatsapp,
         ]);
     }
 
@@ -291,6 +311,51 @@ class PortalController extends Controller
         $user->save();
 
         Session::getInstance()->flash('success', 'Contraseña actualizada. Úsala en el próximo acceso.');
+        return $this->redirect('/portal/profile');
+    }
+
+    public function linkTelegram(Request $request): Response
+    {
+        $user = $this->auth->user();
+        $result = $this->messaging->createTelegramLink($user);
+        if (empty($result['success'])) {
+            Session::getInstance()->flash('error', (string) $result['message']);
+            return $this->redirect('/portal/profile');
+        }
+
+        Session::getInstance()->set('_portal_tg_link', [
+            'deep_link' => $result['deep_link'],
+            'code' => $result['code'],
+            'bot_username' => $result['bot_username'],
+            'ready' => true,
+        ]);
+        Session::getInstance()->flash('success', 'Pulsa el botón azul de Telegram. Cuando el bot diga ¡Listo!, ya está.');
+
+        return $this->redirect('/portal/profile');
+    }
+
+    public function unlinkTelegram(Request $request): Response
+    {
+        $result = $this->messaging->unlinkTelegram($this->auth->user());
+        Session::getInstance()->flash('success', (string) $result['message']);
+
+        return $this->redirect('/portal/profile');
+    }
+
+    public function saveWhatsApp(Request $request): Response
+    {
+        $phone = trim((string) $request->input('whatsapp_phone', ''));
+        $optIn = (bool) $request->input('whatsapp_opt_in');
+
+        $result = $this->messaging->saveWhatsApp($this->auth->user(), $phone, $optIn);
+        Session::getInstance()->flash(
+            !empty($result['success']) ? 'success' : 'error',
+            (string) $result['message']
+        );
+        if (!empty($result['wa_link'])) {
+            Session::getInstance()->set('_portal_wa_link', (string) $result['wa_link']);
+        }
+
         return $this->redirect('/portal/profile');
     }
 

@@ -64,6 +64,16 @@ ob_start();
     <a href="/portal/profile" class="ez-quick-item"><span>👤</span>Mi ficha</a>
 </nav>
 
+<?php if (!empty($needsMessagingLink)): ?>
+<div class="card portal-card mt-3">
+    <div class="card-body">
+        <p class="mb-2 fw-bold">¿Quieres avisos en el móvil?</p>
+        <p class="small text-muted mb-3">Vincula Telegram (un toque) o guarda tu WhatsApp en Mi ficha. Así te avisamos cuando se acaba el tiempo.</p>
+        <a href="/portal/profile" class="btn btn-primary">Activar avisos 📣</a>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($liveStreams)): ?>
 <div class="card portal-card mt-3">
     <div class="card-body">

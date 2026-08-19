@@ -85,6 +85,11 @@
                         <div class="form-text">También se puede definir en <code>.env</code> como <code>TELEGRAM_BOT_TOKEN</code>. Si hay valor aquí, tiene prioridad.</div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Usuario del bot (sin @)</label>
+                        <input name="telegram_bot_username" class="form-control" value="<?= e($settings['telegram_bot_username'] ?? ($telegramBotUsername ?? '')) ?>" placeholder="MiBotAvisos" autocomplete="off">
+                        <div class="form-text">Para el enlace del portal <code>t.me/usuario?start=…</code>. Si lo dejas vacío, se intenta leer con getMe al activar el webhook.</div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Chat ID del admin (alertas)</label>
                         <input name="telegram_chat_id" class="form-control" value="<?= e($settings['telegram_chat_id'] ?? '') ?>" placeholder="Ej. 123456789">
                         <div class="form-text">
@@ -128,6 +133,19 @@
                         <i class="bi bi-telegram me-1"></i>Enviar mensaje de prueba
                     </button>
                 </form>
+                <form method="POST" action="/settings/telegram/webhook" class="d-inline ms-2">
+                    <?= csrf_field() ?>
+                    <button type="submit" class="btn btn-outline-success">
+                        <i class="bi bi-link-45deg me-1"></i><?= !empty($telegramWebhookReady) ? 'Reactivar vinculación portal' : 'Activar vinculación del portal' ?>
+                    </button>
+                </form>
+                <p class="small text-muted mt-3 mb-0">
+                    Webhook (HTTPS): <code><?= e($telegramWebhookUrl ?? '') ?></code>
+                    <?php if (!empty($telegramWebhookReady)): ?>
+                    <span class="badge text-bg-success ms-1">activo</span>
+                    <?php endif; ?>
+                    <br>Los clientes vinculan Telegram en el portal → Mi ficha, sin copiar el Chat ID.
+                </p>
             </div>
         </div>
     </div>
@@ -276,6 +294,53 @@
                         </div>
                     </div>
 
+                    <div class="col-12"><hr class="my-1"></div>
+                    <div class="col-12">
+                        <h6 class="mb-1"><i class="bi bi-people me-1"></i>Avisos WhatsApp a clientes (portal)</h6>
+                        <p class="small text-muted mb-2">
+                            CallMeBot de arriba <strong>solo llega al admin</strong>. Para avisar a los clientes hace falta
+                            <a href="https://developers.facebook.com/docs/whatsapp/cloud-api" target="_blank" rel="noopener">WhatsApp Cloud API</a>
+                            (Meta / WhatsApp Business). El cliente guarda su número en el portal; si hay API, se envía el aviso.
+                            Telegram sigue siendo el canal sencillo (un toque, sin cuenta Business).
+                        </p>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="whatsapp_client_alerts" value="1" id="waClient"
+                                   <?= $alertOn('whatsapp_client_alerts', true) ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="waClient">Enviar avisos a clientes por WhatsApp (si hay Cloud API o apikey en la ficha)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Phone number ID (Meta)</label>
+                        <input name="whatsapp_cloud_phone_id" class="form-control" autocomplete="off"
+                               value="<?= e($settings['whatsapp_cloud_phone_id'] ?? '') ?>" placeholder="123456789012345">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Número público (wa.me, con prefijo)</label>
+                        <input name="whatsapp_cloud_display_phone" class="form-control" autocomplete="off"
+                               value="<?= e($settings['whatsapp_cloud_display_phone'] ?? '') ?>" placeholder="346xxxxxxxx">
+                        <div class="form-text">El del negocio, para que el cliente abra WhatsApp y escriba.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Token permanente (Cloud API)</label>
+                        <input type="password" name="whatsapp_cloud_token" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($settings['whatsapp_cloud_token']) ? '••••••••••' : 'EAAG…' ?>">
+                        <div class="form-text">Vacío = no cambiar. .env: <code>WHATSAPP_CLOUD_TOKEN</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Verify token (webhook Meta)</label>
+                        <input type="password" name="whatsapp_cloud_verify_token" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($settings['whatsapp_cloud_verify_token']) ? '••••••••••' : 'una frase secreta' ?>">
+                        <div class="form-text">La misma que pongas en Meta al configurar el webhook.</div>
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-light border small mb-0">
+                            Webhook clientes: <code><?= e($whatsappCloudWebhookUrl ?? '') ?></code>
+                            (GET verificación + POST mensajes). Meta exige HTTPS.
+                        </div>
+                    </div>
+
                     <div class="col-12 d-flex flex-wrap gap-2">
                         <button type="submit" class="btn btn-primary">Guardar WhatsApp / Alertas</button>
                         <button type="submit" class="btn btn-outline-success" formaction="/settings/whatsapp/test">
@@ -292,6 +357,7 @@
                     <li>El <strong>resumen diario</strong> corre con el cron <code>digest</code> (incluido en <code>all</code>), en la misma hora que caducidades (pestaña Cron).</li>
                     <li>Email de servidor caído: destinatario en pestaña Cron. Requiere SMTP.</li>
                     <li>Pruebas Telegram / sandbox: pestaña Telegram.</li>
+                    <li>WhatsApp a clientes ≠ CallMeBot admin. Cloud API es opcional; sin ella el portal igual guarda el número.</li>
                 </ul>
             </div>
         </div>

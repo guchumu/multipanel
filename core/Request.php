@@ -109,6 +109,11 @@ final class Request
         return is_array($decoded) ? $decoded : null;
     }
 
+    public function rawBody(): string
+    {
+        return $this->body;
+    }
+
     public function header(string $name, ?string $default = null): ?string
     {
         if (array_key_exists($name, $this->headers)) {

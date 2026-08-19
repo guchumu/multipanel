@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\MediaUser;
+use App\Services\Notifications\ClientWhatsAppChannel;
 use Core\Cache;
 use Core\Database;
 use Core\Logger;
@@ -25,6 +26,7 @@ final class PortalDefaultPasswordService
     public function __construct(
         private PasswordService $passwords = new PasswordService(),
         private MediaUserManagementService $management = new MediaUserManagementService(),
+        private ClientWhatsAppChannel $whatsapp = new ClientWhatsAppChannel(),
     ) {
     }
 
@@ -121,7 +123,7 @@ final class PortalDefaultPasswordService
         if ($rows === []) {
             return [
                 'success' => true,
-                'message' => 'Si ese email está registrado y tiene Telegram vinculado, recibirás la contraseña en unos segundos.',
+                'message' => 'Si ese email está registrado y tiene Telegram o WhatsApp, recibirás la contraseña en unos segundos.',
             ];
         }
 
@@ -145,13 +147,23 @@ final class PortalDefaultPasswordService
                 break;
             }
         }
+        if ($user === null) {
+            foreach ($rows as $row) {
+                $candidate = new MediaUser($row);
+                if ($this->whatsapp->canSend($candidate)) {
+                    $user = $candidate;
+                    break;
+                }
+            }
+        }
         $user ??= new MediaUser($rows[0]);
 
         $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
-        if ($chatId === '') {
+        $canWa = $this->whatsapp->canSend($user);
+        if ($chatId === '' && !$canWa) {
             return [
                 'success' => false,
-                'message' => 'Esa cuenta no tiene Telegram vinculado. Contacta con el administrador.',
+                'message' => 'Esa cuenta no tiene Telegram ni WhatsApp vinculados. Entra al portal o contacta con el administrador.',
             ];
         }
 
@@ -160,17 +172,25 @@ final class PortalDefaultPasswordService
             . "Contraseña: {$plain}\n\n"
             . "Entra en /portal/login con tu email y esa contraseña.";
 
-        $sent = $this->management->sendTelegramMessage($user, 'Contraseña del portal', $body);
+        $sent = $this->management->sendClientNotice($user, 'Contraseña del portal', $body, 'portal_password');
         if (empty($sent['sent'])) {
             return [
                 'success' => false,
-                'message' => 'No se pudo enviar por Telegram. Prueba más tarde o contacta con soporte.',
+                'message' => 'No se pudo enviar. Prueba más tarde o contacta con soporte.',
             ];
+        }
+
+        $via = [];
+        if (!empty($sent['telegram'])) {
+            $via[] = 'Telegram';
+        }
+        if (!empty($sent['whatsapp'])) {
+            $via[] = 'WhatsApp';
         }
 
         return [
             'success' => true,
-            'message' => 'Contraseña enviada a tu Telegram. Entra con tu email y esa contraseña.',
+            'message' => 'Contraseña enviada a tu ' . implode(' y ', $via) . '. Entra con tu email y esa contraseña.',
         ];
     }
 

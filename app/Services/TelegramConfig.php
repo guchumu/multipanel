@@ -19,7 +19,9 @@ final class TelegramConfig
      *   admin_chat_id: string,
      *   sandbox_enabled: bool,
      *   sandbox_chat_id: string,
-     *   sandbox_copy_real: bool
+     *   sandbox_copy_real: bool,
+     *   bot_username: string,
+     *   webhook_secret: string
      * }
      */
     public static function forTenant(?int $tenantId = null): array
@@ -31,6 +33,13 @@ final class TelegramConfig
         if ($botToken === '') {
             $botToken = trim((string) config('telegram.bot_token', env('TELEGRAM_BOT_TOKEN', '')));
         }
+
+        $botUsername = ltrim(trim((string) ($stored['telegram_bot_username'] ?? '')), '@');
+        if ($botUsername === '') {
+            $botUsername = ltrim(trim((string) config('telegram.bot_username', env('TELEGRAM_BOT_USERNAME', ''))), '@');
+        }
+
+        $webhookSecret = trim((string) ($stored['telegram_webhook_secret'] ?? ''));
 
         $adminChatId = trim((string) ($stored['telegram_chat_id'] ?? ''));
         if ($adminChatId === '') {
@@ -58,6 +67,8 @@ final class TelegramConfig
             'sandbox_enabled' => $sandboxEnabled,
             'sandbox_chat_id' => $sandboxChatId,
             'sandbox_copy_real' => $sandboxCopyReal,
+            'bot_username' => $botUsername,
+            'webhook_secret' => $webhookSecret,
         ];
     }
 

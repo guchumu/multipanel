@@ -29,12 +29,12 @@
             <hr class="my-4">
 
             <h2 class="h6 mb-2">¿Se te olvidó la clave?</h2>
-            <p class="text-muted small mb-3">Pon tu email y te la mandamos al Telegram.</p>
+            <p class="text-muted small mb-3">Pon tu email y te la mandamos al Telegram o WhatsApp, si los tienes vinculados.</p>
             <form method="POST" action="/portal/login/send-password" class="d-grid gap-2">
                 <?= csrf_field() ?>
                 <input type="email" name="email" class="form-control" required placeholder="tu@email.com" autocomplete="email">
                 <button type="submit" class="btn btn-outline-primary">
-                    <i class="bi bi-telegram me-1"></i>Recibir contraseña por Telegram
+                    Recibir contraseña
                 </button>
             </form>
         </div>

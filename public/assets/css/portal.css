@@ -487,11 +487,45 @@
 .ez-total { font-size: 1.25rem; margin-bottom: 0.85rem; }
 .ez-total strong { font-size: 1.6rem; }
 
+.ez-msg-grid {
+    display: grid;
+    gap: 0.85rem;
+}
+.ez-msg-card {
+    border: 1px solid rgba(22, 50, 79, 0.12);
+    border-radius: 16px;
+    padding: 1rem;
+    background: #f7fbff;
+}
+.ez-msg-card.is-on {
+    background: #eefbf4;
+    border-color: rgba(46, 160, 90, 0.35);
+}
+.ez-msg-ico { font-size: 1.6rem; line-height: 1; margin-bottom: 0.25rem; }
+.ez-msg-title { font-size: 1.05rem; font-weight: 800; margin: 0 0 0.15rem; }
+.ez-msg-state { font-size: 0.9rem; color: #4a6178; margin-bottom: 0.65rem; }
+.ez-btn-tg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.7rem;
+    border: 0;
+    border-radius: 999px;
+    background: #2aabee;
+    color: #fff;
+    font-weight: 800;
+    text-decoration: none;
+    padding: 0.45rem 0.8rem;
+}
+.ez-btn-tg:hover { color: #fff; filter: brightness(1.05); }
+
 @media (min-width: 640px) {
     .ez-facts { grid-template-columns: repeat(3, 1fr); }
     .ez-chips { grid-template-columns: repeat(4, 1fr); }
     .ez-btn-big { width: auto; min-width: 16rem; padding: 0 1.5rem; }
     .portal-body .portal-container,
     .portal-body .container { max-width: 780px; }
+    .ez-msg-grid { grid-template-columns: 1fr 1fr; }
 }
 
