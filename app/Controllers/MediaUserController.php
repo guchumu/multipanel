@@ -1155,9 +1155,19 @@ class MediaUserController extends Controller
         }
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $afterId = $request->input('after_id') ? (int) $request->input('after_id') : null;
+        $focusUuid = trim((string) ($request->input('uuid') ?? ''));
 
         $remaining = $this->mediaUsers->countFiltered($tenantId, null, $serverId, $onServer, $emptyFilters);
-        $user = $this->mediaUsers->findNextForReview($tenantId, $emptyFilters, $onServer, $serverId, $afterId);
+        $user = null;
+        if ($focusUuid !== '') {
+            $focused = $this->mediaUsers->findByUuid($focusUuid);
+            if ($focused !== null && (int) ($focused->tenant_id ?? 0) === $tenantId && empty($focused->deleted_at)) {
+                $user = $focused;
+            }
+        }
+        if ($user === null) {
+            $user = $this->mediaUsers->findNextForReview($tenantId, $emptyFilters, $onServer, $serverId, $afterId);
+        }
 
         return $this->view('media_users.review', [
             'title' => 'Revisar usuarios sin datos',
@@ -1190,8 +1200,34 @@ class MediaUserController extends Controller
                 !empty($result['success']) ? 'success' : 'error',
                 (string) ($result['message'] ?? 'Sync completado')
             );
-            // Tras sync, si quedó fuera, quédate en la ficha de revisión del mismo usuario.
-            return $this->redirect('/media-users/revisar' . ($query !== '' ? '?' . $query : ''));
+            $params = [];
+            parse_str($query, $params);
+            $params['uuid'] = $user->uuid;
+
+            return $this->redirect('/media-users/revisar?' . http_build_query($params));
+        }
+
+        if ($action === 'save_contact' && $user !== null) {
+            $emailRaw = trim((string) ($request->input('email') ?? ''));
+            $tgRaw = trim((string) ($request->input('telegram_chat_id') ?? ''));
+
+            $emailResult = $this->management->updateEmail($user, $emailRaw !== '' ? $emailRaw : null);
+            if (empty($emailResult['success'])) {
+                Session::getInstance()->flash('error', (string) ($emailResult['message'] ?? 'Email no válido'));
+                $params = [];
+                parse_str($query, $params);
+                $params['uuid'] = $user->uuid;
+
+                return $this->redirect('/media-users/revisar?' . http_build_query($params));
+            }
+
+            $this->management->updateTelegram($user, $tgRaw !== '' ? $tgRaw : null);
+            Session::getInstance()->flash('success', 'Email y Telegram guardados.');
+            $params = [];
+            parse_str($query, $params);
+            $params['uuid'] = $user->uuid;
+
+            return $this->redirect('/media-users/revisar?' . http_build_query($params));
         }
 
         if ($action === 'soft_delete' && $user !== null) {

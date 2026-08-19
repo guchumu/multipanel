@@ -176,6 +176,32 @@ final class MediaUserManagementService
         ];
     }
 
+    /** @return array{success: bool, message: string, email: ?string} */
+    public function updateEmail(MediaUser $user, ?string $email): array
+    {
+        $clean = $email !== null ? trim($email) : '';
+        if ($clean !== '' && !filter_var($clean, FILTER_VALIDATE_EMAIL)) {
+            return [
+                'success' => false,
+                'message' => 'Email no válido.',
+                'email' => $user->email !== null ? (string) $user->email : null,
+            ];
+        }
+
+        $old = ['email' => $user->email ?? null];
+        $user->email = $clean !== '' ? $clean : null;
+        $user->save();
+        AuditService::log('media_user.email_updated', 'media_user', (int) $user->id, $old, [
+            'email' => $user->email,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'Email actualizado.',
+            'email' => $user->email !== null ? (string) $user->email : null,
+        ];
+    }
+
     /** @return array{success: bool, message: string, whatsapp_phone: ?string} */
     public function updateWhatsapp(MediaUser $user, ?string $phone): array
     {

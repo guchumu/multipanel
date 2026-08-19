@@ -136,7 +136,11 @@ ob_start();
             <?= e($mb['hint']) ?>
         </div>
 
-        <form method="POST" action="/media-users/revisar" class="d-flex flex-wrap gap-2">
+        <?php
+            $tgValue = normalize_telegram_chat_id($mediaUser->telegram_chat_id ?? null);
+            $emailValue = trim((string) ($mediaUser->email ?? ''));
+        ?>
+        <form method="POST" action="/media-users/revisar" class="mb-3">
             <?= csrf_field() ?>
             <input type="hidden" name="uuid" value="<?= e($mediaUser->uuid) ?>">
             <?php if ($emptyFilters !== []): ?>
@@ -149,20 +153,42 @@ ob_start();
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
 
-            <button type="submit" name="action" value="sync" class="btn btn-primary">
-                <i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca
-            </button>
-            <button type="submit" name="action" value="next" class="btn btn-outline-success"
-                    title="Marca como revisado y pasa al siguiente sin borrar">
-                <i class="bi bi-check2 me-1"></i>Sigue en servidor
-            </button>
-            <button type="submit" name="action" value="soft_delete" class="btn btn-outline-danger"
-                    onclick="return confirm('¿Eliminar del panel? No borra la cuenta en Plex/Jellyfin.')">
-                <i class="bi bi-trash me-1"></i>No está → Eliminar del panel
-            </button>
-            <button type="submit" name="action" value="next" class="btn btn-outline-secondary">
-                Siguiente <i class="bi bi-arrow-right ms-1"></i>
-            </button>
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-5">
+                    <label class="form-label small mb-1" for="review-email">Email</label>
+                    <input type="email" class="form-control" id="review-email" name="email"
+                           value="<?= e($emailValue) ?>" placeholder="cliente@email.com" autocomplete="off">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small mb-1" for="review-telegram">Telegram Chat ID</label>
+                    <input type="text" class="form-control" id="review-telegram" name="telegram_chat_id"
+                           value="<?= e($tgValue) ?>" placeholder="Ej. 123456789" autocomplete="off"
+                           inputmode="numeric">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" name="action" value="save_contact" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-save me-1"></i>Guardar
+                    </button>
+                </div>
+            </div>
+            <p class="small text-muted mb-3 mb-md-2">Rellena los huecos y pulsa Guardar antes de pasar al siguiente.</p>
+
+            <div class="d-flex flex-wrap gap-2">
+                <button type="submit" name="action" value="sync" class="btn btn-primary">
+                    <i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca
+                </button>
+                <button type="submit" name="action" value="next" class="btn btn-outline-success"
+                        title="Marca como revisado y pasa al siguiente sin borrar">
+                    <i class="bi bi-check2 me-1"></i>Sigue en servidor
+                </button>
+                <button type="submit" name="action" value="soft_delete" class="btn btn-outline-danger"
+                        onclick="return confirm('¿Eliminar del panel? No borra la cuenta en Plex/Jellyfin.')">
+                    <i class="bi bi-trash me-1"></i>No está → Eliminar del panel
+                </button>
+                <button type="submit" name="action" value="next" class="btn btn-outline-secondary">
+                    Siguiente <i class="bi bi-arrow-right ms-1"></i>
+                </button>
+            </div>
         </form>
     </div>
 </div>
