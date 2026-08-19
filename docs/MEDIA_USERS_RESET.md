@@ -20,7 +20,7 @@ caducidades del importador (solo servicio 1 y 5).
 3. **Importar fechas/datos** (`plex_manager.sql`, modo overlay).
    - Solo filas con `servicio` / `service` **1** o **5** (o inferidos por nombre de servidor legacy / pagos).
    - 1 → Servitron / Server10, 5 → NucBox (match por nombre de servidor).
-   - Actualiza **todas** las filas coincidentes (`plex_user_id`→`external_id`, email, username), priorizando `on_server=1`.
+   - Actualiza **todas** las filas coincidentes (`plex_user_id`→`external_id`, email, username/`display_name`, o parte local del email), priorizando `on_server=1`.
    - Mapa columnas: `email`←`users.email`, `telegram_chat_id`←coalesce(`telegram_chat_id`,`telegram_id`), `expires_at`←`end_date`, `notes`←`private_notes`.
    - El flash muestra «Telegram escritos» (writes) **y** «BD tras import» (conteo real en `media_users`).
 
@@ -47,6 +47,28 @@ IMPORT_SERVICIO_5_SERVERS=nucbox,nuc box
 ```
 
 ## Relacionado
+
+## Comprobar usuarios uno a uno (biblioteca)
+
+Tras wipe+sync+overlay, algunos usuarios pueden quedar sin fecha/Telegram o
+marcados fuera del servidor. Flujo práctico:
+
+1. **Forzar sincronización** en Usuarios Media (conserva filtros activos).
+   - Reaplica el estado: **En biblioteca** / **No está**.
+2. Filtra **Sin fecha**, **Sin Telegram** y/o **Fuera del servidor**.
+3. Opción A — cola **Revisar** (`/media-users/revisar`):
+   - Comprobar biblioteca → ver badge
+   - Sigue en servidor (siguiente) / No está → Eliminar del panel / Siguiente
+4. Opción B — ficha del usuario:
+   - Badge grande + **Comprobar biblioteca**
+   - Resultado claro: En biblioteca / No está
+   - **Eliminar del panel** (soft-delete; no toca Plex/Jellyfin)
+5. En filtro **Fuera del servidor**: botón masivo
+   **Eliminar del panel (todos fuera del servidor)**.
+
+Emails que no están en el dump legado no reciben fecha/Telegram por overlay:
+rellénalos a mano en la ficha o comprueba si siguen en el servidor.
+
 ## SQL grande (FTP)
 
 Si la subida por el navegador falla («Archivo demasiado grande» u otros errores de

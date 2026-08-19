@@ -44,15 +44,19 @@ ob_start();
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <span class="badge <?= e($statusBadgeClass((string) $mediaUser->status)) ?> fs-6"><?= e($mediaUser->status) ?></span>
-            <span class="badge <?= e($mb['class']) ?> fs-6" title="<?= e($mb['hint']) ?>"><?= e($mb['label']) ?></span>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="btnSyncMembership" title="Reconsulta la lista del servidor para este usuario">
-                <i class="bi bi-arrow-repeat me-1"></i>Forzar sincronización
+            <span id="membershipBadge" class="badge <?= e($mb['class']) ?> fs-5 px-3 py-2" title="<?= e($mb['hint']) ?>"><?= e($mb['label']) ?></span>
+            <button type="button" class="btn btn-primary" id="btnSyncMembership" title="Reconsulta la lista del servidor para este usuario">
+                <i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca
             </button>
         </div>
     </div>
-    <?php if (!empty($mediaUser->membership_synced_at)): ?>
-    <p class="small text-muted mt-2 mb-0">Última comprobación de biblioteca: <?= e($mediaUser->membership_synced_at) ?></p>
-    <?php endif; ?>
+    <div id="membershipResult" class="alert mt-3 mb-0 <?= (int) ($mediaUser->on_server ?? -1) === 1 ? 'alert-success' : ((int) ($mediaUser->on_server ?? -1) === 0 ? 'alert-danger' : 'alert-secondary') ?>">
+        <strong id="membershipResultLabel"><?= e($mb['label']) ?>.</strong>
+        <span id="membershipResultHint"><?= e($mb['hint']) ?></span>
+        <?php if (!empty($mediaUser->membership_synced_at)): ?>
+        <span class="d-block small mt-1 text-muted">Última comprobación: <?= e($mediaUser->membership_synced_at) ?></span>
+        <?php endif; ?>
+    </div>
 </div>
 
 <div class="row g-4">
@@ -161,6 +165,14 @@ ob_start();
                     <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncMembershipControl" title="Comprobar si sigue en la biblioteca del servidor"><i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca</button>
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
+                    <form method="POST" action="/media-users/<?= e($mediaUser->uuid) ?>" class="d-inline"
+                          onsubmit="return confirm('¿Eliminar este usuario del panel? No borra la cuenta en Plex/Jellyfin.');">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Soft-delete en el panel">
+                            <i class="bi bi-trash me-1"></i>Eliminar del panel
+                        </button>
+                    </form>
                 </div>
                 <p class="small text-muted mt-2 mb-0"><?= e($mb['hint']) ?></p>
             </div>

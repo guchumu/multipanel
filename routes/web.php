@@ -156,6 +156,9 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // $router->post('/media-users/cleanup-iptv', [MediaUserController::class, 'cleanupIptvApply'], 'media_users.cleanup_iptv.apply', [CsrfMiddleware::class]);
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
     $router->post('/media-users/sync-membership', [MediaUserController::class, 'syncMembershipAll'], 'media_users.sync_membership_all', [CsrfMiddleware::class]);
+    $router->post('/media-users/soft-delete-off-server', [MediaUserController::class, 'softDeleteOffServer'], 'media_users.soft_delete_off_server', [CsrfMiddleware::class]);
+    $router->get('/media-users/revisar', [MediaUserController::class, 'review'], 'media_users.review');
+    $router->post('/media-users/revisar', [MediaUserController::class, 'reviewAction'], 'media_users.review.action', [CsrfMiddleware::class]);
     $router->get('/media-users/bulk', [MediaUserController::class, 'bulkCreate'], 'media_users.bulk');
     $router->post('/media-users/bulk', [MediaUserController::class, 'bulkStore'], 'media_users.bulk.store', [CsrfMiddleware::class]);
     $router->get('/media-users/create', [MediaUserController::class, 'create'], 'media_users.create');

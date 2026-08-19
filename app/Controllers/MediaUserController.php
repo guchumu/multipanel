@@ -873,19 +873,20 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $redirect = $this->mediaUsersListRedirect($request);
 
         if ($serverId) {
             $server = Server::find($serverId);
             if ($server === null || (int) $server->tenant_id !== $tenantId) {
                 Session::getInstance()->flash('error', 'Servidor no encontrado.');
-                return $this->redirect('/media-users');
+                return $this->redirect($redirect);
             }
             $ok = $this->serverSync->sync($server);
             $stats = $this->serverSync->lastUserSyncStats();
             $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
             $msg = $ok
                 ? sprintf(
-                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s',
+                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s Estado de biblioteca reaplicado (En biblioteca / No está).',
                     $server->name,
                     (int) ($stats['imported'] ?? 0),
                     (int) ($stats['updated'] ?? 0),
@@ -895,7 +896,6 @@ class MediaUserController extends Controller
                 )
                 : 'Sync fallido: ' . ($server->last_error ?? 'sin conexión');
             Session::getInstance()->flash($ok ? 'success' : 'error', $msg);
-            $redirect = '/media-users?server_id=' . $serverId;
             return $this->redirect($redirect);
         }
 
@@ -904,7 +904,7 @@ class MediaUserController extends Controller
         $stats = $this->serverSync->lastUserSyncStats();
         $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
         Session::getInstance()->flash('success', sprintf(
-            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s',
+            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s Estado de biblioteca reaplicado.',
             $synced,
             $total,
             (int) ($stats['imported'] ?? 0),
@@ -914,7 +914,39 @@ class MediaUserController extends Controller
             $recovered
         ));
 
-        return $this->redirect('/media-users');
+        return $this->redirect($redirect);
+    }
+
+    /**
+     * Conserva filtros del listado tras sync (Sin fecha / Sin Telegram / Fuera del servidor…).
+     */
+    private function mediaUsersListRedirect(Request $request): string
+    {
+        $params = [];
+        $status = trim((string) ($request->input('status') ?? ''));
+        if ($status !== '') {
+            $params['status'] = $status;
+        }
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : 0;
+        if ($serverId > 0) {
+            $params['server_id'] = $serverId;
+        }
+        $onServer = $request->input('on_server');
+        if ($onServer === '0' || $onServer === '1') {
+            $params['on_server'] = $onServer;
+        }
+        $empty = trim((string) ($request->input('filter_empty') ?? ''));
+        if ($empty !== '') {
+            $params['filter_empty'] = $empty;
+        }
+        $sort = trim((string) ($request->input('sort') ?? ''));
+        if ($sort !== '') {
+            $params['sort'] = $sort;
+            $dir = strtolower(trim((string) ($request->input('dir') ?? 'desc')));
+            $params['dir'] = $dir === 'asc' ? 'asc' : 'desc';
+        }
+
+        return $params === [] ? '/media-users' : '/media-users?' . http_build_query($params);
     }
 
     /** Restaura email/telegram desde customers si un sync previo los dejó vacíos. */
@@ -1047,7 +1079,13 @@ class MediaUserController extends Controller
     public function destroy(Request $request, string $uuid): Response
     {
         $user = $this->mediaUsers->findByUuid($uuid);
+        $wantsJson = str_contains(strtolower((string) $request->header('Accept', '')), 'application/json')
+            || str_contains(strtolower((string) $request->header('Content-Type', '')), 'application/json');
+
         if ($user === null) {
+            if ($wantsJson) {
+                return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+            }
             return $this->redirect('/media-users');
         }
 
@@ -1055,8 +1093,147 @@ class MediaUserController extends Controller
         $user->deleted_at = now()->format('Y-m-d H:i:s');
         $user->save();
 
-        Session::getInstance()->flash('success', 'Usuario eliminado.');
+        if ($wantsJson) {
+            return $this->json([
+                'success' => true,
+                'message' => 'Usuario eliminado del panel (no se tocó Plex/Jellyfin).',
+            ]);
+        }
+
+        Session::getInstance()->flash('success', 'Usuario eliminado del panel.');
         return $this->redirect('/media-users');
+    }
+
+    /**
+     * Soft-delete masivo de usuarios marcados fuera del servidor (on_server=0).
+     */
+    public function softDeleteOffServer(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $rawUuids = $request->input('uuids');
+        $uuids = null;
+        if (is_array($rawUuids)) {
+            $uuids = $rawUuids;
+        } elseif (is_string($rawUuids) && trim($rawUuids) !== '') {
+            $uuids = preg_split('/[\s,]+/', trim($rawUuids)) ?: [];
+        }
+
+        $deleted = $this->mediaUsers->softDeleteOffServer($tenantId, $uuids, $serverId);
+        $this->audit->log('media_user.bulk_soft_deleted_off_server', 'media_user', null, null, [
+            'deleted' => $deleted,
+            'server_id' => $serverId,
+        ]);
+
+        Session::getInstance()->flash(
+            'success',
+            sprintf('Eliminados del panel: %d usuarios (marcados fuera del servidor). No se tocó Plex/Jellyfin.', $deleted)
+        );
+
+        return $this->redirect($this->mediaUsersListRedirect($request));
+    }
+
+    /**
+     * Revisión one-by-one: usuarios sin fecha/Telegram (o fuera del servidor).
+     */
+    public function review(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->mediaUsers->ensureTelegramChatIdColumn();
+
+        $emptyFilters = $this->parseEmptyFilters($request);
+        if ($emptyFilters === [] && $request->input('filter_empty') === null && $request->input('on_server') === null) {
+            // Por defecto: sin fecha o sin telegram (OR vía dos filtros AND — el listado usa AND;
+            // aquí usamos expires+telegram juntos; el usuario puede afinar).
+            $emptyFilters = ['expires', 'telegram'];
+        }
+
+        $onServerFilter = $request->input('on_server');
+        $onServer = null;
+        if ($onServerFilter === '1' || $onServerFilter === '0') {
+            $onServer = $onServerFilter === '1';
+        }
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $afterId = $request->input('after_id') ? (int) $request->input('after_id') : null;
+
+        $remaining = $this->mediaUsers->countFiltered($tenantId, null, $serverId, $onServer, $emptyFilters);
+        $user = $this->mediaUsers->findNextForReview($tenantId, $emptyFilters, $onServer, $serverId, $afterId);
+
+        return $this->view('media_users.review', [
+            'title' => 'Revisar usuarios sin datos',
+            'mediaUser' => $user,
+            'remaining' => $remaining,
+            'servers' => $this->servers->allByTenant($tenantId),
+            'emptyFilters' => $emptyFilters,
+            'currentOnServer' => $onServer,
+            'currentServerId' => $serverId,
+            'afterId' => $afterId,
+        ]);
+    }
+
+    /** Acción de la cola de revisión: siguiente / soft-delete / sync. */
+    public function reviewAction(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $action = trim((string) ($request->input('action') ?? 'next'));
+        $uuid = trim((string) ($request->input('uuid') ?? ''));
+        $query = $this->reviewQueryString($request);
+
+        $user = $uuid !== '' ? $this->mediaUsers->findByUuid($uuid) : null;
+        if ($user !== null && (int) ($user->tenant_id ?? 0) !== $tenantId) {
+            $user = null;
+        }
+
+        if ($action === 'sync' && $user !== null) {
+            $result = $this->serverSync->syncMediaUserMembership($user);
+            Session::getInstance()->flash(
+                !empty($result['success']) ? 'success' : 'error',
+                (string) ($result['message'] ?? 'Sync completado')
+            );
+            // Tras sync, si quedó fuera, quédate en la ficha de revisión del mismo usuario.
+            return $this->redirect('/media-users/revisar' . ($query !== '' ? '?' . $query : ''));
+        }
+
+        if ($action === 'soft_delete' && $user !== null) {
+            $this->audit->log('media_user.deleted', 'media_user', (int) $user->id, null, ['via' => 'review']);
+            $user->deleted_at = now()->format('Y-m-d H:i:s');
+            $user->save();
+            Session::getInstance()->flash('success', 'Eliminado del panel: ' . ($user->display_name ?: $user->username));
+            $after = (int) $user->id;
+            $params = [];
+            parse_str($query, $params);
+            $params['after_id'] = $after;
+            return $this->redirect('/media-users/revisar?' . http_build_query($params));
+        }
+
+        // next / keep: avanza al siguiente tras este id
+        if ($user !== null) {
+            $params = [];
+            parse_str($query, $params);
+            $params['after_id'] = (int) $user->id;
+            return $this->redirect('/media-users/revisar?' . http_build_query($params));
+        }
+
+        return $this->redirect('/media-users/revisar' . ($query !== '' ? '?' . $query : ''));
+    }
+
+    private function reviewQueryString(Request $request): string
+    {
+        $params = [];
+        $empty = trim((string) ($request->input('filter_empty') ?? ''));
+        if ($empty !== '') {
+            $params['filter_empty'] = $empty;
+        }
+        $onServer = $request->input('on_server');
+        if ($onServer === '0' || $onServer === '1') {
+            $params['on_server'] = $onServer;
+        }
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : 0;
+        if ($serverId > 0) {
+            $params['server_id'] = $serverId;
+        }
+
+        return http_build_query($params);
     }
 
     public function bulkCreate(Request $request): Response

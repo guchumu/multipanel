@@ -355,16 +355,35 @@ final class ServerSyncService
         // Lista vacía es ambigua (API fallida vs servidor sin shares): no marcar ausentes.
         if ($hasMembershipCols && $seenExternalIds !== []) {
             $placeholders = implode(',', array_fill(0, count($seenExternalIds), '?'));
-            $params = array_merge([$now, $server->id], array_keys($seenExternalIds));
+            $seenIds = array_keys($seenExternalIds);
+
+            // Limpia estado previo y reaplica: En biblioteca (1) / No está (0).
+            $db->query(
+                "UPDATE media_users
+                 SET on_server = NULL
+                 WHERE server_id = ?
+                   AND deleted_at IS NULL
+                   AND external_id IS NOT NULL AND external_id != ''",
+                [$server->id]
+            );
+
+            $db->query(
+                "UPDATE media_users
+                 SET on_server = 1, membership_synced_at = ?
+                 WHERE server_id = ?
+                   AND deleted_at IS NULL
+                   AND external_id IN ({$placeholders})",
+                array_merge([$now, $server->id], $seenIds)
+            );
+
             $db->query(
                 "UPDATE media_users
                  SET on_server = 0, membership_synced_at = ?
                  WHERE server_id = ?
                    AND deleted_at IS NULL
                    AND external_id IS NOT NULL AND external_id != ''
-                   AND external_id NOT IN ({$placeholders})
-                   AND (on_server IS NULL OR on_server = 1)",
-                $params
+                   AND external_id NOT IN ({$placeholders})",
+                array_merge([$now, $server->id], $seenIds)
             );
 
             $missingRow = $db->fetchOne(

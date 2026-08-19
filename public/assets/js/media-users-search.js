@@ -103,6 +103,13 @@
             const username = escapeHtml(u.display_name || u.username || '');
             const tg = normalizeTelegram(u.telegram_chat_id);
             const streams = Number(u.max_streams || 0);
+            const deleteBtn = Number(u.on_server) === 0
+                ? `<form method="POST" action="/media-users/${escapeHtml(u.uuid)}" class="d-inline" onsubmit="return confirm('¿Eliminar del panel? No toca Plex/Jellyfin.');">
+                    <input type="hidden" name="_token" value="${escapeHtml(csrf)}">
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="btn btn-outline-danger" title="Eliminar del panel"><i class="bi bi-trash"></i></button>
+                   </form>`
+                : '';
 
             return `<tr>
                 <td class="small text-muted media-users-col-id">${Number(u.id || 0)}</td>
@@ -129,8 +136,10 @@
                 </td>
                 <td class="text-end">
                     <div class="btn-group btn-group-sm">
+                        <a href="/media-users/${escapeHtml(u.uuid)}" class="btn btn-outline-secondary" title="Abrir ficha"><i class="bi bi-person"></i></a>
                         <a href="/media-users/${escapeHtml(u.uuid)}/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
                         ${actionBtn}
+                        ${deleteBtn}
                     </div>
                 </td>
             </tr>`;

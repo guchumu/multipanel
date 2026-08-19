@@ -119,10 +119,26 @@ ob_start();
             <?php if ($currentServerId): ?>
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
+            <?php if ($currentStatus): ?>
+            <input type="hidden" name="status" value="<?= e($currentStatus) ?>">
+            <?php endif; ?>
+            <?php if ($currentOnServer !== null): ?>
+            <input type="hidden" name="on_server" value="<?= $currentOnServer ? '1' : '0' ?>">
+            <?php endif; ?>
+            <?php if ($emptyFilters !== []): ?>
+            <input type="hidden" name="filter_empty" value="<?= e(implode(',', $emptyFilters)) ?>">
+            <?php endif; ?>
+            <?php if ($currentSort): ?>
+            <input type="hidden" name="sort" value="<?= e($currentSort) ?>">
+            <input type="hidden" name="dir" value="<?= e($currentDir) ?>">
+            <?php endif; ?>
             <button type="submit" class="btn btn-outline-primary btn-sm" title="Reconsulta Plex/Jellyfin y marca quién sigue en la biblioteca">
                 <i class="bi bi-arrow-repeat me-1"></i><span class="d-none d-xl-inline">Forzar sincronización</span><span class="d-xl-none">Sync</span>
             </button>
         </form>
+        <a href="/media-users/revisar?filter_empty=expires,telegram" class="btn btn-outline-primary btn-sm" title="Revisar uno a uno usuarios sin fecha/Telegram">
+            <i class="bi bi-list-check me-1"></i><span class="d-none d-lg-inline">Revisar</span>
+        </a>
         <a href="/media-users/limpieza" class="btn btn-outline-danger btn-sm"><i class="bi bi-recycle me-1"></i><span class="d-none d-lg-inline">Limpieza</span></a>
         <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
         <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
@@ -140,7 +156,7 @@ ob_start();
                 <a href="/media-users<?= e($withFilters(['status' => 'active', 'on_server' => null])) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
                 <a href="/media-users<?= e($withFilters(['status' => 'suspended', 'on_server' => null])) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
                 <a href="/media-users<?= e($withFilters(['status' => 'pending', 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
-                <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => false])) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera</a>
+                <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => false])) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera del servidor</a>
             </div>
             <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-lg-auto flex-wrap flex-grow-1 media-users-search-form">
                 <div class="position-relative media-users-search-field flex-grow-1">
@@ -188,7 +204,45 @@ ob_start();
             <?php if ($emptyFilters !== []): ?>
             <a href="/media-users<?= e($withFilters(['empty' => []])) ?>" class="btn btn-sm btn-link text-decoration-none">Quitar filtros vacíos</a>
             <?php endif; ?>
+            <?php
+            $reviewParams = [];
+            if ($emptyFilters !== []) {
+                $reviewParams['filter_empty'] = implode(',', $emptyFilters);
+            }
+            if ($currentOnServer !== null) {
+                $reviewParams['on_server'] = $currentOnServer ? '1' : '0';
+            }
+            if ($currentServerId) {
+                $reviewParams['server_id'] = (int) $currentServerId;
+            }
+            $reviewQs = $reviewParams !== [] ? '?' . http_build_query($reviewParams) : '?filter_empty=expires,telegram';
+            ?>
+            <a href="/media-users/revisar<?= e($reviewQs) ?>" class="btn btn-sm btn-outline-primary ms-auto">
+                <i class="bi bi-list-check me-1"></i>Revisar uno a uno
+            </a>
         </div>
+        <?php if ($currentOnServer === false): ?>
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-2 pt-2 border-top">
+            <form method="POST" action="/media-users/soft-delete-off-server" class="d-inline"
+                  onsubmit="return confirm('¿Eliminar del panel TODOS los usuarios marcados fuera del servidor<?= $currentServerId ? ' de este servidor' : '' ?>? No toca Plex/Jellyfin.');">
+                <?= csrf_field() ?>
+                <?php if ($currentServerId): ?>
+                <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
+                <?php endif; ?>
+                <?php if ($currentStatus): ?>
+                <input type="hidden" name="status" value="<?= e($currentStatus) ?>">
+                <?php endif; ?>
+                <input type="hidden" name="on_server" value="0">
+                <?php if ($emptyFilters !== []): ?>
+                <input type="hidden" name="filter_empty" value="<?= e(implode(',', $emptyFilters)) ?>">
+                <?php endif; ?>
+                <button type="submit" class="btn btn-sm btn-danger">
+                    <i class="bi bi-trash me-1"></i>Eliminar del panel (todos fuera del servidor)
+                </button>
+            </form>
+            <span class="small text-muted">Solo panel · no borra cuentas en Plex/Jellyfin</span>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -291,11 +345,20 @@ ob_start();
                     </td>
                     <td class="text-end">
                         <div class="btn-group btn-group-sm">
+                            <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-secondary" title="Abrir ficha"><i class="bi bi-person"></i></a>
                             <a href="/media-users/<?= e($u->uuid) ?>/messages" class="btn btn-outline-info" title="Historial mensajes"><i class="bi bi-chat-dots"></i></a>
                             <?php if ($u->status === 'active'): ?>
                             <button class="btn btn-outline-warning" onclick="suspendUser('<?= e($u->uuid) ?>')"><i class="bi bi-pause"></i></button>
                             <?php else: ?>
                             <button class="btn btn-outline-success" onclick="activateUser('<?= e($u->uuid) ?>')"><i class="bi bi-play"></i></button>
+                            <?php endif; ?>
+                            <?php if (isset($u->on_server) && (int) $u->on_server === 0): ?>
+                            <form method="POST" action="/media-users/<?= e($u->uuid) ?>" class="d-inline"
+                                  onsubmit="return confirm('¿Eliminar del panel? No toca Plex/Jellyfin.');">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="_method" value="DELETE">
+                                <button type="submit" class="btn btn-outline-danger" title="Eliminar del panel"><i class="bi bi-trash"></i></button>
+                            </form>
                             <?php endif; ?>
                         </div>
                     </td>

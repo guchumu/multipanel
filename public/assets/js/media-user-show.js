@@ -167,11 +167,46 @@
         const original = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Comprobando…';
+        const resultBox = document.getElementById('membershipResult');
+        const resultLabel = document.getElementById('membershipResultLabel');
+        const resultHint = document.getElementById('membershipResultHint');
+        const badge = document.getElementById('membershipBadge');
         try {
             const data = await post(`/media-users/${uuid}/sync-membership`);
-            toast(responseMessage(data, 'Sincronización completada.', 'No se pudo sincronizar.'));
+            const onServer = data.on_server;
+            let label = 'Sin sync';
+            let cls = 'bg-light text-dark border';
+            let alertCls = 'alert-secondary';
+            let hint = 'No se pudo determinar el estado.';
             if (data.success !== false && data.__httpOk !== false) {
-                setTimeout(() => location.reload(), 700);
+                if (onServer === true) {
+                    label = 'En biblioteca';
+                    cls = 'bg-success';
+                    alertCls = 'alert-success';
+                    hint = 'Aparece en la lista de usuarios del servidor.';
+                } else if (onServer === false) {
+                    label = 'No está en el servidor';
+                    cls = 'bg-danger';
+                    alertCls = 'alert-danger';
+                    hint = 'Tenía external_id en el panel pero ya no aparece en Plex/Jellyfin. Puedes eliminarlo del panel.';
+                }
+            }
+            if (badge) {
+                badge.className = 'badge fs-5 px-3 py-2 ' + cls;
+                badge.textContent = label;
+            }
+            if (resultBox) {
+                resultBox.className = 'alert mt-3 mb-0 ' + alertCls;
+            }
+            if (resultLabel) resultLabel.textContent = label + '.';
+            if (resultHint) resultHint.textContent = (typeof data.message === 'string' && data.message) ? data.message : hint;
+            toast(responseMessage(
+                data,
+                onServer === true ? 'En biblioteca' : (onServer === false ? 'No está en el servidor' : 'Sincronización completada.'),
+                'No se pudo sincronizar.'
+            ));
+            if (data.success !== false && data.__httpOk !== false) {
+                setTimeout(() => location.reload(), 900);
             } else {
                 btn.disabled = false;
                 btn.innerHTML = original;

@@ -630,4 +630,76 @@ class MediaUserRepository
 
         return (int) $stmt->rowCount();
     }
+
+    /**
+     * Siguiente usuario para revisión one-by-one (campos vacíos / fuera del servidor).
+     *
+     * @param list<string> $emptyFilters
+     */
+    public function findNextForReview(
+        int $tenantId,
+        array $emptyFilters = [],
+        ?bool $onServer = null,
+        ?int $serverId = null,
+        ?int $afterId = null,
+    ): ?MediaUser {
+        $params = [$tenantId];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
+        $this->appendListFilters($sql, $params, null, $serverId, $onServer, $emptyFilters, true);
+        if ($afterId !== null && $afterId > 0) {
+            $sql .= ' AND mu.`id` > ?';
+            $params[] = $afterId;
+        }
+        $sql .= ' ORDER BY mu.`id` ASC LIMIT 1';
+        $row = Database::getInstance()->fetchOne($sql, $params);
+
+        return $row ? new MediaUser($row) : null;
+    }
+
+    /**
+     * Soft-delete usuarios con on_server=0 (solo panel; no toca Plex/Jellyfin).
+     *
+     * @param list<string>|null $uuids null = todos los ausentes del filtro
+     * @return int filas afectadas
+     */
+    public function softDeleteOffServer(int $tenantId, ?array $uuids = null, ?int $serverId = null): int
+    {
+        if (!$this->hasOnServerColumn()) {
+            return 0;
+        }
+
+        $db = Database::getInstance();
+        $now = date('Y-m-d H:i:s');
+        $params = [$now, $tenantId];
+        $sql = 'UPDATE `media_users`
+                SET `deleted_at` = ?
+                WHERE `tenant_id` = ?
+                  AND `deleted_at` IS NULL
+                  AND `on_server` = 0';
+
+        if ($serverId !== null) {
+            $sql .= ' AND `server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        if ($uuids !== null) {
+            $uuids = array_values(array_unique(array_filter(array_map(
+                static fn ($u) => trim((string) $u),
+                $uuids
+            ))));
+            if ($uuids === []) {
+                return 0;
+            }
+            $placeholders = implode(',', array_fill(0, count($uuids), '?'));
+            $sql .= " AND `uuid` IN ({$placeholders})";
+            $params = array_merge($params, $uuids);
+        }
+
+        $stmt = $db->query($sql, $params);
+
+        return (int) $stmt->rowCount();
+    }
 }

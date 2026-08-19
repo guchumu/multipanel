@@ -490,12 +490,45 @@ final class PlexManagerImportService
             ) as $row) {
                 $ids[(int) $row['id']] = true;
             }
+
+            // Match por parte local del email aunque el username/display_name del panel difiera
+            // (ej. panel "Rocio Raya" vacío de email vs dump email@gmail.com ya rellenado en otra fila,
+            // o panel sin email cuyo username = parte local).
+            $local = strstr($email, '@', true);
+            $local = is_string($local) ? trim($local) : '';
+            if ($local !== '' && strlen($local) >= 3) {
+                foreach ($db->fetchAll(
+                    "SELECT mu.id FROM media_users mu
+                     WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL
+                       AND (
+                         LOWER(mu.username) = LOWER(?)
+                         OR LOWER(COALESCE(mu.display_name, '')) = LOWER(?)
+                       )
+                     {$order}
+                     LIMIT 20",
+                    [$tenantId, $local, $local, $preferredServerId]
+                ) as $row) {
+                    $ids[(int) $row['id']] = true;
+                }
+            }
         }
 
         if ($username !== '') {
             foreach ($db->fetchAll(
                 "SELECT mu.id FROM media_users mu
                  WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND LOWER(mu.username) = LOWER(?)
+                 {$order}
+                 LIMIT 20",
+                [$tenantId, $username, $preferredServerId]
+            ) as $row) {
+                $ids[(int) $row['id']] = true;
+            }
+
+            // También display_name (Plex a veces usa título distinto al username).
+            foreach ($db->fetchAll(
+                "SELECT mu.id FROM media_users mu
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL
+                   AND LOWER(COALESCE(mu.display_name, '')) = LOWER(?)
                  {$order}
                  LIMIT 20",
                 [$tenantId, $username, $preferredServerId]
