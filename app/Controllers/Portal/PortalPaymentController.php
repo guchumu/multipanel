@@ -74,11 +74,40 @@ class PortalPaymentController extends Controller
     public function renew(Request $request): Response
     {
         $user = $this->auth->user();
-        $amount = (float) $request->input('amount', 0);
-        $days = (int) $request->input('days', 0);
-        $currency = strtoupper(trim((string) $request->input('currency', 'EUR'))) ?: 'EUR';
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $months = (int) $request->input('months', 0);
+        $usersCount = (int) $request->input('users', 1);
+        $extraStreams = (int) $request->input('extra_streams', 0);
+        $emailsRaw = $request->input('emails', []);
+        $emails = is_array($emailsRaw) ? $emailsRaw : [];
 
-        $result = $this->billing->createRenewalCheckout($user, $amount, $currency, $days);
+        $shop = new \App\Services\PortalShopService();
+        $quote = $shop->quote($tenantId, $months, $usersCount, $extraStreams, $emails);
+        if (empty($quote['ok'])) {
+            Session::getInstance()->flash('error', $quote['error'] ?? 'Revisa el simulador e inténtalo de nuevo.');
+            return $this->redirect('/portal/subscription');
+        }
+
+        $buyerEmail = mb_strtolower(trim((string) ($user->email ?? '')));
+        $extraEmails = array_values(array_filter(
+            $quote['emails'],
+            static fn (string $e): bool => $e !== $buyerEmail
+        ));
+
+        $result = $this->billing->createRenewalCheckout(
+            $user,
+            (float) $quote['total'],
+            'EUR',
+            (int) $quote['days'],
+            'stripe',
+            [
+                'shop' => 1,
+                'months' => (int) $quote['months'],
+                'users' => (int) $quote['users'],
+                'extra_streams' => (int) $quote['extra_streams'],
+                'extra_emails' => $extraEmails,
+            ]
+        );
 
         if (!empty($result['success']) && !empty($result['checkout_url'])) {
             return $this->redirect((string) $result['checkout_url']);

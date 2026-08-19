@@ -6,83 +6,94 @@ $dateFmt = static function (?string $d): string {
     $ts = strtotime(substr($d, 0, 10));
     return $ts === false ? e($d) : date('d/m/Y', $ts);
 };
-$serverInfo = is_array($serverInfo ?? null) ? $serverInfo : ['name' => '—', 'type_label' => '—'];
-$canPay = !empty($stripeConfigured) && !empty($renewalPresets);
+$shopOptions = is_array($shopOptions ?? null) ? $shopOptions : [];
+$canPay = !empty($stripeConfigured) && $shopOptions !== [];
+$buyerEmail = trim((string) ($portalUser->email ?? ''));
+$discountPct = (int) ($shopDiscount ?? 40);
+$included = (int) ($includedStreams ?? 2);
 ob_start();
 ?>
-<h1 class="portal-page-title">Renovar / pagar</h1>
-<p class="portal-page-lead">Amplía tu acceso. El cobro es seguro y los días se suman a tu cuenta al completar el pago.</p>
+<h1 class="ez-page-title">Elige cuánto tiempo ⏳</h1>
+<p class="ez-page-lead">No hay planes raros. Solo meses. Cada persona trae <?= (int) $included ?> pantallas en la misma casa.</p>
 
-<div class="card portal-card mb-3">
-    <div class="card-body py-3">
-        <div class="row g-2 small">
-            <div class="col-6 col-md-3"><span class="text-muted">Servicio</span><div class="fw-semibold"><?= e($serverInfo['type_label'] ?? '—') ?></div></div>
-            <div class="col-6 col-md-3"><span class="text-muted">Servidor</span><div class="fw-semibold text-truncate"><?= e($serverInfo['name'] ?? '—') ?></div></div>
-            <div class="col-6 col-md-3"><span class="text-muted">Caduca</span><div class="fw-semibold"><?= !empty($expiry['date']) ? $dateFmt($expiry['date']) : '—' ?></div></div>
-            <div class="col-6 col-md-3"><span class="text-muted">Estado</span><div class="fw-semibold"><?= e($expiry['label'] ?? '—') ?></div></div>
-        </div>
-    </div>
-</div>
+<?php if (!empty($expiry['date'])): ?>
+<p class="ez-now-until">Ahora mismo puedes ver hasta el <strong><?= $dateFmt($expiry['date']) ?></strong>.</p>
+<?php endif; ?>
 
 <?php if ($canPay): ?>
-<div class="card portal-card mb-4">
-    <div class="card-body">
-        <h2 class="portal-section-title">Elige periodo</h2>
-        <p class="small text-muted mb-3">Pulsa y te llevamos a la pasarela. Al pagar, se amplía tu caducidad.</p>
-        <div class="row g-3">
-            <?php foreach ($renewalPresets as $preset): ?>
-            <div class="col-12 col-sm-6 col-lg-4">
-                <form method="POST" action="/portal/payment/renew" class="h-100">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="amount" value="<?= e((string) $preset['price']) ?>">
-                    <input type="hidden" name="days" value="<?= (int) $preset['days'] ?>">
-                    <button type="submit" class="btn btn-primary w-100 h-100 py-3 portal-preset-btn">
-                        <span class="d-block fw-semibold"><?= e($preset['label']) ?></span>
-                        <span class="d-block fs-4"><?= number_format((float) $preset['price'], 2) ?> €</span>
-                        <span class="d-block small opacity-75"><?= (int) $preset['days'] ?> días</span>
-                    </button>
-                </form>
+<form method="POST" action="/portal/payment/renew" id="ez-shop" class="ez-shop"
+      data-discount="<?= (int) $discountPct ?>"
+      data-included="<?= (int) $included ?>"
+      data-buyer-email="<?= e($buyerEmail) ?>">
+    <?= csrf_field() ?>
+    <input type="hidden" name="months" id="ez-months" value="<?= (int) ($shopOptions[0]['months'] ?? 1) ?>">
+    <input type="hidden" name="users" id="ez-users" value="1">
+    <input type="hidden" name="extra_streams" id="ez-extra-streams" value="0">
+
+    <section class="card portal-card ez-step">
+        <div class="card-body">
+            <h2 class="ez-step-title"><span>1</span> ¿Cuántos meses?</h2>
+            <div class="ez-chips" role="group" aria-label="Meses">
+                <?php foreach ($shopOptions as $i => $opt): ?>
+                <button type="button" class="ez-chip<?= $i === 0 ? ' is-on' : '' ?>"
+                        data-months="<?= (int) $opt['months'] ?>"
+                        data-price="<?= e((string) $opt['price']) ?>"
+                        data-days="<?= (int) $opt['days'] ?>">
+                    <strong><?= e($opt['label']) ?></strong>
+                    <span><?= number_format((float) $opt['price'], 2, ',', '.') ?> €</span>
+                </button>
+                <?php endforeach; ?>
             </div>
-            <?php endforeach; ?>
         </div>
-    </div>
-</div>
+    </section>
+
+    <section class="card portal-card ez-step">
+        <div class="card-body">
+            <h2 class="ez-step-title"><span>2</span> ¿Cuántas personas?</h2>
+            <p class="ez-help">La primera paga el precio entero. Las demás tienen un <?= (int) $discountPct ?>% de descuento.</p>
+            <div class="ez-stepper">
+                <button type="button" class="ez-pm" id="ez-users-minus" aria-label="Menos personas">−</button>
+                <div class="ez-stepper-val"><strong id="ez-users-n">1</strong><span>persona(s)</span></div>
+                <button type="button" class="ez-pm" id="ez-users-plus" aria-label="Más personas">+</button>
+            </div>
+            <div id="ez-emails" class="ez-emails mt-3"></div>
+        </div>
+    </section>
+
+    <section class="card portal-card ez-step">
+        <div class="card-body">
+            <h2 class="ez-step-title"><span>3</span> ¿Más pantallas?</h2>
+            <p class="ez-help">Cada persona ya trae <?= (int) $included ?> TVs en casa. Si quieres más, cuestan un <?= (int) $discountPct ?>% menos.</p>
+            <div class="ez-stepper">
+                <button type="button" class="ez-pm" id="ez-streams-minus" aria-label="Menos pantallas extra">−</button>
+                <div class="ez-stepper-val"><strong id="ez-streams-n">0</strong><span>pantalla(s) extra</span></div>
+                <button type="button" class="ez-pm" id="ez-streams-plus" aria-label="Más pantallas extra">+</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="card portal-card ez-ticket">
+        <div class="card-body">
+            <h2 class="ez-step-title">Tu ticket 🧾</h2>
+            <ul class="ez-ticket-list" id="ez-ticket-list"></ul>
+            <p class="ez-total">Total a pagar: <strong id="ez-total">0 €</strong></p>
+            <button type="submit" class="ez-btn-big w-100" id="ez-pay">Pagar y listo</button>
+            <p class="ez-help text-center mb-0 mt-2">Te llevamos a la tarjeta. Cuando pagues, se suma el tiempo.</p>
+        </div>
+    </section>
+</form>
 <?php else: ?>
-<div class="card portal-card mb-4">
+<div class="card portal-card">
     <div class="card-body">
-        <p class="mb-2">El pago online no está disponible ahora.</p>
-        <a href="/portal/tickets/create" class="btn btn-primary btn-sm">Contactar soporte</a>
+        <p class="mb-2">Ahora mismo no se puede pagar aquí.</p>
+        <a href="/portal/tickets/create" class="ez-btn-big">Pedir ayuda</a>
     </div>
 </div>
 <?php endif; ?>
 
-<?php if (!empty($plans)): ?>
-<h2 class="portal-section-title text-white mb-3">Planes</h2>
-<div class="row g-3">
-    <?php foreach ($plans as $plan): ?>
-    <div class="col-12 col-md-6 col-lg-4">
-        <div class="card portal-card h-100">
-            <div class="card-body">
-                <h3 class="h5"><?= e($plan['name']) ?></h3>
-                <p class="fs-3 text-primary mb-1"><?= number_format((float) $plan['price'], 2) ?> €</p>
-                <p class="text-muted small mb-3">/ <?= e($plan['interval']) ?></p>
-                <ul class="list-unstyled small mb-3">
-                    <li><i class="bi bi-check text-success"></i> <?= (int) $plan['max_streams'] ?> streams</li>
-                    <li><i class="bi bi-check text-success"></i> <?= (int) $plan['max_devices'] ?> dispositivos</li>
-                </ul>
-                <form method="POST" action="/portal/payment/checkout">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="plan_id" value="<?= (int) $plan['id'] ?>">
-                    <div class="d-grid gap-2">
-                        <button name="gateway" value="stripe" class="btn btn-primary btn-sm">Pagar con tarjeta</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    <?php endforeach; ?>
-</div>
-<?php endif; ?>
-
-<p class="text-white-50 small mt-4 mb-0"><a class="link-light" href="/portal">← Volver al inicio</a></p>
-<?php $content = ob_get_clean(); include base_path('resources/views/layouts/portal.php'); ?>
+<p class="text-center mt-3 mb-0"><a class="link-light" href="/portal">← Volver</a></p>
+<?php
+$content = ob_get_clean();
+$scripts = '<script src="' . e(asset('js/portal-shop.js')) . '?v=' . (@filemtime(public_path('assets/js/portal-shop.js')) ?: '1') . '"></script>';
+include base_path('resources/views/layouts/portal.php');
+?>

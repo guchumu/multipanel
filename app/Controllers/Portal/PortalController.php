@@ -158,7 +158,8 @@ class PortalController extends Controller
 
         $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
         $accountStatus = $this->accountStatusLabel($user, $expiry);
-        $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
+        $shop = new \App\Services\PortalShopService();
+        $shopOptions = $shop->monthOptions($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
         $peticiones = $this->loadPeticionesSummary($user, $tenantId, 5);
@@ -172,7 +173,7 @@ class PortalController extends Controller
             'liveStreams' => $liveStreams,
             'expiry' => $expiry,
             'accountStatus' => $accountStatus,
-            'renewalPresets' => $renewalPresets,
+            'shopOptions' => $shopOptions,
             'stripeConfigured' => $stripeConfigured,
             'peticiones' => $peticiones,
             'navActive' => 'home',
@@ -184,7 +185,8 @@ class PortalController extends Controller
         $user = $this->auth->user();
         $tenantId = (int) ($user->tenant_id ?? 1);
         $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
-        $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
+        $shop = new \App\Services\PortalShopService();
+        $shopOptions = $shop->monthOptions($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
         $serverInfo = ['name' => 'Sin servidor', 'type_label' => '—'];
@@ -211,23 +213,14 @@ class PortalController extends Controller
             }
         }
 
-        $plans = [];
-        try {
-            $plans = Database::getInstance()->fetchAll(
-                'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY price',
-                [$tenantId]
-            );
-        } catch (\Throwable) {
-            $plans = [];
-        }
-
         return $this->view('portal.subscription', [
-            'title' => 'Renovar / pagar',
+            'title' => 'Comprar tiempo',
             'portalUser' => $user,
-            'plans' => $plans,
             'expiry' => $expiry,
             'serverInfo' => $serverInfo,
-            'renewalPresets' => $renewalPresets,
+            'shopOptions' => $shopOptions,
+            'shopDiscount' => (int) round(\App\Services\PortalShopService::EXTRA_DISCOUNT * 100),
+            'includedStreams' => \App\Services\PortalShopService::INCLUDED_STREAMS,
             'stripeConfigured' => $stripeConfigured,
             'navActive' => 'pay',
         ]);

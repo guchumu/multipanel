@@ -24,10 +24,10 @@
             <div class="collapse navbar-collapse" id="portalNav">
                 <div class="navbar-nav ms-auto align-items-lg-center gap-lg-1 py-2 py-lg-0">
                     <a class="nav-link<?= $nav === 'home' ? ' active' : '' ?>" href="/portal">Inicio</a>
-                    <a class="nav-link<?= $nav === 'pay' ? ' active' : '' ?>" href="/portal/subscription">Renovar</a>
-                    <a class="nav-link<?= $nav === 'peticiones' ? ' active' : '' ?>" href="/portal/peticiones">Peticiones</a>
-                    <a class="nav-link<?= $nav === 'tickets' ? ' active' : '' ?>" href="/portal/tickets">Soporte</a>
-                    <a class="nav-link<?= $nav === 'profile' ? ' active' : '' ?>" href="/portal/profile">Perfil</a>
+                    <a class="nav-link<?= $nav === 'pay' ? ' active' : '' ?>" href="/portal/subscription">Comprar</a>
+                    <a class="nav-link<?= $nav === 'peticiones' ? ' active' : '' ?>" href="/portal/peticiones">Pedir peli</a>
+                    <a class="nav-link<?= $nav === 'tickets' ? ' active' : '' ?>" href="/portal/tickets">Ayuda</a>
+                    <a class="nav-link<?= $nav === 'profile' ? ' active' : '' ?>" href="/portal/profile">Mi ficha</a>
                     <form action="/portal/logout" method="POST" class="d-lg-inline ms-lg-2 mt-2 mt-lg-0">
                         <?= csrf_field() ?>
                         <button class="btn btn-outline-light btn-sm w-100" type="submit">Salir</button>
@@ -46,11 +46,12 @@
         <?= $content ?? '' ?>
     </div>
     <footer class="portal-footer text-center text-white-50 small pb-4">
-        MultiPanel · área de cliente
+        Tu cine en casa
     </footer>
     <?php else: ?>
     <?= $content ?? '' ?>
     <?php endif; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?= $scripts ?? '' ?>
 </body>
 </html>

@@ -1,30 +1,4 @@
 <?php
-$peticionEstado = static function (array $p): array {
-    $subido = (string) ($p['subido'] ?? '0');
-    $aceptado = (string) ($p['aceptado'] ?? '0');
-    $activo = (string) ($p['activo'] ?? '1');
-    $motivo = (int) ($p['idmotivo'] ?? 0);
-    if ($subido === '1') {
-        return ['label' => 'Subida', 'class' => 'success'];
-    }
-    if ($aceptado === '1') {
-        return ['label' => 'En proceso', 'class' => 'info'];
-    }
-    if ($activo === '0' || $motivo > 0) {
-        return ['label' => 'Denegada', 'class' => 'danger'];
-    }
-    return ['label' => 'Pendiente', 'class' => 'warning'];
-};
-$ticketStatusEs = static function (string $s): string {
-    return match ($s) {
-        'open' => 'Abierto',
-        'in_progress' => 'En curso',
-        'waiting' => 'En espera',
-        'resolved' => 'Resuelto',
-        'closed' => 'Cerrado',
-        default => $s,
-    };
-};
 $dateFmt = static function (?string $d): string {
     if ($d === null || $d === '') {
         return '—';
@@ -36,186 +10,70 @@ $dateFmt = static function (?string $d): string {
     return date('d/m/Y', $ts);
 };
 $serverInfo = is_array($serverInfo ?? null) ? $serverInfo : ['name' => '—', 'type_label' => '—'];
-$canPay = !empty($stripeConfigured) && !empty($renewalPresets);
-$firstPreset = $canPay ? $renewalPresets[0] : null;
 $maxStreams = (int) ($portalUser->max_streams ?? 0);
 if ($maxStreams <= 0) {
     $maxStreams = 2;
 }
+$canPay = !empty($stripeConfigured) && !empty($shopOptions);
+$heroEmoji = match ($accountStatus['class'] ?? '') {
+    'danger' => '😮',
+    'warning' => '⏰',
+    default => '🎬',
+};
 ob_start();
 ?>
-<section class="portal-hero portal-hero--<?= e($accountStatus['class'] ?? 'secondary') ?>">
-    <p class="portal-hero-brand">MultiPanel</p>
-    <h1 class="portal-hero-title">Hola, <?= e($portalUser->display_name ?? $portalUser->username) ?></h1>
-    <p class="portal-hero-hint"><?= e($accountStatus['hint'] ?? '') ?></p>
-
-    <div class="portal-status-row">
-        <span class="portal-status-pill portal-status-pill--<?= e($accountStatus['class'] ?? 'secondary') ?>">
-            <?= e($accountStatus['label'] ?? '—') ?>
-        </span>
-        <?php if (!empty($expiry['date'])): ?>
-        <div class="portal-expiry">
-            <span class="portal-expiry-label">Hasta</span>
-            <span class="portal-expiry-date"><?= $dateFmt($expiry['date']) ?></span>
-            <span class="portal-expiry-days"><?= e($expiry['label'] ?? '') ?></span>
-        </div>
-        <?php else: ?>
-        <div class="portal-expiry">
-            <span class="portal-expiry-days"><?= e($expiry['label'] ?? '') ?></span>
-        </div>
-        <?php endif; ?>
-    </div>
-
-    <div class="portal-hero-cta">
-        <?php if ($canPay && $firstPreset): ?>
-        <form method="POST" action="/portal/payment/renew">
-            <?= csrf_field() ?>
-            <input type="hidden" name="amount" value="<?= e((string) $firstPreset['price']) ?>">
-            <input type="hidden" name="days" value="<?= (int) $firstPreset['days'] ?>">
-            <button type="submit" class="btn btn-light btn-lg portal-cta-primary">
-                Renovar · <?= e($firstPreset['label']) ?> (<?= number_format((float) $firstPreset['price'], 2) ?> €)
-            </button>
-        </form>
-        <a href="/portal/subscription" class="btn btn-outline-light">Ver precios</a>
-        <?php else: ?>
-        <a href="/portal/subscription" class="btn btn-light btn-lg portal-cta-primary">Renovar / pagar</a>
-        <?php endif; ?>
-    </div>
+<section class="ez-hero ez-hero--<?= e($accountStatus['class'] ?? 'success') ?>">
+    <p class="ez-kicker">Tu cine en casa <?= $heroEmoji ?></p>
+    <h1 class="ez-hello">Hola, <?= e($portalUser->display_name ?: ($portalUser->username ?? 'amigo')) ?></h1>
+    <p class="ez-hint"><?= e($accountStatus['hint'] ?? 'Todo listo para ver.') ?></p>
 </section>
 
-<div class="card portal-card mt-3">
-    <div class="card-body">
-        <h2 class="portal-section-title">Tu servicio</h2>
-        <div class="row g-3 portal-service-grid">
-            <div class="col-6 col-md-3">
-                <div class="portal-kv">
-                    <span class="portal-kv-label">Tipo</span>
-                    <span class="portal-kv-value"><?= e($serverInfo['type_label'] ?? '—') ?></span>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="portal-kv">
-                    <span class="portal-kv-label">Servidor</span>
-                    <span class="portal-kv-value text-truncate" title="<?= e($serverInfo['name'] ?? '') ?>"><?= e($serverInfo['name'] ?? '—') ?></span>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="portal-kv">
-                    <span class="portal-kv-label">Caduca</span>
-                    <span class="portal-kv-value"><?= !empty($expiry['date']) ? $dateFmt($expiry['date']) : '—' ?></span>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="portal-kv">
-                    <span class="portal-kv-label">Streams</span>
-                    <span class="portal-kv-value"><?= count($liveStreams ?? []) ?> / <?= (int) $maxStreams ?></span>
-                </div>
-            </div>
-        </div>
-        <?php if (!empty($portalUser->email)): ?>
-        <p class="small text-muted mb-0 mt-3">Cuenta: <?= e((string) $portalUser->email) ?></p>
-        <?php endif; ?>
+<div class="ez-facts">
+    <div class="ez-fact">
+        <span class="ez-fact-ico" aria-hidden="true">📅</span>
+        <span class="ez-fact-label">Puedes ver hasta</span>
+        <strong class="ez-fact-value"><?= !empty($expiry['date']) ? $dateFmt($expiry['date']) : '—' ?></strong>
+        <span class="ez-fact-sub"><?= e($expiry['label'] ?? '') ?></span>
+    </div>
+    <div class="ez-fact">
+        <span class="ez-fact-ico" aria-hidden="true">📺</span>
+        <span class="ez-fact-label">Pantallas en casa</span>
+        <strong class="ez-fact-value"><?= (int) $maxStreams ?></strong>
+        <span class="ez-fact-sub">2 van incluidas · misma wifi</span>
+    </div>
+    <div class="ez-fact">
+        <span class="ez-fact-ico" aria-hidden="true">🏠</span>
+        <span class="ez-fact-label">Dónde ves</span>
+        <strong class="ez-fact-value text-truncate"><?= e($serverInfo['type_label'] ?? '—') ?></strong>
+        <span class="ez-fact-sub text-truncate"><?= e($serverInfo['name'] ?? '') ?></span>
     </div>
 </div>
 
-<nav class="portal-quick" aria-label="Accesos rápidos">
-    <a href="/portal/subscription" class="portal-quick-item"><i class="bi bi-credit-card"></i><span>Renovar</span></a>
-    <a href="/portal/peticiones" class="portal-quick-item"><i class="bi bi-film"></i><span>Peticiones</span></a>
-    <a href="/portal/tickets" class="portal-quick-item"><i class="bi bi-life-preserver"></i><span>Soporte</span></a>
-    <a href="/portal/profile" class="portal-quick-item"><i class="bi bi-person"></i><span>Perfil</span></a>
+<div class="ez-cta-wrap">
+    <?php if ($canPay): ?>
+    <a href="/portal/subscription" class="ez-btn-big">Quiero más tiempo ✨</a>
+    <?php else: ?>
+    <a href="/portal/tickets/create" class="ez-btn-big">Pedir ayuda</a>
+    <?php endif; ?>
+</div>
+
+<nav class="ez-quick" aria-label="Cosas que puedes hacer">
+    <a href="/portal/subscription" class="ez-quick-item"><span>🛒</span>Comprar</a>
+    <a href="/portal/peticiones" class="ez-quick-item"><span>🍿</span>Pedir peli</a>
+    <a href="/portal/tickets" class="ez-quick-item"><span>💬</span>Ayuda</a>
+    <a href="/portal/profile" class="ez-quick-item"><span>👤</span>Mi ficha</a>
 </nav>
 
-<div class="row g-3 mt-1">
-    <div class="col-12 col-md-6">
-        <div class="card portal-card h-100">
-            <div class="card-body">
-                <h2 class="portal-section-title">Ahora mismo</h2>
-                <?php if (!empty($liveStreams)): ?>
-                <ul class="list-unstyled small mb-0 portal-stream-list">
-                    <?php foreach (array_slice($liveStreams, 0, 4) as $s): ?>
-                    <li class="text-truncate">· <?= e($s['title'] ?? $s['media_title'] ?? 'Reproducción') ?></li>
-                    <?php endforeach; ?>
-                </ul>
-                <?php else: ?>
-                <p class="small text-muted mb-0">Ninguna reproducción activa.</p>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12 col-md-6">
-        <div class="card portal-card h-100">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h2 class="portal-section-title mb-0">Renovar / pagar</h2>
-                    <a href="/portal/subscription" class="small">Todas</a>
-                </div>
-                <?php if ($canPay): ?>
-                <div class="d-grid gap-2">
-                    <?php foreach (array_slice($renewalPresets, 0, 3) as $preset): ?>
-                    <form method="POST" action="/portal/payment/renew">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="amount" value="<?= e((string) $preset['price']) ?>">
-                        <input type="hidden" name="days" value="<?= (int) $preset['days'] ?>">
-                        <button type="submit" class="btn btn-primary w-100">
-                            <?= e($preset['label']) ?> · <?= number_format((float) $preset['price'], 2) ?> €
-                        </button>
-                    </form>
-                    <?php endforeach; ?>
-                </div>
-                <?php else: ?>
-                <p class="small text-muted mb-2">Pago online no disponible. Abre un ticket o contacta con soporte.</p>
-                <a href="/portal/tickets/create" class="btn btn-outline-primary btn-sm">Abrir ticket</a>
-                <?php endif; ?>
-            </div>
-        </div>
+<?php if (!empty($liveStreams)): ?>
+<div class="card portal-card mt-3">
+    <div class="card-body">
+        <h2 class="portal-section-title">Ahora mismo se está viendo</h2>
+        <ul class="list-unstyled mb-0 ez-now">
+            <?php foreach (array_slice($liveStreams, 0, 4) as $s): ?>
+            <li>▶️ <?= e($s['title'] ?? $s['media_title'] ?? 'Reproducción') ?></li>
+            <?php endforeach; ?>
+        </ul>
     </div>
 </div>
-
-<div class="row g-3 mt-1">
-    <div class="col-12 col-lg-6">
-        <div class="card portal-card h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h2 class="portal-section-title mb-0">Mis peticiones</h2>
-                <a href="/portal/peticiones" class="btn btn-sm btn-outline-primary">Ver / pedir</a>
-            </div>
-            <ul class="list-group list-group-flush">
-                <?php if (empty($peticiones['configured'])): ?>
-                <li class="list-group-item text-muted small"><?= e($peticiones['note'] ?? 'Peticiones no disponibles.') ?></li>
-                <?php elseif (empty($peticiones['items'])): ?>
-                <li class="list-group-item text-muted small"><?= e($peticiones['note'] ?? 'No tienes peticiones todavía.') ?></li>
-                <?php else: ?>
-                <?php foreach (array_slice($peticiones['items'], 0, 5) as $p): ?>
-                <?php $st = $peticionEstado($p); ?>
-                <li class="list-group-item d-flex justify-content-between gap-2">
-                    <span class="text-truncate"><?= e($p['nombrepeticion'] ?? 'Petición') ?></span>
-                    <span class="badge text-bg-<?= e($st['class']) ?>"><?= e($st['label']) ?></span>
-                </li>
-                <?php endforeach; ?>
-                <?php endif; ?>
-            </ul>
-        </div>
-    </div>
-
-    <div class="col-12 col-lg-6">
-        <div class="card portal-card h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h2 class="portal-section-title mb-0">Soporte</h2>
-                <a href="/portal/tickets/create" class="btn btn-sm btn-primary">Nuevo</a>
-            </div>
-            <ul class="list-group list-group-flush">
-                <?php if (empty($tickets)): ?>
-                <li class="list-group-item text-muted text-center small">Sin tickets</li>
-                <?php else: ?>
-                <?php foreach ($tickets as $t): ?>
-                <li class="list-group-item d-flex justify-content-between gap-2">
-                    <a class="text-truncate" href="/portal/tickets/<?= e($t['uuid']) ?>"><?= e($t['subject']) ?></a>
-                    <span class="badge text-bg-secondary"><?= e($ticketStatusEs((string) $t['status'])) ?></span>
-                </li>
-                <?php endforeach; ?>
-                <?php endif; ?>
-            </ul>
-        </div>
-    </div>
-</div>
+<?php endif; ?>
 <?php $content = ob_get_clean(); include base_path('resources/views/layouts/portal.php'); ?>

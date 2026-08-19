@@ -1,11 +1,13 @@
 /* MultiPanel client portal — mobile-first */
 :root {
-    --portal-deep: #163a5c;
-    --portal-mid: #2a6a9e;
-    --portal-light: #4a9fd4;
-    --portal-ink: #0f2740;
+    --portal-deep: #1b3a6b;
+    --portal-mid: #3b7dd8;
+    --portal-light: #7ec8f5;
+    --portal-ink: #16324f;
     --portal-card: #ffffff;
-    --portal-radius: 14px;
+    --portal-radius: 18px;
+    --ez-sun: #ffd56a;
+    --ez-mint: #7ee0b0;
 }
 
 .portal-body {
@@ -369,3 +371,127 @@
 .portal-service-grid .portal-kv {
     padding: 0.35rem 0;
 }
+
+/* Easy / kid-friendly */
+.ez-hero {
+    border-radius: 22px;
+    padding: 1.4rem 1.2rem 1.5rem;
+    color: #fff;
+    background: linear-gradient(160deg, rgba(255, 213, 106, 0.25), rgba(255, 255, 255, 0.08));
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    margin-bottom: 1rem;
+}
+.ez-hero--danger { background: linear-gradient(160deg, rgba(220, 70, 70, 0.45), rgba(255, 255, 255, 0.08)); }
+.ez-hero--warning { background: linear-gradient(160deg, rgba(240, 160, 40, 0.4), rgba(255, 255, 255, 0.08)); }
+.ez-hero--success { background: linear-gradient(160deg, rgba(40, 180, 120, 0.35), rgba(255, 213, 106, 0.18)); }
+
+.ez-kicker { font-size: 0.95rem; opacity: 0.9; margin-bottom: 0.2rem; }
+.ez-hello { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.35rem; }
+.ez-hint { font-size: 1.05rem; opacity: 0.92; margin-bottom: 0; }
+
+.ez-facts {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+}
+.ez-fact {
+    background: #fff;
+    border-radius: 18px;
+    padding: 1rem 1.1rem;
+    box-shadow: 0 8px 24px rgba(10, 30, 50, 0.12);
+}
+.ez-fact-ico { font-size: 1.4rem; display: block; margin-bottom: 0.15rem; }
+.ez-fact-label { display: block; font-size: 0.8rem; color: #6c7a89; }
+.ez-fact-value { display: block; font-size: 1.35rem; font-weight: 800; line-height: 1.2; }
+.ez-fact-sub { display: block; font-size: 0.82rem; color: #6c7a89; }
+
+.ez-cta-wrap { margin: 0.4rem 0 1rem; }
+.ez-btn-big {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 3.4rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--ez-sun);
+    color: #16324f;
+    font-weight: 800;
+    font-size: 1.15rem;
+    text-decoration: none;
+    box-shadow: 0 8px 0 #e0b23a;
+}
+.ez-btn-big:hover { color: #16324f; filter: brightness(1.04); }
+
+.ez-quick {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+.ez-quick-item {
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 16px;
+    padding: 0.75rem 0.2rem;
+    text-align: center;
+    text-decoration: none;
+    color: var(--portal-ink);
+    font-weight: 700;
+    font-size: 0.72rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+.ez-quick-item span { display: block; font-size: 1.25rem; margin-bottom: 0.15rem; }
+.ez-quick-item:hover { color: var(--portal-ink); }
+
+.ez-now li { font-size: 1rem; margin-bottom: 0.35rem; }
+.ez-page-title { color: #fff; font-weight: 800; font-size: 1.55rem; margin-bottom: 0.3rem; }
+.ez-page-lead { color: rgba(255, 255, 255, 0.85); font-size: 1.02rem; margin-bottom: 0.75rem; }
+.ez-now-until { color: #fff; font-weight: 600; margin-bottom: 1rem; }
+.ez-step { margin-bottom: 0.85rem; }
+.ez-step-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 0.7rem; }
+.ez-step-title span {
+    display: inline-flex;
+    width: 1.7rem; height: 1.7rem;
+    align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: var(--ez-sun);
+    margin-right: 0.35rem;
+    font-size: 0.95rem;
+}
+.ez-help { color: #5b6b7a; font-size: 0.92rem; }
+.ez-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.ez-chip {
+    border: 3px solid #dce7f3;
+    background: #fff;
+    border-radius: 16px;
+    padding: 0.85rem 0.5rem;
+    text-align: center;
+}
+.ez-chip strong { display: block; font-size: 1.05rem; }
+.ez-chip span { color: #3b7dd8; font-weight: 800; }
+.ez-chip.is-on { border-color: #3b7dd8; background: #eaf4ff; box-shadow: 0 0 0 3px rgba(59, 125, 216, 0.2); }
+.ez-stepper { display: flex; align-items: center; justify-content: center; gap: 1rem; }
+.ez-pm {
+    width: 3rem; height: 3rem;
+    border: 0; border-radius: 999px;
+    background: var(--portal-mid); color: #fff;
+    font-size: 1.6rem; font-weight: 800; line-height: 1;
+}
+.ez-stepper-val { text-align: center; min-width: 6rem; }
+.ez-stepper-val strong { display: block; font-size: 2rem; line-height: 1; }
+.ez-stepper-val span { font-size: 0.8rem; color: #6c7a89; }
+.ez-mail-label { font-weight: 700; }
+.ez-ticket { border: 3px dashed rgba(255, 213, 106, 0.9) !important; }
+.ez-ticket-list { padding-left: 1.1rem; margin-bottom: 0.75rem; }
+.ez-ticket-list li { margin-bottom: 0.3rem; }
+.ez-total { font-size: 1.25rem; margin-bottom: 0.85rem; }
+.ez-total strong { font-size: 1.6rem; }
+
+@media (min-width: 640px) {
+    .ez-facts { grid-template-columns: repeat(3, 1fr); }
+    .ez-chips { grid-template-columns: repeat(4, 1fr); }
+    .ez-btn-big { width: auto; min-width: 16rem; padding: 0 1.5rem; }
+    .portal-body .portal-container,
+    .portal-body .container { max-width: 780px; }
+}
+

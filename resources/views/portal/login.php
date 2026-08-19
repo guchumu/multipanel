@@ -4,8 +4,8 @@
         <div class="card-body p-4 p-md-5">
             <div class="text-center mb-4">
                 <div class="portal-login-mark mx-auto mb-3"><i class="bi bi-play-fill"></i></div>
-                <h1 class="h4 mb-1">MultiPanel</h1>
-                <p class="text-muted small mb-0">Accede a tu área de cliente</p>
+                <h1 class="h4 mb-1">¡Hola! 👋</h1>
+                <p class="text-muted small mb-0">Entra con tu email y tu clave</p>
             </div>
             <?php if ($e = \Core\Session::getInstance()->getFlash('error')): ?>
             <div class="alert alert-danger py-2"><?= e($e) ?></div>
@@ -21,15 +21,15 @@
                 </div>
                 <div class="mb-4">
                     <label class="form-label" for="portal-password">Contraseña</label>
-                    <input id="portal-password" type="password" name="password" class="form-control form-control-lg" required autocomplete="current-password" placeholder="123456@">
+                    <input id="portal-password" type="password" name="password" class="form-control form-control-lg" required autocomplete="current-password">
                 </div>
-                <button class="btn btn-primary btn-lg w-100" type="submit">Entrar</button>
+                <button class="btn btn-primary btn-lg w-100" type="submit">Entrar 🎬</button>
             </form>
 
             <hr class="my-4">
 
-            <h2 class="h6 mb-2">¿No recuerdas la contraseña?</h2>
-            <p class="text-muted small mb-3">Introduce el mismo email de tu cuenta y te la enviamos por Telegram.</p>
+            <h2 class="h6 mb-2">¿Se te olvidó la clave?</h2>
+            <p class="text-muted small mb-3">Pon tu email y te la mandamos al Telegram.</p>
             <form method="POST" action="/portal/login/send-password" class="d-grid gap-2">
                 <?= csrf_field() ?>
                 <input type="email" name="email" class="form-control" required placeholder="tu@email.com" autocomplete="email">

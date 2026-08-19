@@ -3,8 +3,8 @@
     <i class="bi bi-check-circle-fill text-success portal-result-icon"></i>
     <h1 class="h4 mt-3">¡Pago completado!</h1>
     <p class="text-muted mb-4">
-        Gracias. Si el cobro se confirma correctamente, tu acceso se ampliará en breve
-        (normalmente en unos minutos). Puedes cerrar esta página o volver al inicio.
+        ¡Bien! Cuando el pago se confirme, se suma el tiempo a tu cuenta.
+        Si pediste más personas, las apuntamos con los emails que escribiste.
     </p>
     <div class="d-grid gap-2 col-md-6 mx-auto">
         <a href="/portal" class="btn btn-primary">Volver al inicio</a>

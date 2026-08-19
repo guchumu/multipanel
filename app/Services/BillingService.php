@@ -131,6 +131,7 @@ final class BillingService
                         (float) $sub['amount'],
                         (string) $sub['currency']
                     );
+                    $this->applyShopExtras($mediaUser, $meta, $days);
                 }
             } catch (\Throwable $e) {
                 Logger::error('No se pudo aplicar el pago al usuario media', [
@@ -185,8 +186,11 @@ final class BillingService
         float $amount,
         string $currency,
         int $days,
-        string $gateway = 'stripe'
+        string $gateway = 'stripe',
+        array $shopMeta = [],
     ): int {
+        $meta = array_merge(['renewal_days' => $days], $shopMeta);
+
         return Database::getInstance()->insert('subscriptions', [
             'tenant_id' => $tenantId,
             'customer_id' => $customerId,
@@ -198,7 +202,7 @@ final class BillingService
             'currency' => strtoupper($currency),
             'starts_at' => date('Y-m-d H:i:s'),
             'ends_at' => null,
-            'metadata' => json_encode(['renewal_days' => $days]),
+            'metadata' => json_encode($meta, JSON_UNESCAPED_UNICODE),
         ]);
     }
 
@@ -213,7 +217,8 @@ final class BillingService
         float $amount,
         string $currency,
         int $days,
-        string $gateway = 'stripe'
+        string $gateway = 'stripe',
+        array $shopMeta = [],
     ): array {
         if ($amount <= 0 || $days <= 0) {
             return ['success' => false, 'message' => 'El importe y los días deben ser mayores que 0.'];
@@ -227,7 +232,16 @@ final class BillingService
         }
 
         $customerId = $this->findOrCreateCustomerForMediaUser($tenantId, $user);
-        $subscriptionId = $this->createRenewalSubscription($tenantId, $customerId, (int) $user->id, $amount, $currency, $days, $gateway);
+        $subscriptionId = $this->createRenewalSubscription(
+            $tenantId,
+            $customerId,
+            (int) $user->id,
+            $amount,
+            $currency,
+            $days,
+            $gateway,
+            $shopMeta
+        );
 
         // El concepto que ve el cliente es siempre el mismo (ej. "Digital services"),
         // configurable en Ajustes > Facturación. La duración y el usuario nunca se
@@ -312,6 +326,89 @@ final class BillingService
             'interval' => 'monthly',
             'is_active' => 0,
         ]);
+    }
+
+    /**
+     * Pantallas extra + emails extra contratados desde el simulador del portal.
+     *
+     * @param array<string, mixed> $meta
+     */
+    private function applyShopExtras(MediaUser $buyer, array $meta, int $days): void
+    {
+        $extraStreams = max(0, (int) ($meta['extra_streams'] ?? 0));
+        if ($extraStreams > 0) {
+            $current = (int) ($buyer->max_streams ?? PortalShopService::INCLUDED_STREAMS);
+            if ($current <= 0) {
+                $current = PortalShopService::INCLUDED_STREAMS;
+            }
+            $buyer->max_streams = $current + $extraStreams;
+            $buyer->save();
+        }
+
+        $emails = $meta['extra_emails'] ?? [];
+        if (!is_array($emails) || $emails === []) {
+            return;
+        }
+
+        $db = Database::getInstance();
+        $tenantId = (int) ($buyer->tenant_id ?? 1);
+        $passwords = new PasswordService();
+        $hash = $passwords->hash(PortalDefaultPasswordService::DEFAULT_PASSWORD);
+        $expires = $buyer->expires_at ?? null;
+        $buyerEmail = mb_strtolower(trim((string) ($buyer->email ?? '')));
+
+        foreach ($emails as $raw) {
+            $email = mb_strtolower(trim((string) $raw));
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $email === $buyerEmail) {
+                continue;
+            }
+
+            $exists = $db->fetchOne(
+                'SELECT id FROM media_users WHERE tenant_id = ? AND LOWER(TRIM(email)) = ? AND deleted_at IS NULL LIMIT 1',
+                [$tenantId, $email]
+            );
+            if ($exists) {
+                $other = MediaUser::find((int) $exists['id']);
+                if ($other !== null && $days > 0) {
+                    (new MediaUserManagementService())->addDays($other, $days);
+                }
+                continue;
+            }
+
+            $username = strtolower((string) preg_replace('/[^a-z0-9._-]/', '', $local));
+            if (strlen($username) < 3) {
+                $username = 'user' . bin2hex(random_bytes(2));
+            }
+            $dup = $db->fetchOne(
+                'SELECT id FROM media_users WHERE tenant_id = ? AND username = ? AND deleted_at IS NULL LIMIT 1',
+                [$tenantId, $username]
+            );
+            if ($dup) {
+                $username = substr($username, 0, 16) . '_' . bin2hex(random_bytes(2));
+            }
+
+            try {
+                $db->insert('media_users', [
+                    'tenant_id' => $tenantId,
+                    'uuid' => Uuid::uuid4()->toString(),
+                    'server_id' => $buyer->server_id,
+                    'username' => $username,
+                    'email' => $email,
+                    'password' => $hash,
+                    'display_name' => $username,
+                    'status' => 'pending',
+                    'max_streams' => PortalShopService::INCLUDED_STREAMS,
+                    'max_devices' => 5,
+                    'expires_at' => $expires,
+                    'notes' => 'Contratado desde el portal por ' . ($buyer->email ?: $buyer->username),
+                ]);
+            } catch (\Throwable $e) {
+                Logger::warning('No se pudo crear usuario extra del portal', [
+                    'email' => $email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     private function intervalToDays(string $interval): ?int
