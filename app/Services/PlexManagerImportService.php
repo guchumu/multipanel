@@ -1041,12 +1041,12 @@ final class PlexManagerImportService
     {
         $payload = [];
         $expiresAt = $expiresAt !== null ? trim($expiresAt) : null;
-        $telegramChatId = $telegramChatId !== null ? trim($telegramChatId) : null;
+        $telegramChatId = normalize_telegram_chat_id($telegramChatId);
         $notes = $notes !== null ? trim($notes) : null;
         if ($expiresAt !== null && $expiresAt !== '') {
             $payload['expires_at'] = $expiresAt;
         }
-        if ($telegramChatId !== null && $telegramChatId !== '') {
+        if ($telegramChatId !== '') {
             $payload['telegram_chat_id'] = $telegramChatId;
         }
         if ($notes !== null && $notes !== '') {

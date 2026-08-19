@@ -729,6 +729,18 @@ body {
     max-width: 8.5rem;
 }
 
+.media-users-sort-link {
+    white-space: nowrap;
+}
+
+.media-users-sort-link:hover {
+    color: var(--bs-primary) !important;
+}
+
+.media-users-empty-filters .btn {
+    white-space: nowrap;
+}
+
 .media-users-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;

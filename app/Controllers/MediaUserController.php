@@ -24,6 +24,7 @@ use App\Services\MediaUserProvisioningService;
 use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\ServerSyncService;
+use App\Services\StreamLimitSettingsService;
 use App\Services\SubscriptionPeriod;
 use App\Services\Notifications\NotificationService;
 use Core\Controller;
@@ -437,6 +438,7 @@ class MediaUserController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $this->mediaUsers->ensureTelegramChatIdColumn();
         try {
+            $this->mediaUsers->scrubLiteralNullTelegram($tenantId);
             $this->mediaUsers->backfillTelegramChatIds($tenantId);
             $this->mediaUsers->backfillEmailsFromCustomers($tenantId);
         } catch (\Throwable) {
@@ -450,14 +452,28 @@ class MediaUserController extends Controller
         if ($onServerFilter === '1' || $onServerFilter === '0') {
             $onServer = $onServerFilter === '1';
         }
+        $sort = MediaUserRepository::normalizeSort($request->input('sort'));
+        $dir = MediaUserRepository::normalizeDir($request->input('dir'));
+        $emptyFilters = $this->parseEmptyFilters($request);
         $page = max(1, (int) $request->input('page', 1));
         $perPage = 20;
-        $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer);
+        $totalCount = $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer, $emptyFilters);
         $totalPages = max(1, (int) ceil($totalCount / $perPage));
         if ($page > $totalPages) {
             $page = $totalPages;
         }
-        $users = $this->mediaUsers->paginate($tenantId, $page, $perPage, $status, $serverId, $onServer);
+        $users = $this->mediaUsers->paginate(
+            $tenantId,
+            $page,
+            $perPage,
+            $status,
+            $serverId,
+            $onServer,
+            $sort,
+            $dir,
+            $emptyFilters
+        );
+        $defaultMaxStreams = (new StreamLimitSettingsService())->getDefaultMaxStreams($tenantId);
 
         return $this->view('media_users.index', [
             'title' => 'Usuarios Media',
@@ -466,6 +482,10 @@ class MediaUserController extends Controller
             'currentStatus' => $status,
             'currentServerId' => $serverId,
             'currentOnServer' => $onServer,
+            'currentSort' => $sort,
+            'currentDir' => $dir,
+            'emptyFilters' => $emptyFilters,
+            'defaultMaxStreams' => $defaultMaxStreams,
             'totalCount' => $totalCount,
             'showingCount' => count($users),
             'page' => $page,
@@ -486,28 +506,49 @@ class MediaUserController extends Controller
             if ($onServerFilter === '1' || $onServerFilter === '0') {
                 $onServer = $onServerFilter === '1';
             }
+            $sort = MediaUserRepository::normalizeSort($request->input('sort'));
+            $dir = MediaUserRepository::normalizeDir($request->input('dir') ?: 'asc');
+            $emptyFilters = $this->parseEmptyFilters($request);
+            $streamLimits = new StreamLimitSettingsService();
+            $defaultMaxStreams = $streamLimits->getDefaultMaxStreams($tenantId);
 
-            $users = $this->mediaUsers->search($tenantId, $q, 50, $status, $serverId, $onServer);
+            $users = $this->mediaUsers->search(
+                $tenantId,
+                $q,
+                50,
+                $status,
+                $serverId,
+                $onServer,
+                $sort,
+                $dir,
+                $emptyFilters
+            );
 
             return $this->json([
                 'query' => $q,
                 'count' => count($users),
-                'total' => $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer),
-                'users' => array_map(static fn (MediaUser $u): array => [
-                    'id' => (int) $u->id,
-                    'uuid' => (string) $u->uuid,
-                    'username' => (string) ($u->username ?? ''),
-                    'display_name' => (string) ($u->display_name ?? ''),
-                    'email' => (string) ($u->email ?? ''),
-                    'server_name' => (string) ($u->server_name ?? ''),
-                    'server_uuid' => (string) ($u->server_uuid ?? ''),
-                    'status' => (string) $u->status,
-                    'on_server' => isset($u->on_server) ? (int) $u->on_server : null,
-                    'membership_synced_at' => $u->membership_synced_at ?? null,
-                    'max_streams' => (int) $u->max_streams,
-                    'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
-                    'telegram_chat_id' => (string) ($u->telegram_chat_id ?? ''),
-                ], $users),
+                'total' => $this->mediaUsers->countFiltered($tenantId, $status, $serverId, $onServer, $emptyFilters),
+                'users' => array_map(static function (MediaUser $u) use ($streamLimits, $tenantId, $defaultMaxStreams): array {
+                    $tg = normalize_telegram_chat_id($u->telegram_chat_id ?? null);
+
+                    return [
+                        'id' => (int) $u->id,
+                        'uuid' => (string) $u->uuid,
+                        'username' => (string) ($u->username ?? ''),
+                        'display_name' => (string) ($u->display_name ?? ''),
+                        'email' => (string) ($u->email ?? ''),
+                        'server_name' => (string) ($u->server_name ?? ''),
+                        'server_uuid' => (string) ($u->server_uuid ?? ''),
+                        'status' => (string) $u->status,
+                        'on_server' => isset($u->on_server) ? (int) $u->on_server : null,
+                        'membership_synced_at' => $u->membership_synced_at ?? null,
+                        'max_streams' => $streamLimits->resolveLimitForUser($tenantId, $u->max_streams ?? null),
+                        'max_streams_raw' => $u->max_streams,
+                        'default_max_streams' => $defaultMaxStreams,
+                        'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
+                        'telegram_chat_id' => $tg,
+                    ];
+                }, $users),
             ]);
         } catch (\Throwable $e) {
             return $this->json([
@@ -583,7 +624,7 @@ class MediaUserController extends Controller
                 : max(1, min(50, (int) $request->input('max_streams'))),
             'max_devices' => (int) ($request->input('max_devices') ?? 5),
             'expires_at' => $request->input('expires_at') ?: null,
-            'telegram_chat_id' => trim((string) $request->input('telegram_chat_id', '')) ?: null,
+            'telegram_chat_id' => normalize_telegram_chat_id($request->input('telegram_chat_id', '')) ?: null,
             'notes' => $request->input('notes'),
         ]);
 
@@ -882,6 +923,7 @@ class MediaUserController extends Controller
         $emails = 0;
         $telegrams = 0;
         try {
+            $this->mediaUsers->scrubLiteralNullTelegram($tenantId);
             $emails = $this->mediaUsers->backfillEmailsFromCustomers($tenantId);
             $telegrams = $this->mediaUsers->backfillTelegramChatIds($tenantId);
         } catch (\Throwable) {
@@ -895,6 +937,19 @@ class MediaUserController extends Controller
         return sprintf(' Recuperados: %d emails, %d Telegram desde clientes.', $emails, $telegrams);
     }
 
+    /**
+     * @return list<string>
+     */
+    private function parseEmptyFilters(Request $request): array
+    {
+        $raw = $request->input('filter_empty');
+        if (is_array($raw)) {
+            return MediaUserRepository::normalizeEmptyFilters($raw);
+        }
+
+        return MediaUserRepository::normalizeEmptyFilters([(string) ($raw ?? '')]);
+    }
+
     public function updateTelegram(Request $request, string $uuid): Response
     {
         try {
@@ -903,7 +958,7 @@ class MediaUserController extends Controller
                 return $this->json(['error' => 'Usuario no encontrado'], 404);
             }
 
-            $chatId = trim((string) $request->input('telegram_chat_id', ''));
+            $chatId = normalize_telegram_chat_id($request->input('telegram_chat_id', ''));
 
             return $this->json($this->management->updateTelegram($user, $chatId !== '' ? $chatId : null));
         } catch (\Throwable $e) {

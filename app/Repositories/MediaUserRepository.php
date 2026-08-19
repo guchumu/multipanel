@@ -12,7 +12,26 @@ use Core\Database;
  */
 class MediaUserRepository
 {
-    /** @return array<int, MediaUser> */
+    /** @var list<string> */
+    public const EMPTY_FILTERS = ['expires', 'telegram', 'email'];
+
+    /** @var array<string, string> */
+    private const SORT_COLUMNS = [
+        'id' => 'mu.`id`',
+        'username' => 'COALESCE(NULLIF(TRIM(mu.`display_name`), \'\'), mu.`username`)',
+        'email' => 'mu.`email`',
+        'server' => 's.`name`',
+        'status' => 'mu.`status`',
+        'expires' => 'mu.`expires_at`',
+        'expires_at' => 'mu.`expires_at`',
+        'telegram' => 'mu.`telegram_chat_id`',
+        'max_streams' => 'mu.`max_streams`',
+    ];
+
+    /**
+     * @param list<string> $emptyFilters
+     * @return array<int, MediaUser>
+     */
     public function paginate(
         int $tenantId,
         int $page = 1,
@@ -20,6 +39,9 @@ class MediaUserRepository
         ?string $status = null,
         ?int $serverId = null,
         ?bool $onServer = null,
+        ?string $sort = null,
+        string $dir = 'desc',
+        array $emptyFilters = [],
     ): array {
         $offset = ($page - 1) * $perPage;
         $params = [$tenantId];
@@ -28,22 +50,8 @@ class MediaUserRepository
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
 
-        if ($status !== null) {
-            $sql .= ' AND mu.`status` = ?';
-            $params[] = $status;
-        }
-
-        if ($serverId !== null) {
-            $sql .= ' AND mu.`server_id` = ?';
-            $params[] = $serverId;
-        }
-
-        if ($onServer !== null && $this->hasOnServerColumn()) {
-            $sql .= ' AND mu.`on_server` = ?';
-            $params[] = $onServer ? 1 : 0;
-        }
-
-        $sql .= ' ORDER BY mu.`created_at` DESC LIMIT ? OFFSET ?';
+        $this->appendListFilters($sql, $params, $status, $serverId, $onServer, $emptyFilters, true);
+        $sql .= ' ' . $this->orderBySql($sort, $dir) . ' LIMIT ? OFFSET ?';
         $params[] = $perPage;
         $params[] = $offset;
 
@@ -71,29 +79,20 @@ class MediaUserRepository
         return (int) ($row['total'] ?? 0);
     }
 
+    /**
+     * @param list<string> $emptyFilters
+     */
     public function countFiltered(
         int $tenantId,
         ?string $status = null,
         ?int $serverId = null,
         ?bool $onServer = null,
+        array $emptyFilters = [],
     ): int {
         $params = [$tenantId];
-        $sql = 'SELECT COUNT(*) as total FROM `media_users` WHERE `tenant_id` = ? AND `deleted_at` IS NULL';
+        $sql = 'SELECT COUNT(*) as total FROM `media_users` mu WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
 
-        if ($status !== null) {
-            $sql .= ' AND `status` = ?';
-            $params[] = $status;
-        }
-
-        if ($serverId !== null) {
-            $sql .= ' AND `server_id` = ?';
-            $params[] = $serverId;
-        }
-
-        if ($onServer !== null && $this->hasOnServerColumn()) {
-            $sql .= ' AND `on_server` = ?';
-            $params[] = $onServer ? 1 : 0;
-        }
+        $this->appendListFilters($sql, $params, $status, $serverId, $onServer, $emptyFilters, true);
 
         $row = Database::getInstance()->fetchOne($sql, $params);
 
@@ -139,7 +138,10 @@ class MediaUserRepository
         return array_map(static fn ($row) => new MediaUser($row), $rows);
     }
 
-    /** @return array<int, MediaUser> */
+    /**
+     * @param list<string> $emptyFilters
+     * @return array<int, MediaUser>
+     */
     public function search(
         int $tenantId,
         string $query,
@@ -147,6 +149,9 @@ class MediaUserRepository
         ?string $status = null,
         ?int $serverId = null,
         ?bool $onServer = null,
+        ?string $sort = null,
+        string $dir = 'asc',
+        array $emptyFilters = [],
     ): array {
         $query = trim($query);
         // Permitir id numérico de 1 dígito; resto mínimo 2 caracteres.
@@ -189,27 +194,128 @@ class MediaUserRepository
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
                   AND ' . $matchSql;
 
-        if ($status !== null) {
-            $sql .= ' AND mu.`status` = ?';
-            $params[] = $status;
-        }
-
-        if ($serverId !== null) {
-            $sql .= ' AND mu.`server_id` = ?';
-            $params[] = $serverId;
-        }
-
-        if ($onServer !== null && $this->hasOnServerColumn()) {
-            $sql .= ' AND mu.`on_server` = ?';
-            $params[] = $onServer ? 1 : 0;
-        }
-
-        $sql .= ' ORDER BY mu.`username` ASC LIMIT ?';
+        $this->appendListFilters($sql, $params, $status, $serverId, $onServer, $emptyFilters, true);
+        $sql .= ' ' . $this->orderBySql($sort ?? 'username', $dir, 'mu.`username` ASC') . ' LIMIT ?';
         $params[] = $limit;
 
         $rows = Database::getInstance()->fetchAll($sql, $params);
 
         return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
+    /**
+     * Convierte telegram_chat_id con valor literal "null" a NULL real.
+     */
+    public function scrubLiteralNullTelegram(int $tenantId): int
+    {
+        if (!$this->hasTelegramChatIdColumn()) {
+            return 0;
+        }
+
+        $stmt = Database::getInstance()->query(
+            'UPDATE `media_users`
+             SET `telegram_chat_id` = NULL
+             WHERE `tenant_id` = ?
+               AND `deleted_at` IS NULL
+               AND LOWER(TRIM(`telegram_chat_id`)) = \'null\'',
+            [$tenantId]
+        );
+
+        return (int) $stmt->rowCount();
+    }
+
+    /**
+     * @param list<string> $raw
+     * @return list<string>
+     */
+    public static function normalizeEmptyFilters(array $raw): array
+    {
+        $out = [];
+        foreach ($raw as $item) {
+            foreach (preg_split('/[|,]+/', (string) $item) ?: [] as $part) {
+                $key = strtolower(trim($part));
+                if (in_array($key, self::EMPTY_FILTERS, true) && !in_array($key, $out, true)) {
+                    $out[] = $key;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    public static function normalizeSort(?string $sort): ?string
+    {
+        $sort = strtolower(trim((string) $sort));
+        if ($sort === '' || !isset(self::SORT_COLUMNS[$sort])) {
+            return null;
+        }
+
+        return $sort === 'expires_at' ? 'expires' : $sort;
+    }
+
+    public static function normalizeDir(?string $dir): string
+    {
+        return strtolower(trim((string) $dir)) === 'asc' ? 'asc' : 'desc';
+    }
+
+    /**
+     * @param list<string> $emptyFilters
+     * @param array<int, mixed> $params
+     */
+    private function appendListFilters(
+        string &$sql,
+        array &$params,
+        ?string $status,
+        ?int $serverId,
+        ?bool $onServer,
+        array $emptyFilters,
+        bool $useAlias,
+    ): void {
+        $p = $useAlias ? 'mu.' : '';
+
+        if ($status !== null) {
+            $sql .= " AND {$p}`status` = ?";
+            $params[] = $status;
+        }
+
+        if ($serverId !== null) {
+            $sql .= " AND {$p}`server_id` = ?";
+            $params[] = $serverId;
+        }
+
+        if ($onServer !== null && $this->hasOnServerColumn()) {
+            $sql .= " AND {$p}`on_server` = ?";
+            $params[] = $onServer ? 1 : 0;
+        }
+
+        foreach (self::normalizeEmptyFilters($emptyFilters) as $filter) {
+            if ($filter === 'expires') {
+                $sql .= " AND {$p}`expires_at` IS NULL";
+                continue;
+            }
+            if ($filter === 'email') {
+                $sql .= " AND ({$p}`email` IS NULL OR TRIM({$p}`email`) = '')";
+                continue;
+            }
+            if ($filter === 'telegram' && $this->hasTelegramChatIdColumn()) {
+                $sql .= " AND ({$p}`telegram_chat_id` IS NULL
+                    OR TRIM({$p}`telegram_chat_id`) = ''
+                    OR LOWER(TRIM({$p}`telegram_chat_id`)) = 'null')";
+            }
+        }
+    }
+
+    private function orderBySql(?string $sort, string $dir, string $default = 'mu.`created_at` DESC'): string
+    {
+        $sortKey = self::normalizeSort($sort);
+        if ($sortKey === null || !isset(self::SORT_COLUMNS[$sortKey])) {
+            return 'ORDER BY ' . $default;
+        }
+
+        $column = self::SORT_COLUMNS[$sortKey];
+        $direction = self::normalizeDir($dir);
+        // NULLs al final (más útil al ordenar caducidad / telegram / email).
+        return "ORDER BY ({$column} IS NULL) ASC, {$column} {$direction}";
     }
 
     /**
@@ -462,15 +568,43 @@ class MediaUserRepository
             'UPDATE media_users mu
              INNER JOIN customers c ON c.media_user_id = mu.id AND c.tenant_id = mu.tenant_id
              SET mu.telegram_chat_id = COALESCE(
-                 NULLIF(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')), \'\'),
-                 NULLIF(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')), \'\')
+                 CASE
+                     WHEN JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\') IS NULL
+                          OR JSON_TYPE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')) = \'NULL\'
+                          OR TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\'))) = \'\'
+                          OR LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')))) = \'null\'
+                     THEN NULL
+                     ELSE TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')))
+                 END,
+                 CASE
+                     WHEN JSON_EXTRACT(c.metadata, \'$.telegram_id\') IS NULL
+                          OR JSON_TYPE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')) = \'NULL\'
+                          OR TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\'))) = \'\'
+                          OR LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')))) = \'null\'
+                     THEN NULL
+                     ELSE TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')))
+                 END
              )
              WHERE mu.tenant_id = ?
                AND mu.deleted_at IS NULL
-               AND (mu.telegram_chat_id IS NULL OR mu.telegram_chat_id = \'\')
                AND (
-                 JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\') IS NOT NULL
-                 OR JSON_EXTRACT(c.metadata, \'$.telegram_id\') IS NOT NULL
+                 mu.telegram_chat_id IS NULL
+                 OR mu.telegram_chat_id = \'\'
+                 OR LOWER(TRIM(mu.telegram_chat_id)) = \'null\'
+               )
+               AND (
+                 (
+                   JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\') IS NOT NULL
+                   AND JSON_TYPE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')) != \'NULL\'
+                   AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\'))) != \'\'
+                   AND LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_chat_id\')))) != \'null\'
+                 )
+                 OR (
+                   JSON_EXTRACT(c.metadata, \'$.telegram_id\') IS NOT NULL
+                   AND JSON_TYPE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')) != \'NULL\'
+                   AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\'))) != \'\'
+                   AND LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(c.metadata, \'$.telegram_id\')))) != \'null\'
+                 )
                )',
             [$tenantId]
         );

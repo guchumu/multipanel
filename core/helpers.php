@@ -250,6 +250,19 @@ if (!function_exists('days_left_badge')) {
     }
 }
 
+if (!function_exists('normalize_telegram_chat_id')) {
+    /** Trata vacío y el literal "null" como sin Telegram. */
+    function normalize_telegram_chat_id(mixed $value): string
+    {
+        $tg = trim((string) ($value ?? ''));
+        if ($tg === '' || strcasecmp($tg, 'null') === 0) {
+            return '';
+        }
+
+        return $tg;
+    }
+}
+
 if (!function_exists('can')) {
     function can(string $permission): bool
     {

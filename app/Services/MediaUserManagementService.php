@@ -161,7 +161,9 @@ final class MediaUserManagementService
     {
         $this->users->ensureTelegramChatIdColumn();
         $old = ['telegram_chat_id' => $user->telegram_chat_id ?? null];
-        $user->telegram_chat_id = $chatId !== '' && $chatId !== null ? $chatId : null;
+        $user->telegram_chat_id = $chatId !== null
+            ? (normalize_telegram_chat_id($chatId) ?: null)
+            : null;
         $user->save();
         AuditService::log('media_user.telegram_updated', 'media_user', (int) $user->id, $old, [
             'telegram_chat_id' => $user->telegram_chat_id,

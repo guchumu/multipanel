@@ -174,7 +174,15 @@ final class MediaUserDedupeService
 
     private function isBlank(mixed $value): bool
     {
-        return $value === null || (is_string($value) && trim($value) === '');
+        if ($value === null) {
+            return true;
+        }
+        if (!is_string($value)) {
+            return false;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' || strcasecmp($trimmed, 'null') === 0;
     }
 
     private function score(MediaUser $user): int

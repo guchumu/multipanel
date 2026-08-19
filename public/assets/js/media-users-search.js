@@ -19,6 +19,12 @@
             .replaceAll('"', '&quot;');
     }
 
+    function normalizeTelegram(value) {
+        const tg = String(value ?? '').trim();
+        if (!tg || tg.toLowerCase() === 'null') return '';
+        return tg;
+    }
+
     function statusBadgeClass(status) {
         switch (status) {
             case 'active': return 'bg-success';
@@ -67,6 +73,16 @@
         return { label: `Quedan ${days}d`, cls: 'bg-light text-dark border' };
     }
 
+    function listQueryParams() {
+        const url = new URLSearchParams(window.location.search);
+        const params = new URLSearchParams();
+        ['status', 'server_id', 'on_server', 'sort', 'dir', 'filter_empty'].forEach((key) => {
+            const value = url.get(key);
+            if (value !== null && value !== '') params.set(key, value);
+        });
+        return params;
+    }
+
     function renderRows(users) {
         if (!users.length) {
             tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Sin resultados</td></tr>';
@@ -85,7 +101,8 @@
             const dl = daysLeftBadge(expiresDate);
             const mb = membershipBadge(u.on_server);
             const username = escapeHtml(u.display_name || u.username || '');
-            const tg = String(u.telegram_chat_id || '').trim();
+            const tg = normalizeTelegram(u.telegram_chat_id);
+            const streams = Number(u.max_streams || 0);
 
             return `<tr>
                 <td class="small text-muted media-users-col-id">${Number(u.id || 0)}</td>
@@ -99,7 +116,7 @@
                 <td class="d-none d-xl-table-cell">
                     <span class="badge text-truncate d-inline-block media-users-membership-badge ${mb.cls}" title="${escapeHtml(mb.label)}">${escapeHtml(mb.label)}</span>
                 </td>
-                <td class="d-none d-xl-table-cell small">${Number(u.max_streams || 0)}</td>
+                <td class="d-none d-xl-table-cell small">${streams}</td>
                 <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(expiresDate)}">
@@ -138,6 +155,8 @@
         }
 
         if (input.classList.contains('telegram-input')) {
+            const cleaned = normalizeTelegram(input.value);
+            if (cleaned !== input.value) input.value = cleaned;
             const res = await fetch(`/media-users/${input.dataset.uuid}/telegram`, {
                 method: 'POST',
                 headers: {
@@ -145,7 +164,7 @@
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
-                body: JSON.stringify({ telegram_chat_id: input.value }),
+                body: JSON.stringify({ telegram_chat_id: cleaned }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success === false) {
@@ -163,13 +182,8 @@
             return;
         }
 
-        const params = new URLSearchParams({ q });
-        const status = new URLSearchParams(window.location.search).get('status');
-        const serverId = new URLSearchParams(window.location.search).get('server_id');
-        const onServer = new URLSearchParams(window.location.search).get('on_server');
-        if (status) params.set('status', status);
-        if (serverId) params.set('server_id', serverId);
-        if (onServer === '0' || onServer === '1') params.set('on_server', onServer);
+        const params = listQueryParams();
+        params.set('q', q);
 
         const seq = ++requestSeq;
         if (meta) {

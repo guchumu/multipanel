@@ -1,5 +1,18 @@
 <?php
-$queryBase = static function (?string $status, ?int $serverId, ?bool $onServer = null) {
+$currentSort = $currentSort ?? null;
+$currentDir = ($currentDir ?? 'desc') === 'asc' ? 'asc' : 'desc';
+$emptyFilters = is_array($emptyFilters ?? null) ? $emptyFilters : [];
+$defaultMaxStreams = max(1, (int) ($defaultMaxStreams ?? 1));
+$currentOnServer = $currentOnServer ?? null;
+
+$queryBase = static function (
+    ?string $status,
+    ?int $serverId,
+    ?bool $onServer = null,
+    ?string $sort = null,
+    ?string $dir = null,
+    array $empty = [],
+) {
     $params = [];
     if ($status) {
         $params['status'] = $status;
@@ -10,7 +23,59 @@ $queryBase = static function (?string $status, ?int $serverId, ?bool $onServer =
     if ($onServer !== null) {
         $params['on_server'] = $onServer ? '1' : '0';
     }
+    if ($sort) {
+        $params['sort'] = $sort;
+        $params['dir'] = ($dir === 'asc') ? 'asc' : 'desc';
+    }
+    if ($empty !== []) {
+        $params['filter_empty'] = implode(',', $empty);
+    }
     return $params !== [] ? '?' . http_build_query($params) : '';
+};
+
+/** @param array{status?: ?string, server_id?: ?int, on_server?: ?bool, sort?: ?string, dir?: ?string, empty?: list<string>} $over */
+$withFilters = static function (array $over = []) use (
+    $queryBase,
+    $currentStatus,
+    $currentServerId,
+    $currentOnServer,
+    $currentSort,
+    $currentDir,
+    $emptyFilters
+): string {
+    $status = array_key_exists('status', $over) ? $over['status'] : $currentStatus;
+    $serverId = array_key_exists('server_id', $over)
+        ? $over['server_id']
+        : ($currentServerId ? (int) $currentServerId : null);
+    $onServer = array_key_exists('on_server', $over) ? $over['on_server'] : $currentOnServer;
+    $sort = array_key_exists('sort', $over) ? $over['sort'] : $currentSort;
+    $dir = array_key_exists('dir', $over) ? $over['dir'] : $currentDir;
+    $empty = array_key_exists('empty', $over) ? (array) $over['empty'] : $emptyFilters;
+
+    return $queryBase($status, $serverId, $onServer, $sort, $dir, $empty);
+};
+
+$toggleEmpty = static function (string $key) use ($emptyFilters, $withFilters): string {
+    $next = $emptyFilters;
+    if (in_array($key, $next, true)) {
+        $next = array_values(array_filter($next, static fn ($v) => $v !== $key));
+    } else {
+        $next[] = $key;
+    }
+    return '/media-users' . $withFilters(['empty' => $next]);
+};
+
+$sortUrl = static function (string $col) use ($currentSort, $currentDir, $withFilters): string {
+    $nextDir = ($currentSort === $col && $currentDir === 'asc') ? 'desc' : 'asc';
+    return '/media-users' . $withFilters(['sort' => $col, 'dir' => $nextDir]);
+};
+
+$sortIcon = static function (string $col) use ($currentSort, $currentDir): string {
+    if ($currentSort !== $col) {
+        return '<i class="bi bi-arrow-down-up ms-1 opacity-25" aria-hidden="true"></i>';
+    }
+    $icon = $currentDir === 'asc' ? 'bi-sort-up' : 'bi-sort-down';
+    return '<i class="bi ' . $icon . ' ms-1" aria-hidden="true"></i>';
 };
 
 $statusBadgeClass = static function (string $status): string {
@@ -43,8 +108,6 @@ $membershipBadge = static function ($onServer): array {
     return ['label' => 'No está en el servidor', 'class' => 'bg-danger'];
 };
 
-$currentOnServer = $currentOnServer ?? null;
-
 ob_start();
 ?>
 <div class="media-users-page">
@@ -73,11 +136,11 @@ ob_start();
     <div class="card-body py-2">
         <div class="d-flex flex-wrap gap-2 gap-md-3 align-items-center">
             <div class="btn-group btn-group-sm flex-wrap">
-                <a href="/media-users<?= e($queryBase(null, $currentServerId)) ?>" class="btn btn-outline-secondary <?= !$currentStatus && $currentOnServer === null ? 'active' : '' ?>">Todos</a>
-                <a href="/media-users<?= e($queryBase('active', $currentServerId)) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
-                <a href="/media-users<?= e($queryBase('suspended', $currentServerId)) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
-                <a href="/media-users<?= e($queryBase('pending', $currentServerId)) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
-                <a href="/media-users<?= e($queryBase(null, $currentServerId, false)) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera</a>
+                <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= !$currentStatus && $currentOnServer === null ? 'active' : '' ?>">Todos</a>
+                <a href="/media-users<?= e($withFilters(['status' => 'active', 'on_server' => null])) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
+                <a href="/media-users<?= e($withFilters(['status' => 'suspended', 'on_server' => null])) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
+                <a href="/media-users<?= e($withFilters(['status' => 'pending', 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
+                <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => false])) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera</a>
             </div>
             <form method="GET" action="/media-users" class="d-flex gap-2 align-items-center ms-lg-auto flex-wrap flex-grow-1 media-users-search-form">
                 <div class="position-relative media-users-search-field flex-grow-1">
@@ -90,16 +153,41 @@ ob_start();
                 <?php if ($currentOnServer !== null): ?>
                 <input type="hidden" name="on_server" value="<?= $currentOnServer ? '1' : '0' ?>">
                 <?php endif; ?>
+                <?php if ($currentSort): ?>
+                <input type="hidden" name="sort" value="<?= e($currentSort) ?>">
+                <input type="hidden" name="dir" value="<?= e($currentDir) ?>">
+                <?php endif; ?>
+                <?php if ($emptyFilters !== []): ?>
+                <input type="hidden" name="filter_empty" value="<?= e(implode(',', $emptyFilters)) ?>">
+                <?php endif; ?>
                 <label class="small text-muted mb-0 flex-shrink-0">Servidor:</label>
                 <select name="server_id" class="form-select form-select-sm media-users-server-select" onchange="this.form.submit()">
                     <option value="">Todos</option>
                     <?php foreach ($servers as $server): ?>
-                    <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>>
+                    <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>">
                         <?= e($server->name) ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
             </form>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-2 pt-2 border-top media-users-empty-filters">
+            <span class="small text-muted me-1">Campos vacíos:</span>
+            <a href="<?= e($toggleEmpty('expires')) ?>"
+               class="btn btn-sm <?= in_array('expires', $emptyFilters, true) ? 'btn-secondary' : 'btn-outline-secondary' ?>">
+                Sin fecha de caducidad
+            </a>
+            <a href="<?= e($toggleEmpty('telegram')) ?>"
+               class="btn btn-sm <?= in_array('telegram', $emptyFilters, true) ? 'btn-secondary' : 'btn-outline-secondary' ?>">
+                Sin Telegram
+            </a>
+            <a href="<?= e($toggleEmpty('email')) ?>"
+               class="btn btn-sm <?= in_array('email', $emptyFilters, true) ? 'btn-secondary' : 'btn-outline-secondary' ?>">
+                Sin email
+            </a>
+            <?php if ($emptyFilters !== []): ?>
+            <a href="/media-users<?= e($withFilters(['empty' => []])) ?>" class="btn btn-sm btn-link text-decoration-none">Quitar filtros vacíos</a>
+            <?php endif; ?>
         </div>
     </div>
 </div>
@@ -112,22 +200,38 @@ ob_start();
             <span class="text-muted">(página <?= (int) $page ?>)</span>
             <?php endif; ?>
         </span>
-        <span class="text-muted d-none d-md-inline">ID = identificador interno</span>
+        <span class="text-muted d-none d-md-inline">Clic en cabeceras para ordenar · ID = identificador interno</span>
     </div>
     <div class="table-responsive media-users-table-wrap">
         <table class="table table-hover mb-0 align-middle media-users-table">
             <thead class="table-light">
                 <tr>
-                    <th class="media-users-col-id">ID</th>
-                    <th>Usuario</th>
-                    <th class="d-none d-md-table-cell">Email</th>
-                    <th class="d-none d-xl-table-cell">Servidor</th>
-                    <th>Estado</th>
+                    <th class="media-users-col-id">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('id')) ?>">ID<?= $sortIcon('id') ?></a>
+                    </th>
+                    <th>
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('username')) ?>">Usuario<?= $sortIcon('username') ?></a>
+                    </th>
+                    <th class="d-none d-md-table-cell">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('email')) ?>">Email<?= $sortIcon('email') ?></a>
+                    </th>
+                    <th class="d-none d-xl-table-cell">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('server')) ?>">Servidor<?= $sortIcon('server') ?></a>
+                    </th>
+                    <th>
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('status')) ?>">Estado<?= $sortIcon('status') ?></a>
+                    </th>
                     <th class="d-none d-xl-table-cell" title="Biblioteca">Bibl.</th>
-                    <th class="d-none d-xl-table-cell" title="Streams">Str.</th>
-                    <th title="Fecha de expiración">Expira</th>
+                    <th class="d-none d-xl-table-cell" title="Streams máximos">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('max_streams')) ?>">Str.<?= $sortIcon('max_streams') ?></a>
+                    </th>
+                    <th title="Fecha de expiración">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('expires')) ?>">Expira<?= $sortIcon('expires') ?></a>
+                    </th>
                     <th title="Vence en">Vence</th>
-                    <th title="Telegram Chat ID">Telegram</th>
+                    <th title="Telegram Chat ID">
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('telegram')) ?>">Telegram<?= $sortIcon('telegram') ?></a>
+                    </th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
@@ -136,7 +240,13 @@ ob_start();
                 <tr><td colspan="11" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
-                <?php $mb = $membershipBadge($u->on_server ?? null); ?>
+                <?php
+                    $mb = $membershipBadge($u->on_server ?? null);
+                    $tg = normalize_telegram_chat_id($u->telegram_chat_id ?? null);
+                    $streams = ($u->max_streams !== null && $u->max_streams !== '')
+                        ? max(1, min(50, (int) $u->max_streams))
+                        : $defaultMaxStreams;
+                ?>
                 <tr>
                     <td class="small text-muted media-users-col-id"><?= (int) $u->id ?></td>
                     <td class="min-w-0">
@@ -163,7 +273,7 @@ ob_start();
                             <?= e($mb['label']) ?>
                         </span>
                     </td>
-                    <td class="d-none d-xl-table-cell small"><?= ($u->max_streams !== null && $u->max_streams !== '') ? (int) $u->max_streams : 'def' ?></td>
+                    <td class="d-none d-xl-table-cell small"><?= (int) $streams ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
@@ -173,7 +283,6 @@ ob_start();
                         <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
                     </td>
                     <td class="small">
-                        <?php $tg = trim((string) ($u->telegram_chat_id ?? '')); ?>
                         <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="<?= e($u->uuid) ?>"
                                value="<?= e($tg) ?>" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
                         <?php if ($tg !== ''): ?>
@@ -203,8 +312,8 @@ ob_start();
 $totalPages = max(1, (int) ($totalPages ?? 1));
 $page = max(1, (int) ($page ?? 1));
 if ($totalPages > 1):
-    $pageQuery = static function (int $p) use ($queryBase, $currentStatus, $currentServerId, $currentOnServer): string {
-        $params = $queryBase($currentStatus, $currentServerId ? (int) $currentServerId : null, $currentOnServer);
+    $pageQuery = static function (int $p) use ($withFilters): string {
+        $params = $withFilters();
         $sep = $params === '' ? '?' : '&';
         return '/media-users' . $params . $sep . 'page=' . $p;
     };
