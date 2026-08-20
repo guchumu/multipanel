@@ -328,6 +328,67 @@ ob_start();
         </div>
         <?php endif; ?>
 
+        <?php
+        $endpoints = is_array($endpoints ?? null) ? $endpoints : [];
+        $kindLabel = static function (string $kind): array {
+            return match ($kind) {
+                'home' => ['Hogar', 'success'],
+                'away' => ['Fuera', 'danger'],
+                default => ['Por ver', 'secondary'],
+            };
+        };
+        ?>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <strong>IPs y dispositivos</strong>
+                <div class="small text-muted fw-normal">Se guarda al reproducir. Marca hogar o fuera para el corte.</div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>IP</th>
+                            <th>Dispositivo</th>
+                            <th>Red</th>
+                            <th>Visto</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($endpoints === []): ?>
+                    <tr><td colspan="5" class="text-muted text-center py-3">Aún no hay reproducciones registradas</td></tr>
+                    <?php else: ?>
+                    <?php foreach ($endpoints as $ep): ?>
+                    <?php $kl = $kindLabel((string) ($ep['kind'] ?? 'unknown')); ?>
+                    <tr>
+                        <td class="small">
+                            <code><?= e((string) (($ep['ip'] ?? '') !== '' ? $ep['ip'] : '—')) ?></code>
+                            <?php if (!empty($ep['lan_ip']) && (string) $ep['lan_ip'] !== (string) ($ep['ip'] ?? '')): ?>
+                            <div class="text-muted">LAN <?= e((string) $ep['lan_ip']) ?></div>
+                            <?php endif; ?>
+                            <div><span class="badge bg-<?= e($kl[1]) ?>"><?= e($kl[0]) ?></span></div>
+                        </td>
+                        <td class="small">
+                            <?= e((string) (($ep['device_name'] ?? '') !== '' ? $ep['device_name'] : '—')) ?>
+                            <div class="text-muted"><?= e(trim((string) (($ep['product'] ?? '') . ' ' . ($ep['platform'] ?? '')))) ?></div>
+                        </td>
+                        <td class="small"><?= e((string) ($ep['location'] ?? '—')) ?></td>
+                        <td class="small text-nowrap">
+                            <?= (int) ($ep['play_count'] ?? 0) ?>×
+                            <div class="text-muted"><?= e((string) ($ep['last_seen_at'] ?? '')) ?></div>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-outline-success btn-sm btn-ep-kind" data-ep-id="<?= (int) $ep['id'] ?>" data-kind="home">Hogar</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm btn-ep-kind" data-ep-id="<?= (int) $ep['id'] ?>" data-kind="away">Fuera</button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <strong>Historial de actividad</strong>

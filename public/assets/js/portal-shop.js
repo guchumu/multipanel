@@ -10,6 +10,7 @@
     const maxStreams = 6;
 
     const monthsInput = document.getElementById('ez-months');
+    const serverInput = document.getElementById('ez-server');
     const tbody = document.getElementById('ez-accounts');
     const tfoot = document.getElementById('ez-ticket-foot');
     const ticketList = document.getElementById('ez-ticket-list');
@@ -24,7 +25,7 @@
     }
 
     function selectedChip() {
-        return form.querySelector('.ez-chip.is-on') || form.querySelector('.ez-chip');
+        return form.querySelector('.ez-chip[data-months].is-on') || form.querySelector('.ez-chip[data-months]');
     }
 
     function packPrice() {
@@ -227,11 +228,19 @@
         renderTotals();
     }
 
-    form.querySelectorAll('.ez-chip').forEach((btn) => {
+    form.querySelectorAll('.ez-chip[data-months]').forEach((btn) => {
         btn.addEventListener('click', () => {
-            form.querySelectorAll('.ez-chip').forEach((b) => b.classList.remove('is-on'));
+            form.querySelectorAll('.ez-chip[data-months]').forEach((b) => b.classList.remove('is-on'));
             btn.classList.add('is-on');
             paint();
+        });
+    });
+
+    form.querySelectorAll('.ez-chip[data-server-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            form.querySelectorAll('.ez-chip[data-server-id]').forEach((b) => b.classList.remove('is-on'));
+            btn.classList.add('is-on');
+            if (serverInput) serverInput.value = btn.dataset.serverId || '0';
         });
     });
 

@@ -88,6 +88,17 @@ class PortalPaymentController extends Controller
             return $this->redirect('/portal/subscription');
         }
 
+        $shopServers = $shop->shopServers($tenantId);
+        $serverId = $shop->resolveShopServerId(
+            $shopServers,
+            (int) $request->input('server_id', 0),
+            (int) ($user->server_id ?? 0)
+        );
+        if ($shopServers !== [] && ($serverId === null || $serverId <= 0)) {
+            Session::getInstance()->flash('error', 'Elige Plex o Jellyfin.');
+            return $this->redirect('/portal/subscription');
+        }
+
         $buyerEmail = mb_strtolower(trim((string) ($user->email ?? '')));
         $extraEmails = array_values(array_filter(
             $quote['emails'],
@@ -107,6 +118,7 @@ class PortalPaymentController extends Controller
                 'extra_streams' => (int) $quote['extra_streams'],
                 'extra_emails' => $extraEmails,
                 'account_streams' => $quote['streams'],
+                'server_id' => $serverId,
                 'shop_accounts' => array_map(
                     static fn (string $email, int $i): array => [
                         'email' => $email,

@@ -285,6 +285,11 @@ final class ConcurrentStreamLimitService
             }
         }
 
+        try {
+            (new MediaUserEndpointService())->recordFromSessions($tenantId, $sessions);
+        } catch (\Throwable) {
+        }
+
         return ['sessions' => $sessions, 'killed' => $killedTotal, 'violations' => $violations];
     }
 

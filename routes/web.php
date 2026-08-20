@@ -196,6 +196,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/portal-link', [MediaUserController::class, 'createPortalLink'], 'media_users.portal_link', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/portal-link/revoke', [MediaUserController::class, 'revokePortalLink'], 'media_users.portal_link.revoke', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/portal-link/send', [MediaUserController::class, 'sendPortalLink'], 'media_users.portal_link.send', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/endpoints/{id}/kind', [MediaUserController::class, 'setEndpointKind'], 'media_users.endpoints.kind', [CsrfMiddleware::class]);
     $router->get('/media-users/{uuid}/messages', [MediaUserController::class, 'messages'], 'media_users.messages');
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);
 

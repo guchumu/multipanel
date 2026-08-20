@@ -233,6 +233,11 @@ final class JellyfinService
                     $audioDecision = 'copy';
                 }
 
+                $clientIp = SessionClientIp::fromRemoteEndPoint(
+                    isset($session['RemoteEndPoint']) ? (string) $session['RemoteEndPoint'] : null
+                );
+                $isLan = SessionClientIp::isPrivate($clientIp);
+
                 $sessions[] = [
                     'session_id' => (string) ($session['Id'] ?? ''),
                     'title' => $displayTitle,
@@ -240,16 +245,17 @@ final class JellyfinService
                     'user' => (string) ($session['UserName'] ?? ''),
                     // Jellyfin UserId → media_users.external_id (match fiable para límites de stream)
                     'user_id' => (string) ($session['UserId'] ?? ''),
-                    'client_ip' => SessionClientIp::fromRemoteEndPoint(
-                        isset($session['RemoteEndPoint']) ? (string) $session['RemoteEndPoint'] : null
-                    ),
+                    'client_ip' => $clientIp,
+                    'public_ip' => $isLan ? '' : $clientIp,
+                    'lan_ip' => $isLan ? $clientIp : '',
+                    'machine_id' => (string) ($session['DeviceId'] ?? ''),
                     'player' => (string) ($session['Client'] ?? $session['DeviceName'] ?? ''),
                     'product' => (string) ($session['Client'] ?? $session['ApplicationVersion'] ?? ''),
                     'platform' => (string) ($session['DeviceName'] ?? $session['OperatingSystem'] ?? ''),
                     'state' => !empty($playState['IsPaused']) ? 'paused' : 'playing',
                     'media_type' => (string) ($item['Type'] ?? 'video'),
                     'year' => (string) ($item['ProductionYear'] ?? ''),
-                    'location' => '',
+                    'location' => $isLan ? 'LAN' : ($clientIp !== '' ? 'WAN' : ''),
                     'bandwidth' => '',
                     'play_method' => $playMethod,
                     'video_decision' => $videoDecision,

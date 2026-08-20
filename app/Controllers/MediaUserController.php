@@ -205,6 +205,8 @@ class MediaUserController extends Controller
             );
         }
 
+        $endpoints = (new \App\Services\MediaUserEndpointService())->listForUser((int) $user->id);
+
         $jellyfinPassword = null;
         $credentialsText = null;
         if ($serverType === 'jellyfin') {
@@ -238,6 +240,7 @@ class MediaUserController extends Controller
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
             'defaultMaxStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
+            'endpoints' => $endpoints,
             'portalLink' => $this->portalLinks->activeInfo((int) $user->id),
         ]);
     }
@@ -824,6 +827,27 @@ class MediaUserController extends Controller
         ]);
 
         return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function setEndpointKind(Request $request, string $uuid, string $id): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $ok = (new \App\Services\MediaUserEndpointService())->setKind(
+            (int) ($user->tenant_id ?? 1),
+            (int) $user->id,
+            (int) $id,
+            (string) $request->input('kind', 'unknown')
+        );
+
+        if (!$ok) {
+            return $this->json(['success' => false, 'message' => 'No se pudo guardar.'], 422);
+        }
+
+        return $this->json(['success' => true, 'message' => 'Marcado.']);
     }
 
     public function sendMessage(Request $request, string $uuid): Response

@@ -32,10 +32,32 @@ ob_start();
       data-buyer-email="<?= e($buyerEmail) ?>">
     <?= csrf_field() ?>
     <input type="hidden" name="months" id="ez-months" value="<?= (int) ($shopOptions[0]['months'] ?? 1) ?>">
+    <input type="hidden" name="server_id" id="ez-server" value="<?= (int) ($selectedServerId ?? 0) ?>">
 
     <section class="card portal-card ez-step">
         <div class="card-body">
-            <h2 class="ez-step-title"><span>1</span> ¿Cuántos meses?</h2>
+            <h2 class="ez-step-title"><span>1</span> ¿Plex o Jellyfin?</h2>
+            <p class="ez-help">Elige dónde van esta cuenta y las extra.<?= !empty($portalUser->server_id) ? ' Tu cuenta actual queda donde está; las nuevas van al que elijas.' : '' ?></p>
+            <?php $shopServers = is_array($shopServers ?? null) ? $shopServers : []; ?>
+            <?php if ($shopServers === []): ?>
+            <p class="ez-help mb-0">Ahora mismo no hay servidor Plex/Jellyfin en el panel. Puedes comprar el tiempo igual.</p>
+            <?php else: ?>
+            <div class="ez-chips ez-chips-service" role="group" aria-label="Servicio">
+                <?php foreach ($shopServers as $srv): ?>
+                <button type="button" class="ez-chip<?= (int) $srv['id'] === (int) ($selectedServerId ?? 0) ? ' is-on' : '' ?>"
+                        data-server-id="<?= (int) $srv['id'] ?>">
+                    <strong><?= e($srv['type'] === 'jellyfin' ? 'Jellyfin' : 'Plex') ?></strong>
+                    <span><?= e($srv['name'] !== '' ? $srv['name'] : 'Servidor') ?></span>
+                </button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+    </section>
+
+    <section class="card portal-card ez-step">
+        <div class="card-body">
+            <h2 class="ez-step-title"><span>2</span> ¿Cuántos meses?</h2>
             <p class="ez-help">Elige una duración. El precio es el de Facturación y va en la primera cuenta.</p>
             <div class="ez-chips" role="group" aria-label="Meses">
                 <?php foreach ($shopOptions as $i => $opt): ?>
@@ -53,7 +75,7 @@ ob_start();
 
     <section class="card portal-card ez-step">
         <div class="card-body">
-            <h2 class="ez-step-title"><span>2</span> Cuentas y reproducciones</h2>
+            <h2 class="ez-step-title"><span>3</span> Cuentas y reproducciones</h2>
             <p class="ez-help mb-2">
                 Añade filas si hace falta otra cuenta. En cada una, sube las reproducciones si hay más teles <strong>en esa casa</strong>.
             </p>

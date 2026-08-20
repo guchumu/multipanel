@@ -335,6 +335,12 @@ final class BillingService
      */
     private function applyShopExtras(MediaUser $buyer, array $meta, int $days): void
     {
+        $shopServerId = (int) ($meta['server_id'] ?? 0);
+        if ($shopServerId > 0 && empty($buyer->server_id)) {
+            $buyer->server_id = $shopServerId;
+            $buyer->save();
+        }
+
         $accounts = $meta['shop_accounts'] ?? null;
         if (is_array($accounts) && $accounts !== []) {
             foreach ($accounts as $i => $row) {
@@ -348,7 +354,7 @@ final class BillingService
                     $buyer->save();
                     continue;
                 }
-                $this->provisionShopAccount($buyer, $email, $streams, $days);
+                $this->provisionShopAccount($buyer, $email, $streams, $days, $shopServerId);
             }
 
             return;
@@ -374,7 +380,8 @@ final class BillingService
                 $buyer,
                 (string) $raw,
                 PortalShopService::INCLUDED_STREAMS,
-                $days
+                $days,
+                $shopServerId
             );
         }
     }
@@ -387,7 +394,7 @@ final class BillingService
         );
     }
 
-    private function provisionShopAccount(MediaUser $buyer, string $rawEmail, int $streams, int $days): void
+    private function provisionShopAccount(MediaUser $buyer, string $rawEmail, int $streams, int $days, int $shopServerId = 0): void
     {
         $email = mb_strtolower(trim($rawEmail));
         $buyerEmail = mb_strtolower(trim((string) ($buyer->email ?? '')));
@@ -435,7 +442,7 @@ final class BillingService
             $db->insert('media_users', [
                 'tenant_id' => $tenantId,
                 'uuid' => Uuid::uuid4()->toString(),
-                'server_id' => $buyer->server_id,
+                'server_id' => $shopServerId > 0 ? $shopServerId : $buyer->server_id,
                 'username' => $username,
                 'email' => $email,
                 'password' => (new PasswordService())->hash(PortalDefaultPasswordService::DEFAULT_PASSWORD),

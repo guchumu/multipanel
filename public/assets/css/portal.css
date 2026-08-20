@@ -460,7 +460,8 @@
     font-size: 0.95rem;
 }
 .ez-help { color: #5b6b7a; font-size: 0.92rem; }
-.ez-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .ez-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .ez-chips-service { margin-bottom: 0; }
 .ez-chip {
     border: 3px solid #dce7f3;
     background: #fff;

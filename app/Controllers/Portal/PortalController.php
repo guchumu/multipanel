@@ -191,6 +191,7 @@ class PortalController extends Controller
         $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
         $shop = new \App\Services\PortalShopService();
         $shopOptions = $shop->monthOptions($tenantId);
+        $shopServers = $shop->shopServers($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
         $serverInfo = ['name' => 'Sin servidor', 'type_label' => '—'];
@@ -223,6 +224,12 @@ class PortalController extends Controller
             'expiry' => $expiry,
             'serverInfo' => $serverInfo,
             'shopOptions' => $shopOptions,
+            'shopServers' => $shopServers,
+            'selectedServerId' => $shop->resolveShopServerId(
+                $shopServers,
+                0,
+                (int) ($user->server_id ?? 0)
+            ),
             'extraAccountPrice' => $shop->extraAccountPrice($tenantId),
             'extraStreamMonthly' => $shop->extraStreamMonthlyPrice($tenantId),
             'includedStreams' => \App\Services\PortalShopService::INCLUDED_STREAMS,

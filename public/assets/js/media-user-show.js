@@ -548,4 +548,18 @@
             btn.disabled = false;
         }
     });
+
+    document.querySelectorAll('.btn-ep-kind').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            try {
+                const data = await post(`/media-users/${uuid}/endpoints/${btn.dataset.epId}/kind`, {
+                    kind: btn.dataset.kind,
+                });
+                if (data.success === false || !data.__httpOk) throw new Error(data.message || 'Error');
+                location.reload();
+            } catch (err) {
+                toast(err.message);
+            }
+        });
+    });
 })();

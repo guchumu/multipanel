@@ -65,6 +65,51 @@ final class PortalShopService
     }
 
     /**
+     * Servidores Plex/Jellyfin del tenant para elegir al contratar.
+     *
+     * @return list<array{id: int, type: string, name: string, label: string}>
+     */
+    public function shopServers(int $tenantId): array
+    {
+        $out = [];
+        foreach ((new \App\Repositories\ServerRepository())->allByTenant($tenantId) as $server) {
+            $type = strtolower(trim((string) ($server->type ?? '')));
+            if ($type !== 'plex' && $type !== 'jellyfin') {
+                continue;
+            }
+            $name = trim((string) ($server->name ?? ''));
+            $typeLabel = $type === 'jellyfin' ? 'Jellyfin' : 'Plex';
+            $out[] = [
+                'id' => (int) $server->id,
+                'type' => $type,
+                'name' => $name,
+                'label' => $name !== '' ? $typeLabel . ' · ' . $name : $typeLabel,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array{id: int, type: string, name: string, label: string}> $servers
+     */
+    public function resolveShopServerId(array $servers, int $requestedId, int $buyerServerId = 0): ?int
+    {
+        $ids = array_map(static fn (array $s): int => (int) $s['id'], $servers);
+        if ($requestedId > 0 && in_array($requestedId, $ids, true)) {
+            return $requestedId;
+        }
+        if ($buyerServerId > 0 && in_array($buyerServerId, $ids, true)) {
+            return $buyerServerId;
+        }
+        if ($servers === []) {
+            return null;
+        }
+
+        return (int) $servers[0]['id'];
+    }
+
+    /**
      * pack + (cuentas-1)×cuenta extra + visionados extra × €/mes × meses del preset.
      *
      * @return array{extra_users: int, extra_users_price: float, extra_streams_price: float, total: float}

@@ -48,4 +48,18 @@ final class PortalShopServiceTest extends TestCase
         $this->assertSame(4.0, $priced['extra_streams_price']);
         $this->assertSame(69.0, $priced['total']);
     }
+
+    public function testResolveShopServerPrefersRequestedThenBuyer(): void
+    {
+        $servers = [
+            ['id' => 10, 'type' => 'plex', 'name' => 'Plex', 'label' => 'Plex'],
+            ['id' => 20, 'type' => 'jellyfin', 'name' => 'JF', 'label' => 'Jellyfin'],
+        ];
+        $shop = new PortalShopService();
+
+        $this->assertSame(20, $shop->resolveShopServerId($servers, 20, 10));
+        $this->assertSame(10, $shop->resolveShopServerId($servers, 0, 10));
+        $this->assertSame(10, $shop->resolveShopServerId($servers, 99, 0));
+        $this->assertNull($shop->resolveShopServerId([], 1, 1));
+    }
 }

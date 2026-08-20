@@ -54,6 +54,33 @@ final class SessionClientIp
         return filter_var($raw, FILTER_VALIDATE_IP) ? $raw : '';
     }
 
+    public static function isPrivate(string $ip): bool
+    {
+        $ip = self::normalize($ip);
+        if ($ip === '') {
+            return false;
+        }
+
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+    }
+
+    /** LAN / WAN / UNKNOWN a partir de Plex location o de si la IP es privada. */
+    public static function classifyLocation(?string $plexLocation, string $ip, string $lanIp = ''): string
+    {
+        $loc = strtoupper(trim((string) $plexLocation));
+        if ($loc === 'LAN' || $loc === 'WAN') {
+            return $loc;
+        }
+        if (self::isPrivate($lanIp) || self::isPrivate($ip)) {
+            return 'LAN';
+        }
+        if (self::normalize($ip) !== '') {
+            return 'WAN';
+        }
+
+        return 'UNKNOWN';
+    }
+
     /** Jellyfin RemoteEndPoint → IP. */
     public static function fromRemoteEndPoint(?string $remoteEndPoint): string
     {
