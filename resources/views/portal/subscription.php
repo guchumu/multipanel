@@ -14,12 +14,15 @@ $extraAccount = (float) ($extraAccountPrice ?? 50);
 $extraStreamMonth = (float) ($extraStreamMonthly ?? 4);
 ob_start();
 ?>
-<h1 class="ez-page-title">Elige cuánto tiempo</h1>
-<p class="ez-page-lead">Cada <strong>cuenta individual</strong> incluye <?= (int) $included ?> visionados a la vez en el mismo hogar. Si compartes la cuenta, compartes lo que cada uno ve.</p>
+<div class="ez-shop-page">
+<h1 class="ez-page-title">Elige lo que contratas</h1>
+<p class="ez-page-lead">Cuenta individual, reproducciones en casa, y el tiempo. El total se calcula solo.</p>
 
 <?php if (!empty($expiry['date'])): ?>
 <p class="ez-now-until">Ahora mismo puedes ver hasta el <strong><?= $dateFmt($expiry['date']) ?></strong>.</p>
 <?php endif; ?>
+
+<?php include base_path('resources/views/portal/_shop_guide.php'); ?>
 
 <?php if ($canPay): ?>
 <form method="POST" action="/portal/payment/renew" id="ez-shop" class="ez-shop"
@@ -33,7 +36,7 @@ ob_start();
     <section class="card portal-card ez-step">
         <div class="card-body">
             <h2 class="ez-step-title"><span>1</span> ¿Cuántos meses?</h2>
-            <p class="ez-help">Precios del panel. Elige una duración.</p>
+            <p class="ez-help">Elige una duración. El precio es el de Facturación y va en la primera cuenta.</p>
             <div class="ez-chips" role="group" aria-label="Meses">
                 <?php foreach ($shopOptions as $i => $opt): ?>
                 <button type="button" class="ez-chip<?= $i === 0 ? ' is-on' : '' ?>"
@@ -50,13 +53,28 @@ ob_start();
 
     <section class="card portal-card ez-step">
         <div class="card-body">
-            <h2 class="ez-step-title"><span>2</span> Cuentas individuales</h2>
-            <p class="ez-help">
-                La primera cuenta paga los meses. Cada cuenta extra: <?= number_format($extraAccount, 2, ',', '.') ?> €.
-                Cada visionado extra: <?= number_format($extraStreamMonth, 2, ',', '.') ?> €/mes (en esa cuenta, viendo lo mismo).
+            <h2 class="ez-step-title"><span>2</span> Cuentas y reproducciones</h2>
+            <p class="ez-help mb-2">
+                Añade filas si hace falta otra cuenta. En cada una, sube las reproducciones si hay más teles <strong>en esa casa</strong>.
             </p>
-            <div id="ez-accounts" class="ez-accounts"></div>
-            <button type="button" class="btn btn-outline-primary mt-2" id="ez-add-account">
+            <div class="ez-live" id="ez-live" aria-live="polite"></div>
+            <div class="ez-table-wrap">
+                <table class="ez-shop-table" id="ez-shop-table">
+                    <thead>
+                        <tr>
+                            <th>Cuenta</th>
+                            <th>Email</th>
+                            <th>Reproducciones</th>
+                            <th>Extra</th>
+                            <th>Importe</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ez-accounts"></tbody>
+                    <tfoot id="ez-ticket-foot"></tfoot>
+                </table>
+            </div>
+            <button type="button" class="btn btn-outline-primary mt-3" id="ez-add-account">
                 Añadir cuenta individual (+ <?= number_format($extraAccount, 2, ',', '.') ?> €)
             </button>
         </div>
@@ -65,6 +83,7 @@ ob_start();
     <section class="card portal-card ez-ticket">
         <div class="card-body">
             <h2 class="ez-step-title">Tu ticket</h2>
+            <p class="ez-contract" id="ez-contract"></p>
             <ul class="ez-ticket-list" id="ez-ticket-list"></ul>
             <p class="ez-total">Total a pagar: <strong id="ez-total">0 €</strong></p>
             <button type="submit" class="ez-btn-big w-100" id="ez-pay">Pagar y listo</button>
@@ -82,6 +101,7 @@ ob_start();
 <?php endif; ?>
 
 <p class="text-center mt-3 mb-0"><a class="link-light" href="/portal">← Volver</a></p>
+</div>
 <?php
 $content = ob_get_clean();
 $scripts = '<script src="' . e(asset('js/portal-shop.js')) . '?v=' . (@filemtime(public_path('assets/js/portal-shop.js')) ?: '1') . '"></script>';

@@ -10,9 +10,12 @@
     const maxStreams = 6;
 
     const monthsInput = document.getElementById('ez-months');
-    const box = document.getElementById('ez-accounts');
+    const tbody = document.getElementById('ez-accounts');
+    const tfoot = document.getElementById('ez-ticket-foot');
     const ticketList = document.getElementById('ez-ticket-list');
     const totalEl = document.getElementById('ez-total');
+    const liveEl = document.getElementById('ez-live');
+    const contractEl = document.getElementById('ez-contract');
 
     let accounts = [{ email: buyerEmail, streams: included }];
 
@@ -32,84 +35,125 @@
         return Math.max(1, Number(selectedChip()?.dataset.months || 1));
     }
 
+    function extrasOf(streams) {
+        return Math.max(0, streams - included);
+    }
+
+    function totals() {
+        const pack = packPrice();
+        const months = periodMonths();
+        const extraUsers = Math.max(0, accounts.length - 1);
+        let extraStreams = 0;
+        accounts.forEach((a) => { extraStreams += extrasOf(a.streams); });
+        const extraUsersPrice = Math.round(extraUsers * extraAccount * 100) / 100;
+        const extraStreamsPrice = Math.round(extraStreams * extraStreamMonth * months * 100) / 100;
+        const total = Math.round((pack + extraUsersPrice + extraStreamsPrice) * 100) / 100;
+        return { pack, months, extraUsers, extraStreams, extraUsersPrice, extraStreamsPrice, total };
+    }
+
+    function rowAmount(i, t) {
+        if (i === 0) {
+            const extra = extrasOf(accounts[i].streams);
+            return t.pack + extra * extraStreamMonth * t.months;
+        }
+        const extra = extrasOf(accounts[i].streams);
+        return extraAccount + extra * extraStreamMonth * t.months;
+    }
+
+    function tvs(n) {
+        return Array.from({ length: n }, () => '<span class="ez-tv-dot" title="Reproducción">📺</span>').join('');
+    }
+
+    function renderLive() {
+        if (!liveEl) return;
+        liveEl.innerHTML = accounts.map((a, i) => {
+            const extra = extrasOf(a.streams);
+            const label = i === 0 ? 'Tu casa' : 'Casa ' + (i + 1);
+            return `<div class="ez-live-house">
+                <span class="ez-live-roof" aria-hidden="true">🏠</span>
+                <span class="ez-live-tvs">${tvs(a.streams)}</span>
+                <span class="ez-live-cap">${label}: <strong>${a.streams}</strong> a la vez en casa${extra ? ' · ' + extra + ' extra' : ''}</span>
+            </div>`;
+        }).join('');
+    }
+
     function renderAccounts() {
-        const emails = Array.from(box.querySelectorAll('input[name="emails[]"]')).map((el) => el.value);
-        box.innerHTML = '';
+        const emails = Array.from(tbody.querySelectorAll('input[name="emails[]"]')).map((el) => el.value);
+        tbody.innerHTML = '';
+        const t = totals();
+
         accounts.forEach((acc, i) => {
             if (emails[i] !== undefined) acc.email = emails[i];
-            const row = document.createElement('div');
-            row.className = 'ez-account-row';
+            const extra = extrasOf(acc.streams);
+            const tr = document.createElement('tr');
 
-            const mailWrap = document.createElement('div');
-            mailWrap.className = 'ez-account-email';
-            const mailLabel = document.createElement('label');
-            mailLabel.className = 'form-label ez-mail-label';
-            mailLabel.textContent = i === 0 ? 'Email' : 'Email cuenta extra';
+            const nameTd = document.createElement('td');
+            nameTd.dataset.label = 'Cuenta';
+            nameTd.innerHTML = i === 0
+                ? '<strong>1 · la tuya</strong><span class="ez-td-sub">Pack de meses</span>'
+                : `<strong>${i + 1} · extra</strong><span class="ez-td-sub">Otro historial</span>`;
+
+            const mailTd = document.createElement('td');
+            mailTd.dataset.label = 'Email';
             const mail = document.createElement('input');
             mail.type = 'email';
             mail.name = 'emails[]';
-            mail.className = 'form-control';
+            mail.className = 'form-control form-control-sm';
             mail.required = true;
             mail.placeholder = 'cuenta@email.com';
             mail.autocomplete = i === 0 ? 'email' : 'off';
             mail.value = acc.email || (i === 0 ? buyerEmail : '');
             mail.addEventListener('input', () => { accounts[i].email = mail.value; });
-            mailWrap.appendChild(mailLabel);
-            mailWrap.appendChild(mail);
+            mailTd.appendChild(mail);
 
-            const visWrap = document.createElement('div');
-            visWrap.className = 'ez-account-vis';
-            const visLabel = document.createElement('div');
-            visLabel.className = 'form-label ez-mail-label';
-            visLabel.textContent = 'Visualizaciones';
+            const visTd = document.createElement('td');
+            visTd.dataset.label = 'Reproducciones';
+            visTd.className = 'ez-td-vis';
             const stepper = document.createElement('div');
             stepper.className = 'ez-mini-step';
             const minus = document.createElement('button');
             minus.type = 'button';
             minus.className = 'ez-pm ez-pm-sm';
-            minus.setAttribute('aria-label', 'Menos visionados');
+            minus.setAttribute('aria-label', 'Menos reproducciones');
             minus.textContent = '−';
             const count = document.createElement('strong');
             count.textContent = String(acc.streams);
             const plus = document.createElement('button');
             plus.type = 'button';
             plus.className = 'ez-pm ez-pm-sm';
-            plus.setAttribute('aria-label', 'Más visionados');
+            plus.setAttribute('aria-label', 'Más reproducciones');
             plus.textContent = '+';
             const hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = 'streams[]';
             hidden.value = String(acc.streams);
-            const hint = document.createElement('span');
-            hint.className = 'ez-vis-hint';
-            hint.textContent = included + ' incluidas · extra ' + money(extraStreamMonth) + '/mes';
-
             minus.addEventListener('click', () => {
                 accounts[i].streams = Math.max(included, accounts[i].streams - 1);
-                renderAccounts();
-                render();
+                paint();
             });
             plus.addEventListener('click', () => {
                 accounts[i].streams = Math.min(maxStreams, accounts[i].streams + 1);
-                renderAccounts();
-                render();
+                paint();
             });
-
             stepper.appendChild(minus);
             stepper.appendChild(count);
             stepper.appendChild(plus);
-            visWrap.appendChild(visLabel);
-            visWrap.appendChild(stepper);
-            visWrap.appendChild(hint);
-            visWrap.appendChild(hidden);
+            visTd.appendChild(stepper);
+            visTd.appendChild(hidden);
 
-            row.appendChild(mailWrap);
-            const sep = document.createElement('span');
-            sep.className = 'ez-account-sep';
-            sep.textContent = ';';
-            row.appendChild(sep);
-            row.appendChild(visWrap);
+            const extraTd = document.createElement('td');
+            extraTd.dataset.label = 'Extra';
+            extraTd.innerHTML = extra === 0
+                ? `<span class="ez-td-sub">${included} incluidas</span>`
+                : `<strong>+${extra}</strong><span class="ez-td-sub">${money(extraStreamMonth)}/mes × ${t.months}</span>`;
 
+            const priceTd = document.createElement('td');
+            priceTd.dataset.label = 'Importe';
+            priceTd.innerHTML = `<strong>${money(rowAmount(i, t))}</strong>`;
+
+            const actTd = document.createElement('td');
+            actTd.className = 'ez-td-act';
+            actTd.dataset.label = '';
             if (i > 0) {
                 const rm = document.createElement('button');
                 rm.type = 'button';
@@ -117,69 +161,95 @@
                 rm.textContent = 'Quitar';
                 rm.addEventListener('click', () => {
                     accounts.splice(i, 1);
-                    renderAccounts();
-                    render();
+                    paint();
                 });
-                row.appendChild(rm);
+                actTd.appendChild(rm);
             }
 
-            box.appendChild(row);
+            tr.appendChild(nameTd);
+            tr.appendChild(mailTd);
+            tr.appendChild(visTd);
+            tr.appendChild(extraTd);
+            tr.appendChild(priceTd);
+            tr.appendChild(actTd);
+            tbody.appendChild(tr);
         });
     }
 
-    function render() {
+    function renderTotals() {
+        const t = totals();
         const chip = selectedChip();
-        const pack = packPrice();
-        const months = periodMonths();
-        const extraUsers = Math.max(0, accounts.length - 1);
-        let extraStreams = 0;
-        accounts.forEach((a) => { extraStreams += Math.max(0, a.streams - included); });
-        const extraUsersPrice = Math.round(extraUsers * extraAccount * 100) / 100;
-        const extraStreamsPrice = Math.round(extraStreams * extraStreamMonth * months * 100) / 100;
-        const total = Math.round((pack + extraUsersPrice + extraStreamsPrice) * 100) / 100;
         const label = chip?.querySelector('strong')?.textContent || 'Tiempo';
-
         monthsInput.value = chip?.dataset.months || '1';
 
-        const rows = [
-            `${label} · cuenta 1 (${included} visionados): ${money(pack)}`,
-        ];
-        if (extraUsers > 0) {
-            rows.push(`${extraUsers} cuenta(s) extra: ${money(extraUsersPrice)}`);
-        }
-        if (extraStreams > 0) {
-            rows.push(`${extraStreams} visionado(s) extra · ${money(extraStreamMonth)}/mes × ${months}: ${money(extraStreamsPrice)}`);
+        if (tfoot) {
+            tfoot.innerHTML = `
+                <tr>
+                    <td colspan="4">${label} (cuenta 1, ${included} reproducciones)</td>
+                    <td>${money(t.pack)}</td>
+                    <td></td>
+                </tr>
+                ${t.extraUsers > 0 ? `<tr>
+                    <td colspan="4">${t.extraUsers} cuenta(s) extra</td>
+                    <td>${money(t.extraUsersPrice)}</td>
+                    <td></td>
+                </tr>` : ''}
+                ${t.extraStreams > 0 ? `<tr>
+                    <td colspan="4">${t.extraStreams} reproducción(es) extra · ${money(extraStreamMonth)}/mes × ${t.months}</td>
+                    <td>${money(t.extraStreamsPrice)}</td>
+                    <td></td>
+                </tr>` : ''}
+                <tr class="ez-foot-total">
+                    <td colspan="4">Total</td>
+                    <td>${money(t.total)}</td>
+                    <td></td>
+                </tr>`;
         }
 
+        const houses = accounts.length;
+        const streams = accounts.reduce((sum, a) => sum + a.streams, 0);
+        if (contractEl) {
+            contractEl.textContent = `Contratas ${houses} cuenta${houses === 1 ? '' : 's'} individual${houses === 1 ? '' : 'es'} · ${streams} reproducción${streams === 1 ? '' : 'es'} a la vez · cada una solo en su casa.`;
+        }
+
+        const rows = [`${label} · cuenta 1 (${included} reproducciones): ${money(t.pack)}`];
+        if (t.extraUsers > 0) rows.push(`${t.extraUsers} cuenta(s) extra: ${money(t.extraUsersPrice)}`);
+        if (t.extraStreams > 0) {
+            rows.push(`${t.extraStreams} reproducción(es) extra · ${money(extraStreamMonth)}/mes × ${t.months}: ${money(t.extraStreamsPrice)}`);
+        }
         ticketList.innerHTML = rows.map((r) => `<li>${r}</li>`).join('');
-        totalEl.textContent = money(total);
+        totalEl.textContent = money(t.total);
+        renderLive();
+    }
+
+    function paint() {
+        renderAccounts();
+        renderTotals();
     }
 
     form.querySelectorAll('.ez-chip').forEach((btn) => {
         btn.addEventListener('click', () => {
             form.querySelectorAll('.ez-chip').forEach((b) => b.classList.remove('is-on'));
             btn.classList.add('is-on');
-            render();
+            paint();
         });
     });
 
     document.getElementById('ez-add-account')?.addEventListener('click', () => {
         if (accounts.length >= maxAccounts) return;
-        const live = Array.from(box.querySelectorAll('input[name="emails[]"]')).map((el) => el.value);
+        const live = Array.from(tbody.querySelectorAll('input[name="emails[]"]')).map((el) => el.value);
         accounts.forEach((a, i) => { a.email = live[i] ?? a.email; });
         accounts.push({ email: '', streams: included });
-        renderAccounts();
-        render();
+        paint();
     });
 
     form.addEventListener('submit', (e) => {
-        const filled = Array.from(box.querySelectorAll('input[name="emails[]"]')).filter((el) => el.value.trim());
+        const filled = Array.from(tbody.querySelectorAll('input[name="emails[]"]')).filter((el) => el.value.trim());
         if (filled.length < accounts.length) {
             e.preventDefault();
             alert('Escribe el email de cada cuenta individual.');
         }
     });
 
-    renderAccounts();
-    render();
+    paint();
 })();
