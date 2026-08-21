@@ -88,15 +88,30 @@ class PortalPaymentController extends Controller
             return $this->redirect('/portal/subscription');
         }
 
-        $shopServers = $shop->shopServers($tenantId);
-        $serverId = $shop->resolveShopServerId(
-            $shopServers,
-            (int) $request->input('server_id', 0),
-            (int) ($user->server_id ?? 0)
-        );
-        if ($shopServers !== [] && ($serverId === null || $serverId <= 0)) {
-            Session::getInstance()->flash('error', 'Elige Plex o Jellyfin.');
-            return $this->redirect('/portal/subscription');
+        $placement = new \App\Services\ServerPlacementService();
+        $types = $placement->shopTypes($tenantId);
+        $requestedType = $placement->normalizeType((string) $request->input('server_type', ''));
+        $buyerType = $placement->typeOfServerId((int) ($user->server_id ?? 0));
+        if ($requestedType === 'plex' && (string) $request->input('server_type', '') === '' && $buyerType !== null) {
+            $requestedType = $buyerType;
+        }
+        $keepId = ($buyerType === $requestedType) ? (int) ($user->server_id ?? 0) : 0;
+        $seats = ((int) ($user->server_id ?? 0) > 0) ? 0 : 1;
+        $repo = new \App\Repositories\MediaUserRepository();
+        foreach ($quote['emails'] as $email) {
+            if ($repo->findDuplicate($tenantId, '', (string) $email) === null) {
+                $seats++;
+            }
+        }
+
+        $serverId = null;
+        if ($types !== []) {
+            $placed = $placement->place($tenantId, $requestedType, $keepId, $seats);
+            if (empty($placed['ok'])) {
+                Session::getInstance()->flash('error', $placed['error'] ?? 'Elige Plex o Jellyfin.');
+                return $this->redirect('/portal/subscription');
+            }
+            $serverId = (int) ($placed['server_id'] ?? 0);
         }
 
         $buyerEmail = mb_strtolower(trim((string) ($user->email ?? '')));
@@ -119,6 +134,7 @@ class PortalPaymentController extends Controller
                 'extra_emails' => $extraEmails,
                 'account_streams' => $quote['streams'],
                 'server_id' => $serverId,
+                'server_type' => $requestedType,
                 'shop_accounts' => array_map(
                     static fn (string $email, int $i): array => [
                         'email' => $email,

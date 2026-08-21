@@ -32,22 +32,21 @@ ob_start();
       data-buyer-email="<?= e($buyerEmail) ?>">
     <?= csrf_field() ?>
     <input type="hidden" name="months" id="ez-months" value="<?= (int) ($shopOptions[0]['months'] ?? 1) ?>">
-    <input type="hidden" name="server_id" id="ez-server" value="<?= (int) ($selectedServerId ?? 0) ?>">
+    <input type="hidden" name="server_type" id="ez-server-type" value="<?= e($selectedType ?? 'plex') ?>">
 
     <section class="card portal-card ez-step">
         <div class="card-body">
             <h2 class="ez-step-title"><span>1</span> ¿Plex o Jellyfin?</h2>
-            <p class="ez-help">Elige dónde van esta cuenta y las extra.<?= !empty($portalUser->server_id) ? ' Tu cuenta actual queda donde está; las nuevas van al que elijas.' : '' ?></p>
-            <?php $shopServers = is_array($shopServers ?? null) ? $shopServers : []; ?>
-            <?php if ($shopServers === []): ?>
-            <p class="ez-help mb-0">Ahora mismo no hay servidor Plex/Jellyfin en el panel. Puedes comprar el tiempo igual.</p>
+            <p class="ez-help"><?= !empty($portalUser->server_id) ? 'Si ya tienes cuenta, se queda donde está. Las nuevas van al mismo tipo, o al de por defecto si aún no tienen servidor.' : 'Elige el servicio. Te asignamos el servidor de por defecto de ese tipo.' ?></p>
+            <?php $shopTypes = is_array($shopTypes ?? null) ? $shopTypes : []; ?>
+            <?php if ($shopTypes === []): ?>
+            <p class="ez-help mb-0">Ahora mismo no hay Plex/Jellyfin en el panel. Puedes comprar el tiempo igual.</p>
             <?php else: ?>
             <div class="ez-chips ez-chips-service" role="group" aria-label="Servicio">
-                <?php foreach ($shopServers as $srv): ?>
-                <button type="button" class="ez-chip<?= (int) $srv['id'] === (int) ($selectedServerId ?? 0) ? ' is-on' : '' ?>"
-                        data-server-id="<?= (int) $srv['id'] ?>">
-                    <strong><?= e($srv['type'] === 'jellyfin' ? 'Jellyfin' : 'Plex') ?></strong>
-                    <span><?= e($srv['name'] !== '' ? $srv['name'] : 'Servidor') ?></span>
+                <?php foreach ($shopTypes as $srv): ?>
+                <button type="button" class="ez-chip<?= ($srv['type'] ?? '') === ($selectedType ?? '') ? ' is-on' : '' ?>"
+                        data-server-type="<?= e((string) $srv['type']) ?>">
+                    <strong><?= e($srv['label']) ?></strong>
                 </button>
                 <?php endforeach; ?>
             </div>

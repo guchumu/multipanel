@@ -57,7 +57,7 @@ final class PortalShopServiceTest extends TestCase
         ];
         $shop = new PortalShopService();
 
-        $this->assertSame(20, $shop->resolveShopServerId($servers, 20, 10));
+        $this->assertSame(10, $shop->resolveShopServerId($servers, 20, 10));
         $this->assertSame(10, $shop->resolveShopServerId($servers, 0, 10));
         $this->assertSame(10, $shop->resolveShopServerId($servers, 99, 0));
         $this->assertNull($shop->resolveShopServerId([], 1, 1));

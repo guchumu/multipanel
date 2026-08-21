@@ -1,4 +1,7 @@
-<?php ob_start(); ?>
+<?php
+$quotaById = is_array($quotaById ?? null) ? $quotaById : [];
+ob_start();
+?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Servidores</h4>
     <div class="d-flex gap-2">
@@ -26,7 +29,7 @@
                     <th>Tipo</th>
                     <th class="d-none d-md-table-cell">URL</th>
                     <th>Estado</th>
-                    <th class="d-none d-lg-table-cell">Versión</th>
+                    <th class="d-none d-lg-table-cell">Cupo</th>
                     <th class="d-none d-sm-table-cell">Sesiones</th>
                     <th class="d-none d-lg-table-cell">Carga</th>
                     <th>Acciones</th>
@@ -59,7 +62,18 @@
                         <div class="small text-danger mt-1" title="<?= e($server->last_error) ?>"><?= e(mb_strimwidth((string) $server->last_error, 0, 60, '…')) ?></div>
                         <?php endif; ?>
                     </td>
-                    <td class="small d-none d-lg-table-cell"><?= e($server->version ?? '-') ?></td>
+                    <td class="small d-none d-lg-table-cell">
+                        <?php
+                        $q = $quotaById[(int) $server->id] ?? ['used' => 0, 'quota' => 0];
+                        $used = (int) $q['used'];
+                        $quota = (int) $q['quota'];
+                        ?>
+                        <?php if ($quota > 0): ?>
+                        <?= $used ?> / <?= $quota ?>
+                        <?php else: ?>
+                        <?= $used ?> <span class="text-muted">sin límite</span>
+                        <?php endif; ?>
+                    </td>
                     <td class="d-none d-sm-table-cell"><?= (int) $server->active_sessions ?></td>
                     <td class="d-none d-lg-table-cell small">
                         <?php $l = $load[(int) $server->id] ?? null; ?>

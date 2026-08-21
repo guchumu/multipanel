@@ -40,7 +40,12 @@
                     <dt class="text-muted small">Tipo</dt><dd><?= e(strtoupper($server->type)) ?></dd>
                     <dt class="text-muted small">URL</dt><dd class="small"><code><?= e($server->fullUrl()) ?></code></dd>
                     <dt class="text-muted small">Versión</dt><dd><?= e($server->version ?? 'Desconocida') ?></dd>
-                    <dt class="text-muted small">Machine ID</dt><dd class="small text-break"><?= e($server->machine_id ?? '-') ?></dd>
+                    <dt class="text-muted small">Cupo usuarios</dt>
+                    <dd>
+                        <?php $quota = (int) ($server->user_quota ?? 0); ?>
+                        <?= (int) ($panelUsers ?? 0) ?>
+                        <?= $quota > 0 ? ' / ' . $quota : ' (sin límite)' ?>
+                    </dd>
                     <dt class="text-muted small">Última sync</dt><dd><?= e($server->last_sync_at ?? 'Nunca') ?></dd>
                     <dt class="text-muted small">Última comprobación</dt><dd><?= e($server->last_check_at ?? '-') ?></dd>
                 </dl>

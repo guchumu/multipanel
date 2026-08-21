@@ -10,7 +10,7 @@
     const maxStreams = 6;
 
     const monthsInput = document.getElementById('ez-months');
-    const serverInput = document.getElementById('ez-server');
+    const serverTypeInput = document.getElementById('ez-server-type');
     const tbody = document.getElementById('ez-accounts');
     const tfoot = document.getElementById('ez-ticket-foot');
     const ticketList = document.getElementById('ez-ticket-list');
@@ -236,11 +236,11 @@
         });
     });
 
-    form.querySelectorAll('.ez-chip[data-server-id]').forEach((btn) => {
+    form.querySelectorAll('.ez-chip[data-server-type]').forEach((btn) => {
         btn.addEventListener('click', () => {
-            form.querySelectorAll('.ez-chip[data-server-id]').forEach((b) => b.classList.remove('is-on'));
+            form.querySelectorAll('.ez-chip[data-server-type]').forEach((b) => b.classList.remove('is-on'));
             btn.classList.add('is-on');
-            if (serverInput) serverInput.value = btn.dataset.serverId || '0';
+            if (serverTypeInput) serverTypeInput.value = btn.dataset.serverType || 'plex';
         });
     });
 

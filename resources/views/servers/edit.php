@@ -48,6 +48,13 @@
                     <label class="form-label">Intervalo comprobación (min)</label>
                     <input type="number" name="check_interval" class="form-control" value="<?= (int) ($server->check_interval_minutes ?? 5) ?>" min="1">
                 </div>
+                <div class="col-md-6">
+                    <label class="form-label">Cupo de usuarios</label>
+                    <input type="number" name="user_quota" class="form-control" min="0" max="100000"
+                           value="<?= (int) ($server->user_quota ?? 0) ?>"
+                           placeholder="0 = sin límite">
+                    <div class="form-text">0 = sin límite. Altas nuevas (portal, registro, cuentas extra) no entran si está lleno. Renovar a quien ya está aquí no cuenta plaza nueva.</div>
+                </div>
                 <div class="col-12">
                     <label class="form-label">Descripción</label>
                     <textarea name="description" class="form-control" rows="2"><?= e($server->description ?? '') ?></textarea>

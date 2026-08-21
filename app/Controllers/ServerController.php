@@ -42,11 +42,22 @@ class ServerController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
+        $placement = new \App\Services\ServerPlacementService();
+        $placement->ensureQuotaColumn();
+        $quotaById = [];
+        foreach ($this->servers->allByTenant($tenantId) as $s) {
+            $quotaById[(int) $s->id] = [
+                'used' => $placement->countUsers((int) $s->id),
+                'quota' => $placement->quotaOf($s->user_quota ?? 0),
+            ];
+        }
+
         return $this->view('servers.index', [
             'title' => 'Servidores',
             'servers' => $this->servers->allByTenant($tenantId),
             'load' => $this->load->getTenantLoad($tenantId),
             'linkedLibraries' => $this->linkedLibraries->getGroupedLibraries($tenantId),
+            'quotaById' => $quotaById,
         ]);
     }
 
@@ -99,6 +110,7 @@ class ServerController extends Controller
             'machine_id' => trim((string) $request->input('machine_id', '')) ?: null,
             'location' => $request->input('location'),
             'check_interval_minutes' => (int) ($request->input('check_interval') ?? 5),
+            'user_quota' => max(0, min(100000, (int) $request->input('user_quota', 0))),
             'status' => 'offline',
         ]);
 
@@ -232,6 +244,8 @@ class ServerController extends Controller
         $server->ssl = $endpoint['ssl'] ? 1 : 0;
         $server->location = $request->input('location');
         $server->check_interval_minutes = (int) ($request->input('check_interval') ?? 5);
+        $quota = trim((string) $request->input('user_quota', ''));
+        $server->user_quota = ($quota === '') ? 0 : max(0, min(100000, (int) $quota));
 
         $token = trim((string) $request->input('token', ''));
         if ($token !== '') {

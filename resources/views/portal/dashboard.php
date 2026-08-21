@@ -46,7 +46,6 @@ ob_start();
         <span class="ez-fact-ico" aria-hidden="true">🏠</span>
         <span class="ez-fact-label">Dónde ves</span>
         <strong class="ez-fact-value text-truncate"><?= e($serverInfo['type_label'] ?? '—') ?></strong>
-        <span class="ez-fact-sub text-truncate"><?= e($serverInfo['name'] ?? '') ?></span>
     </div>
 </div>
 

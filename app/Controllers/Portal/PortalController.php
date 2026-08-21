@@ -190,32 +190,24 @@ class PortalController extends Controller
         $tenantId = (int) ($user->tenant_id ?? 1);
         $expiry = $this->expiryInfo($user->expires_at ?? null, (string) ($user->status ?? ''));
         $shop = new \App\Services\PortalShopService();
+        $placement = new \App\Services\ServerPlacementService();
         $shopOptions = $shop->monthOptions($tenantId);
-        $shopServers = $shop->shopServers($tenantId);
+        $shopTypes = $placement->shopTypes($tenantId);
         $stripeConfigured = trim($this->billingSettings->getStripeSecretKey($tenantId)) !== '';
 
-        $serverInfo = ['name' => 'Sin servidor', 'type_label' => '—'];
+        $serverInfo = ['name' => '', 'type_label' => '—'];
+        $selectedType = 'plex';
         if (!empty($user->server_id)) {
-            try {
-                $srow = Database::getInstance()->fetchOne(
-                    'SELECT name, type FROM servers WHERE id = ? AND deleted_at IS NULL LIMIT 1',
-                    [(int) $user->server_id]
-                );
-                if ($srow) {
-                    $type = strtolower((string) ($srow['type'] ?? ''));
-                    $serverInfo = [
-                        'name' => (string) ($srow['name'] ?? 'Servidor'),
-                        'type_label' => match ($type) {
-                            'plex' => 'Plex',
-                            'jellyfin' => 'Jellyfin',
-                            'emby' => 'Emby',
-                            default => $type !== '' ? ucfirst($type) : 'Media',
-                        },
-                    ];
-                }
-            } catch (\Throwable) {
-                // ignore
+            $buyerType = $placement->typeOfServerId((int) $user->server_id);
+            if ($buyerType !== null) {
+                $selectedType = $buyerType;
+                $serverInfo = [
+                    'name' => '',
+                    'type_label' => $buyerType === 'jellyfin' ? 'Jellyfin' : 'Plex',
+                ];
             }
+        } elseif ($shopTypes !== []) {
+            $selectedType = (string) $shopTypes[0]['type'];
         }
 
         return $this->view('portal.subscription', [
@@ -224,12 +216,8 @@ class PortalController extends Controller
             'expiry' => $expiry,
             'serverInfo' => $serverInfo,
             'shopOptions' => $shopOptions,
-            'shopServers' => $shopServers,
-            'selectedServerId' => $shop->resolveShopServerId(
-                $shopServers,
-                0,
-                (int) ($user->server_id ?? 0)
-            ),
+            'shopTypes' => $shopTypes,
+            'selectedType' => $selectedType,
             'extraAccountPrice' => $shop->extraAccountPrice($tenantId),
             'extraStreamMonthly' => $shop->extraStreamMonthlyPrice($tenantId),
             'includedStreams' => \App\Services\PortalShopService::INCLUDED_STREAMS,

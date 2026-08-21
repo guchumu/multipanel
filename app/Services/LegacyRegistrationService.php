@@ -231,6 +231,16 @@ final class LegacyRegistrationService
             if ($serverRow) {
                 $server = new \App\Models\Server($serverRow);
             }
+        } elseif ($existing === null) {
+            $placed = (new ServerPlacementService())->place($tenantId, $serverType, 0, 1);
+            if (empty($placed['ok']) || empty($placed['server_id'])) {
+                throw new \RuntimeException($placed['error'] ?? 'No hay plaza en el servidor.');
+            }
+            $picked = \App\Models\Server::find((int) $placed['server_id']);
+            if ($picked === null) {
+                throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
+            }
+            $server = $picked;
         }
 
         if ($existing) {
