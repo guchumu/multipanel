@@ -42,6 +42,7 @@ final class Updater
         '017_media_user_link_codes.sql' => ['table' => 'media_user_link_codes'],
         '018_portal_login_links.sql' => ['table' => 'portal_login_links'],
         '019_media_user_endpoints.sql' => ['table' => 'media_user_endpoints'],
+        '020_home_away_stream_limits.sql' => ['column' => ['media_users', 'max_home_streams']],
     ];
 
     public function __construct()

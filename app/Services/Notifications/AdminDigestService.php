@@ -72,12 +72,13 @@ final class AdminDigestService
 
             $results = $this->notifications->notify(
                 'admin.digest',
-                'Resumen diario',
+                'RESUMEN DIARIO',
                 $message,
                 $channels,
                 [
                     'level' => 'info',
                     'digest_date' => $today,
+                    'whatsapp_kind' => 'digest',
                     'tenant_id' => $tenantId,
                 ],
                 null,
@@ -284,10 +285,7 @@ final class AdminDigestService
     private function formatMessage(array $p, string $dateYmd): string
     {
         $lines = [];
-        $lines[] = "Resumen diario ({$dateYmd})";
-        $lines[] = '';
-
-        $lines[] = 'Caducidades hoy: ' . (int) $p['today_count'];
+        $lines[] = '*Caducidades hoy:* ' . (int) $p['today_count'];
         if ($p['today_emails'] !== []) {
             $lines[] = '  · ' . implode(', ', $p['today_emails']);
             if ((int) $p['today_count'] > count($p['today_emails'])) {

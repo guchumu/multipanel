@@ -358,7 +358,7 @@ function streamInfoPanelHtml(s) {
                 \${infoItemHtml('Subtitle', subtitle)}
             </ul>
             <ul class="session-info-list">
-                \${infoItemHtml('Location', locationLine || '—')}
+                \${infoItemHtml('Dónde', (String(s.household || '') === 'home' ? 'Casa' : 'Fuera') + (locationLine ? ' · ' + locationLine : ''))}
                 \${infoItemHtml('Bandwidth', bandwidth)}
             </ul>
         </div>
@@ -370,10 +370,18 @@ function streamInfoPanelHtml(s) {
 }
 
 function overLimitBadgeHtml(s) {
-    if (!s.over_limit) return '';
-    const count = Number(s.user_stream_count || 0);
-    const limit = Number(s.stream_limit || 0);
-    return `<span class="badge bg-danger session-limit-badge" title="Supera el límite (IPs/sesiones: \${count}/\${limit})">Límite \${count}/\${limit}</span>`;
+    if (!s.over_limit && !s.would_cut) return '';
+    const away = String(s.cut_reason || '') === 'away';
+    const label = away ? 'Otra casa' : 'De más';
+    const title = away ? 'Otra casa / fuera' : 'Demasiadas teles en casa';
+    return `<span class="badge bg-danger session-limit-badge" title="\${escapeHtml(title)}">\${label}</span>`;
+}
+
+function householdBadgeHtml(s) {
+    const home = String(s.household || '') === 'home';
+    const label = home ? 'Casa' : 'Fuera';
+    const cls = home ? 'bg-success' : 'bg-warning text-dark';
+    return `<span class="badge session-household-badge \${cls}">\${label}</span>`;
 }
 
 function stateIconClass(state) {
@@ -396,10 +404,11 @@ function mediaIconClass(mediaType) {
 function sessionUserHtml(s) {
     const name = escapeHtml(s.user || '-');
     const uuid = String(s.media_user_uuid || '').trim();
+    const badge = householdBadgeHtml(s);
     if (uuid) {
-        return `<a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a>`;
+        return `\${badge} <a href="/media-users/\${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">\${name}</a>`;
     }
-    return `<span class="session-user-name">\${name}</span>`;
+    return `\${badge} <span class="session-user-name">\${name}</span>`;
 }
 
 function sessionCardHtml(s) {

@@ -40,12 +40,16 @@ class StreamLimitController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
         $enabled = (bool) $request->input('enforcement_enabled');
+        $sandbox = (string) $request->input('sandbox_alerts', '0') === '1';
         $defaultMax = max(1, min(50, (int) $request->input('default_max_streams', 2)));
+        $defaultAway = max(0, min(20, (int) $request->input('default_max_away_streams', 0)));
         $killMessage = trim((string) $request->input('kill_message', ''));
-        $countMode = trim((string) $request->input('count_mode', 'distinct_ip'));
+        $countMode = trim((string) $request->input('count_mode', 'household'));
 
         $this->settings->setEnforcementEnabled($tenantId, $enabled);
+        $this->settings->setSandboxAlertsEnabled($tenantId, $sandbox);
         $this->settings->setDefaultMaxStreams($tenantId, $defaultMax);
+        $this->settings->setDefaultMaxAwayStreams($tenantId, $defaultAway);
         $this->settings->setKillMessage($tenantId, $killMessage !== '' ? $killMessage : null);
         $this->settings->setCountMode($tenantId, $countMode);
 

@@ -139,7 +139,7 @@ final class AdminCriticalAlertService
         return $this->notify(
             $tenantId,
             $fp,
-            $count === 1 ? "Sync FAIL: {$list}" : "Sync FAIL: {$count} servidores",
+            $count === 1 ? "SYNC FAIL: {$list}" : "SYNC FAIL: {$count} servidores",
             $count === 1
                 ? "El sync del servidor \"{$list}\" ha fallado. Revisar conexión / token / URL."
                 : "Han fallado {$count} servidores en el sync (nombre + tipo):\n{$list}",
@@ -158,7 +158,7 @@ final class AdminCriticalAlertService
         return $this->notify(
             $tenantId,
             $fp,
-            "Cron falló: {$task}",
+            "CRON FALLÓ: {$task}",
             "La tarea de cron \"{$task}\" ha fallado:\n{$error}",
             ['debounce_minutes' => 60]
         );
@@ -174,7 +174,7 @@ final class AdminCriticalAlertService
         return $this->notify(
             $tenantId,
             'backup_fail',
-            'Backup fallido',
+            'BACKUP FALLIDO',
             $detail !== '' ? "El backup no se pudo crear.\n{$detail}" : 'El backup no se pudo crear.',
             ['debounce_minutes' => 120]
         );
@@ -191,31 +191,86 @@ final class AdminCriticalAlertService
         bool $enforced,
         string $fingerprint,
         array $sessions = [],
+        array $meta = [],
     ): array {
-        $action = $enforced ? 'corte aplicado' : 'solo detectado';
-        $lines = ["Usuario \"{$username}\" con {$count}/{$limit} streams ({$action})."];
+        $sandbox = !empty($meta['sandbox']) && !$enforced;
+        $household = !empty($meta['household']);
+        $when = WhatsAppAdminText::nowMadridLong();
+        $homeCount = (int) ($meta['home_count'] ?? $count);
+        $awayCount = (int) ($meta['away_count'] ?? 0);
+        $homeLimit = (int) ($meta['home_limit'] ?? $limit);
+        $awayLimit = (int) ($meta['away_limit'] ?? 0);
 
-        foreach ($sessions as $i => $s) {
+        if ($sandbox && !(new \App\Services\StreamLimitSettingsService())->sandboxAlertsEnabled($tenantId)) {
+            return ['ok' => false, 'skipped' => true, 'reason' => 'sandbox off', 'channels' => []];
+        }
+
+        $title = $enforced ? 'CORTE de reproducción' : 'SANDBOX: se habría cortado';
+        $lines = [];
+        if ($sandbox) {
+            $lines[] = 'No se ha cortado. El corte automático está apagado.';
+        } else {
+            $lines[] = 'Corte aplicado.';
+        }
+        $lines[] = "Momento: {$when}";
+        $lines[] = "Usuario: {$username}";
+        if ($household) {
+            $lines[] = "Casa: {$homeCount}/{$homeLimit} · Fuera: {$awayCount}/{$awayLimit}";
+        } else {
+            $lines[] = "Streams: {$count}/{$limit}";
+        }
+
+        $cutLines = [];
+        $otherLines = [];
+        foreach ($sessions as $s) {
             if (!is_array($s)) {
                 continue;
             }
-            $n = $i + 1;
-            $title = trim((string) ($s['title'] ?? '')) ?: 'Sin título';
+            $reason = (string) ($s['cut_reason'] ?? '');
+            $isCut = !empty($s['killed']) || !empty($s['would_cut']) || $reason !== '';
+            $why = match ($reason) {
+                'away' => 'otra casa',
+                'home' => 'demasiadas teles',
+                default => !empty($s['killed']) ? 'cortada' : '',
+            };
+            $titleS = trim((string) ($s['title'] ?? '')) ?: 'Sin título';
             $ip = trim((string) ($s['ip'] ?? '')) ?: 'IP ?';
             $player = trim((string) ($s['player'] ?? '')) ?: 'reproductor ?';
-            $product = trim((string) ($s['product'] ?? ''));
-            $platform = trim((string) ($s['platform'] ?? ''));
-            $device = trim(implode(' / ', array_filter([$player, $product, $platform], static fn (string $x): bool => $x !== '')));
-            $killed = !empty($s['killed']) ? ' [cortada]' : '';
-            $lines[] = "#{$n}: {$title} · {$ip} · {$device}{$killed}";
+            $zone = (($s['household'] ?? '') === 'home') ? 'Casa' : 'Fuera';
+            $bit = "{$zone}: {$titleS} · {$ip} · {$player}";
+            if ($why !== '') {
+                $bit .= " → {$why}";
+            }
+            if ($isCut) {
+                $cutLines[] = $bit;
+            } else {
+                $otherLines[] = $bit;
+            }
+        }
+        if ($cutLines !== []) {
+            $lines[] = $sandbox ? 'Se habría cortado:' : 'Cortado:';
+            foreach ($cutLines as $line) {
+                $lines[] = '· ' . $line;
+            }
+        }
+        if ($otherLines !== []) {
+            $lines[] = 'Siguen:';
+            foreach ($otherLines as $line) {
+                $lines[] = '· ' . $line;
+            }
         }
 
         return $this->notify(
             $tenantId,
             'stream_limit:' . $fingerprint,
-            'Exceso de streams',
+            $title,
             implode("\n", $lines),
-            ['debounce_minutes' => 15]
+            [
+                'debounce_minutes' => $sandbox ? 3 : 15,
+                'data' => [
+                    'whatsapp_kind' => $enforced ? 'cut' : 'sandbox',
+                ],
+            ]
         );
     }
 

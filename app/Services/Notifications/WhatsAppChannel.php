@@ -37,8 +37,9 @@ final class WhatsAppChannel implements NotificationChannelInterface
 
         $phone = $this->alerts->whatsappPhone($tenantId);
         $apikey = $this->alerts->whatsappApiKey($tenantId);
-        $text = trim($title . "\n\n" . $message);
-        if ($text === '') {
+        $kind = (string) ($data['whatsapp_kind'] ?? $data['event'] ?? 'alert');
+        $text = WhatsAppAdminText::wrap($title, $message, $kind);
+        if (trim($text) === '') {
             return false;
         }
 

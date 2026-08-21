@@ -37,4 +37,23 @@ final class MediaUserEndpointServiceTest extends TestCase
         $this->assertSame('home', MediaUserEndpointService::normalizeKind('hogar'));
         $this->assertSame('away', MediaUserEndpointService::normalizeKind('fuera'));
     }
+
+    public function testClassifyPlaybackLanIsHomeAndWanIsAwayUnlessMarked(): void
+    {
+        $svc = new MediaUserEndpointService();
+        $this->assertSame('home', $svc->classifyPlayback([
+            'location' => 'lan',
+            'client_ip' => '10.0.0.8',
+        ]));
+        $this->assertSame('away', $svc->classifyPlayback([
+            'location' => 'wan',
+            'public_ip' => '8.8.8.8',
+            'client_ip' => '8.8.8.8',
+        ]));
+        $this->assertSame('home', $svc->classifyPlayback([
+            'location' => 'wan',
+            'public_ip' => '203.0.113.10',
+            'client_ip' => '203.0.113.10',
+        ], ['203.0.113.10']));
+    }
 }

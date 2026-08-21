@@ -20,12 +20,8 @@ use Core\Logger;
  *  1. media_users.external_id = session.user_id (Plex User.id / Jellyfin UserId)
  *  2. LOWER(username) or LOWER(display_name) = LOWER(session.user)
  *
- * Default count mode: distinct_ip — el límite es el nº de IPs de cliente distintas
- * (varias sesiones en la misma IP cuentan como 1). Alternativa: sessions.
- *
- * Policy distinct_ip when over limit: keep the N oldest IPs (first seen in the
- * session list); kill ALL sessions from the newest excess IP(s).
- * Policy sessions: keep highest-progress sessions; kill newest/excess.
+ * Default count mode: household — N teles en casa, 0 (o pagadas) fuera.
+ * El corte solo si enforcement_enabled; si no, sandbox al admin (WhatsApp/Telegram).
  *
  * Logging: siempre se registra en stream_limit_violations al superar el límite
  * (con debounce por huella de sesiones/IPs). El corte solo si enforcement_enabled.
@@ -68,7 +64,9 @@ final class ConcurrentStreamLimitService
         $enforce = $this->settings->isEnforcementEnabled($tenantId);
         $killMessage = $this->settings->getKillMessage($tenantId);
         $countMode = $this->settings->getCountMode($tenantId);
+        $household = $countMode === StreamLimitSettingsService::COUNT_MODE_HOUSEHOLD;
         $distinctIp = $countMode === StreamLimitSettingsService::COUNT_MODE_DISTINCT_IP;
+        $endpoints = new MediaUserEndpointService();
 
         // Attach media_user_id + limit + normalized IP key.
         foreach ($sessions as $i => $session) {
@@ -78,10 +76,33 @@ final class ConcurrentStreamLimitService
             $sessions[$i]['stream_limit'] = $match !== null
                 ? $this->settings->resolveLimitForUser($tenantId, $match['max_streams'] ?? null)
                 : $defaultLimit;
+            $sessions[$i]['home_limit'] = $match !== null
+                ? $this->settings->resolveHomeLimitForUser($tenantId, $match['max_home_streams'] ?? null, $match['max_streams'] ?? null)
+                : $defaultLimit;
+            $sessions[$i]['away_limit'] = $match !== null
+                ? $this->settings->resolveAwayLimitForUser($tenantId, $match['max_away_streams'] ?? null)
+                : $this->settings->getDefaultMaxAwayStreams($tenantId);
             $sessions[$i]['over_limit'] = false;
+            $sessions[$i]['would_cut'] = false;
+            $sessions[$i]['cut_reason'] = '';
             $sessions[$i]['user_stream_count'] = 0;
             $sessions[$i]['client_ip'] = SessionClientIp::normalize((string) ($session['client_ip'] ?? ''));
             $sessions[$i]['ip_key'] = $this->ipKeyForSession($sessions[$i], $i);
+            $sessions[$i]['household'] = 'away';
+        }
+
+        $matchedIds = [];
+        foreach ($sessions as $session) {
+            $uid = (int) ($session['media_user_id'] ?? 0);
+            if ($uid > 0) {
+                $matchedIds[$uid] = $uid;
+            }
+        }
+        $homeIps = $endpoints->homeIpsByUserIds(array_values($matchedIds));
+
+        foreach ($sessions as $i => $session) {
+            $uid = (int) ($session['media_user_id'] ?? 0);
+            $sessions[$i]['household'] = $endpoints->classifyPlayback($session, $homeIps[$uid] ?? []);
         }
 
         // Group by media_user_id (only matched sessions).
@@ -100,10 +121,22 @@ final class ConcurrentStreamLimitService
 
         foreach ($byUser as $mediaUserId => $indexes) {
             $limit = (int) ($sessions[$indexes[0]]['stream_limit'] ?? $defaultLimit);
+            $homeLimit = (int) ($sessions[$indexes[0]]['home_limit'] ?? $defaultLimit);
+            $awayLimit = (int) ($sessions[$indexes[0]]['away_limit'] ?? 0);
             $serverId = (int) ($sessions[$indexes[0]]['server_id'] ?? 0);
             $username = (string) ($sessions[$indexes[0]]['user'] ?? '');
 
-            if ($distinctIp) {
+            $cutReasons = [];
+            if ($household) {
+                [$homeCount, $awayCount, $excessIndexes, $cutReasons] = $this->excessByHousehold(
+                    $indexes,
+                    $sessions,
+                    $homeLimit,
+                    $awayLimit
+                );
+                $count = $homeCount + $awayCount;
+                $distinctIps = [];
+            } elseif ($distinctIp) {
                 [$count, $excessIndexes, $distinctIps] = $this->excessByDistinctIp($indexes, $sessions, $limit);
             } else {
                 [$count, $excessIndexes, $distinctIps] = $this->excessBySessions($indexes, $sessions, $limit);
@@ -111,11 +144,15 @@ final class ConcurrentStreamLimitService
 
             foreach ($indexes as $idx) {
                 $sessions[$idx]['user_stream_count'] = $count;
-                $sessions[$idx]['over_limit'] = $count > $limit;
+                $sessions[$idx]['home_count'] = $household ? ($homeCount ?? 0) : $count;
+                $sessions[$idx]['away_count'] = $household ? ($awayCount ?? 0) : 0;
+                $sessions[$idx]['over_limit'] = in_array($idx, $excessIndexes, true);
+                $sessions[$idx]['would_cut'] = in_array($idx, $excessIndexes, true);
+                $sessions[$idx]['cut_reason'] = $cutReasons[$idx] ?? '';
                 $sessions[$idx]['count_mode'] = $countMode;
             }
 
-            if ($count <= $limit) {
+            if ($excessIndexes === []) {
                 $this->clearViolationFingerprint((int) $mediaUserId);
 
                 continue;
@@ -163,7 +200,13 @@ final class ConcurrentStreamLimitService
                         continue;
                     }
 
-                    $ok = $this->terminateSession($server, $sessionId, $killMessage);
+                    $reasonKey = (string) ($cutReasons[$idx] ?? $sessions[$idx]['cut_reason'] ?? '');
+                    $sessionKillMessage = match ($reasonKey) {
+                        'away' => $this->settings->getKillMessageAway($tenantId),
+                        'home' => $this->settings->getKillMessageHome($tenantId),
+                        default => $killMessage,
+                    };
+                    $ok = $this->terminateSession($server, $sessionId, $sessionKillMessage);
 
                     if ($ok) {
                         Cache::set($debounceKey, 1, self::KILL_DEBOUNCE_TTL);
@@ -187,8 +230,8 @@ final class ConcurrentStreamLimitService
                 $allSessionIds,
                 $clientIps,
                 $count,
-                $limit,
-                $distinctIp ? 'distinct_ip' : 'sessions'
+                $household ? $homeLimit : $limit,
+                $household ? 'household' : ($distinctIp ? 'distinct_ip' : 'sessions')
             );
 
             if (!$this->shouldLogViolation((int) $mediaUserId, $fingerprint)) {
@@ -225,10 +268,19 @@ final class ConcurrentStreamLimitService
                     $tenantId,
                     $username,
                     $count,
-                    $limit,
+                    $household ? $homeLimit : $limit,
                     $killedIds !== [],
                     $fingerprint,
-                    $titles
+                    $titles,
+                    [
+                        'enforced' => $killedIds !== [],
+                        'sandbox' => $killedIds === [],
+                        'home_count' => $household ? (int) ($homeCount ?? 0) : $count,
+                        'away_count' => $household ? (int) ($awayCount ?? 0) : 0,
+                        'home_limit' => $homeLimit,
+                        'away_limit' => $awayLimit,
+                        'household' => $household,
+                    ]
                 );
             } catch (\Throwable) {
                 // No bloquear el corte/registro si falla el aviso admin.
@@ -273,14 +325,30 @@ final class ConcurrentStreamLimitService
             }
             foreach ($byUserLeft as $indexes) {
                 $limit = (int) ($sessions[$indexes[0]]['stream_limit'] ?? $defaultLimit);
-                if ($distinctIp) {
+                $homeLimit = (int) ($sessions[$indexes[0]]['home_limit'] ?? $defaultLimit);
+                $awayLimit = (int) ($sessions[$indexes[0]]['away_limit'] ?? 0);
+                if ($household) {
+                    [$homeCount, $awayCount, $excessLeft] = $this->excessByHousehold($indexes, $sessions, $homeLimit, $awayLimit);
+                    $count = $homeCount + $awayCount;
+                    foreach ($indexes as $idx) {
+                        $sessions[$idx]['user_stream_count'] = $count;
+                        $sessions[$idx]['home_count'] = $homeCount;
+                        $sessions[$idx]['away_count'] = $awayCount;
+                        $sessions[$idx]['over_limit'] = in_array($idx, $excessLeft, true);
+                        $sessions[$idx]['would_cut'] = false;
+                    }
+                } elseif ($distinctIp) {
                     [$count] = $this->excessByDistinctIp($indexes, $sessions, $limit);
+                    foreach ($indexes as $idx) {
+                        $sessions[$idx]['user_stream_count'] = $count;
+                        $sessions[$idx]['over_limit'] = $count > $limit;
+                    }
                 } else {
                     $count = count($indexes);
-                }
-                foreach ($indexes as $idx) {
-                    $sessions[$idx]['user_stream_count'] = $count;
-                    $sessions[$idx]['over_limit'] = $count > $limit;
+                    foreach ($indexes as $idx) {
+                        $sessions[$idx]['user_stream_count'] = $count;
+                        $sessions[$idx]['over_limit'] = $count > $limit;
+                    }
                 }
             }
         }
@@ -308,6 +376,41 @@ final class ConcurrentStreamLimitService
         $sid = trim((string) ($session['session_id'] ?? ''));
 
         return 'unknown:' . ($sid !== '' ? $sid : (string) $index);
+    }
+
+    /**
+     * @param array<int, int> $indexes
+     * @param array<int, array<string, mixed>> $sessions
+     * @return array{0: int, 1: int, 2: array<int, int>, 3: array<int, string>} homeCount, awayCount, excess indexes, reasons
+     */
+    private function excessByHousehold(array $indexes, array $sessions, int $homeLimit, int $awayLimit): array
+    {
+        $home = [];
+        $away = [];
+        foreach ($indexes as $idx) {
+            if (($sessions[$idx]['household'] ?? 'away') === MediaUserEndpointService::KIND_HOME) {
+                $home[] = $idx;
+            } else {
+                $away[] = $idx;
+            }
+        }
+
+        $excess = [];
+        $reasons = [];
+        if (count($away) > $awayLimit) {
+            foreach (array_slice($away, $awayLimit) as $idx) {
+                $excess[] = $idx;
+                $reasons[$idx] = 'away';
+            }
+        }
+        if (count($home) > $homeLimit) {
+            foreach (array_slice($home, $homeLimit) as $idx) {
+                $excess[] = $idx;
+                $reasons[$idx] = 'home';
+            }
+        }
+
+        return [count($home), count($away), $excess, $reasons];
     }
 
     /**
@@ -434,6 +537,9 @@ final class ConcurrentStreamLimitService
             'media_type' => (string) ($session['media_type'] ?? ''),
             'location' => (string) ($session['location'] ?? ''),
             'bandwidth' => (string) ($session['bandwidth'] ?? ''),
+            'household' => (string) ($session['household'] ?? ''),
+            'cut_reason' => (string) ($session['cut_reason'] ?? ''),
+            'would_cut' => !empty($session['would_cut']) || $killed,
             'killed' => $killed,
         ];
     }
@@ -468,8 +574,9 @@ final class ConcurrentStreamLimitService
      */
     private function loadMediaUsers(int $tenantId): array
     {
+        self::ensureHomeAwayColumns();
         $rows = Database::getInstance()->fetchAll(
-            'SELECT id, uuid, server_id, external_id, username, display_name, max_streams
+            'SELECT id, uuid, server_id, external_id, username, display_name, max_streams, max_home_streams, max_away_streams
              FROM media_users
              WHERE tenant_id = ? AND deleted_at IS NULL
                AND status NOT IN (\'deleted\')',
@@ -483,8 +590,29 @@ final class ConcurrentStreamLimitService
             'external_id' => isset($r['external_id']) && $r['external_id'] !== '' ? (string) $r['external_id'] : null,
             'username' => (string) ($r['username'] ?? ''),
             'display_name' => isset($r['display_name']) && $r['display_name'] !== '' ? (string) $r['display_name'] : null,
-            'max_streams' => $r['max_streams'],
+            'max_streams' => $r['max_streams'] ?? null,
+            'max_home_streams' => $r['max_home_streams'] ?? null,
+            'max_away_streams' => $r['max_away_streams'] ?? null,
         ], $rows);
+    }
+
+    private static function ensureHomeAwayColumns(): void
+    {
+        static $ensured = false;
+        if ($ensured) {
+            return;
+        }
+        try {
+            $row = Database::getInstance()->fetchOne(
+                "SELECT 1 AS ok FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'media_users' AND COLUMN_NAME = 'max_home_streams' LIMIT 1"
+            );
+            if ($row === null) {
+                (new \Core\Updater())->runMigrations();
+            }
+        } catch (\Throwable) {
+        }
+        $ensured = true;
     }
 
     /**

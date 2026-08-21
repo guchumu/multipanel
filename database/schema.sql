@@ -254,6 +254,8 @@ CREATE TABLE IF NOT EXISTS `media_users` (
     `locale` VARCHAR(10) NOT NULL DEFAULT 'es',
     `timezone` VARCHAR(50) NOT NULL DEFAULT 'Europe/Madrid',
     `max_streams` TINYINT UNSIGNED NULL DEFAULT NULL,
+    `max_home_streams` TINYINT UNSIGNED NULL DEFAULT NULL,
+    `max_away_streams` TINYINT UNSIGNED NULL DEFAULT NULL,
     `max_devices` TINYINT UNSIGNED NOT NULL DEFAULT 5,
     `max_quality` VARCHAR(20) NULL,
     `parental_control` TINYINT(1) NOT NULL DEFAULT 0,

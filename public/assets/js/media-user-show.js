@@ -109,13 +109,15 @@
 
     document.getElementById('btnSaveProfile')?.addEventListener('click', async () => {
         try {
-            const streamsRaw = (document.getElementById('editMaxStreams')?.value || '').trim();
+            const homeRaw = (document.getElementById('editMaxHomeStreams')?.value || '').trim();
+            const awayRaw = (document.getElementById('editMaxAwayStreams')?.value || '').trim();
             const data = await post(`/media-users/${uuid}/profile`, {
                 username: document.getElementById('editUsername')?.value || '',
                 display_name: document.getElementById('editDisplayName')?.value || '',
                 email: document.getElementById('editEmail')?.value || '',
-                // Vacío = usar default del tenant
-                max_streams: streamsRaw === '' ? '' : Number(streamsRaw),
+                max_streams: homeRaw === '' ? '' : Number(homeRaw),
+                max_home_streams: homeRaw === '' ? '' : Number(homeRaw),
+                max_away_streams: awayRaw === '' ? '' : Number(awayRaw),
                 max_devices: Number(document.getElementById('editMaxDevices')?.value || 5),
             });
             if (data.success === false) throw new Error(data.message || 'Error');

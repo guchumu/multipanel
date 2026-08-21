@@ -351,6 +351,7 @@ final class BillingService
                 $streams = $this->clampShopStreams((int) ($row['streams'] ?? PortalShopService::INCLUDED_STREAMS));
                 if ((int) $i === 0) {
                     $buyer->max_streams = $streams;
+                    $buyer->max_home_streams = $streams;
                     $buyer->save();
                     continue;
                 }
@@ -419,6 +420,7 @@ final class BillingService
             $current = (int) ($other->max_streams ?? PortalShopService::INCLUDED_STREAMS);
             if ($streams > $current) {
                 $other->max_streams = $streams;
+                $other->max_home_streams = $streams;
                 $other->save();
             }
 
@@ -439,7 +441,7 @@ final class BillingService
         }
 
         try {
-            $db->insert('media_users', [
+            $id = $db->insert('media_users', [
                 'tenant_id' => $tenantId,
                 'uuid' => Uuid::uuid4()->toString(),
                 'server_id' => $shopServerId > 0 ? $shopServerId : $buyer->server_id,
@@ -449,6 +451,7 @@ final class BillingService
                 'display_name' => $username,
                 'status' => 'pending',
                 'max_streams' => $streams,
+                'max_home_streams' => $streams,
                 'max_devices' => 5,
                 'expires_at' => $buyer->expires_at ?? null,
                 'notes' => 'Contratado desde el portal por ' . ($buyer->email ?: $buyer->username),
@@ -458,6 +461,28 @@ final class BillingService
                 'email' => $email,
                 'error' => $e->getMessage(),
             ]);
+
+            return;
+        }
+
+        $created = MediaUser::find((int) $id);
+        $serverId = (int) ($created?->server_id ?? 0);
+        $server = $serverId > 0 ? \App\Models\Server::find($serverId) : null;
+        if ($created !== null && $server !== null) {
+            try {
+                $result = (new MediaUserProvisioningService())->provision($created, $server);
+                if (empty($result['success'])) {
+                    Logger::warning('Invitación extra del portal pendiente', [
+                        'email' => $email,
+                        'message' => $result['message'] ?? '',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Logger::warning('No se pudo invitar usuario extra del portal', [
+                    'email' => $email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

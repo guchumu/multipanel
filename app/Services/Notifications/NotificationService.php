@@ -196,15 +196,15 @@ final class NotificationService
     ): void {
         $tenantId ??= (int) (Session::getInstance()->get('tenant_id') ?? 1);
         $who = trim($email) !== '' ? trim($email) : (trim($username) !== '' ? trim($username) : 'sin email');
-        $bits = ["Alta: {$who}"];
+        $lines = ['*' . $who . '*'];
         if (trim($serverName) !== '') {
-            $bits[] = 'servidor ' . trim($serverName);
+            $lines[] = 'Servidor: ' . trim($serverName);
         }
         if ($days !== null && $days > 0) {
-            $bits[] = $days . ' días';
+            $lines[] = 'Duración: ' . $days . ' días';
         }
         if ($expiresAt !== null && trim($expiresAt) !== '') {
-            $bits[] = 'hasta ' . substr(trim($expiresAt), 0, 10);
+            $lines[] = 'Hasta: ' . substr(trim($expiresAt), 0, 10);
         }
 
         try {
@@ -214,14 +214,15 @@ final class NotificationService
             }
             $this->notify(
                 'media_user.created',
-                'Alta usuario',
-                implode(' · ', $bits),
+                'ALTA',
+                implode("\n", $lines),
                 $channels,
                 [
                     'email' => $who,
                     'server' => $serverName,
                     'days' => $days,
                     'expires_at' => $expiresAt,
+                    'whatsapp_kind' => 'created',
                 ],
                 null,
                 $tenantId
@@ -244,15 +245,15 @@ final class NotificationService
     ): void {
         $tenantId ??= (int) (Session::getInstance()->get('tenant_id') ?? 1);
         $who = trim($email) !== '' ? trim($email) : (trim($username) !== '' ? trim($username) : 'sin email');
-        $bits = ["Renovación: {$who}"];
+        $lines = ['*' . $who . '*'];
         if ($days !== null && $days > 0) {
-            $bits[] = '+' . $days . ' días';
+            $lines[] = '+' . $days . ' días';
         }
         if (trim($serverName) !== '') {
-            $bits[] = 'servidor ' . trim($serverName);
+            $lines[] = 'Servidor: ' . trim($serverName);
         }
         if ($expiresAt !== null && trim($expiresAt) !== '') {
-            $bits[] = 'nuevo vencimiento ' . substr(trim($expiresAt), 0, 10);
+            $lines[] = 'Hasta: ' . substr(trim($expiresAt), 0, 10);
         }
 
         try {
@@ -262,14 +263,15 @@ final class NotificationService
             }
             $this->notify(
                 'media_user.renewed',
-                'Renovación usuario',
-                implode(' · ', $bits),
+                'RENOVACIÓN',
+                implode("\n", $lines),
                 $channels,
                 [
                     'email' => $who,
                     'server' => $serverName,
                     'days' => $days,
                     'expires_at' => $expiresAt,
+                    'whatsapp_kind' => 'renewed',
                 ],
                 null,
                 $tenantId

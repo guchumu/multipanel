@@ -239,6 +239,7 @@ class MediaUserController extends Controller
             'messages' => $this->messages->listForUser((int) $user->id, 20),
             'renewalPresets' => $this->billingSettings->getRenewalPresets((int) ($user->tenant_id ?? 1)),
             'defaultMaxStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxStreams((int) ($user->tenant_id ?? 1)),
+            'defaultMaxAwayStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxAwayStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
             'endpoints' => $endpoints,
             'portalLink' => $this->portalLinks->activeInfo((int) $user->id),
@@ -823,6 +824,8 @@ class MediaUserController extends Controller
             'display_name' => $request->input('display_name', ''),
             'email' => $request->input('email', ''),
             'max_streams' => $request->input('max_streams', $user->max_streams),
+            'max_home_streams' => $request->input('max_home_streams', $user->max_home_streams ?? null),
+            'max_away_streams' => $request->input('max_away_streams', $user->max_away_streams ?? null),
             'max_devices' => $request->input('max_devices', $user->max_devices),
         ]);
 

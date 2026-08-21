@@ -78,12 +78,20 @@ ob_start();
                         <input type="email" id="editEmail" class="form-control form-control-sm" value="<?= e($mediaUser->email ?? '') ?>">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label small">Streams</label>
-                        <input type="number" min="1" max="50" id="editMaxStreams" class="form-control form-control-sm"
-                               value="<?= $mediaUser->max_streams !== null && $mediaUser->max_streams !== '' ? (int) $mediaUser->max_streams : '' ?>"
+                        <label class="form-label small">En casa</label>
+                        <input type="number" min="1" max="50" id="editMaxHomeStreams" class="form-control form-control-sm"
+                               value="<?= $mediaUser->max_home_streams !== null && $mediaUser->max_home_streams !== '' ? (int) $mediaUser->max_home_streams : ($mediaUser->max_streams !== null && $mediaUser->max_streams !== '' ? (int) $mediaUser->max_streams : '') ?>"
                                placeholder="Def. <?= (int) ($defaultMaxStreams ?? 2) ?>"
-                               title="Vacío = límite por defecto del tenant">
+                               title="Vacío = límite en casa del tenant (<?= (int) ($defaultMaxStreams ?? 2) ?>)">
                     </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Fuera</label>
+                        <input type="number" min="0" max="20" id="editMaxAwayStreams" class="form-control form-control-sm"
+                               value="<?= $mediaUser->max_away_streams !== null && $mediaUser->max_away_streams !== '' ? (int) $mediaUser->max_away_streams : '' ?>"
+                               placeholder="Def. <?= (int) ($defaultMaxAwayStreams ?? 0) ?>"
+                               title="Vacío = fuera del tenant (<?= (int) ($defaultMaxAwayStreams ?? 0) ?>). 0 = no se usa fuera de casa">
+                    </div>
+                    <input type="hidden" id="editMaxStreams" value="<?= $mediaUser->max_streams !== null && $mediaUser->max_streams !== '' ? (int) $mediaUser->max_streams : '' ?>">
                     <div class="col-md-3">
                         <label class="form-label small">Dispositivos</label>
                         <input type="number" min="1" id="editMaxDevices" class="form-control form-control-sm" value="<?= (int) $mediaUser->max_devices ?>">

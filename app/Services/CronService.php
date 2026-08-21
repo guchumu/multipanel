@@ -90,8 +90,8 @@ final class CronService
             ],
             'streams' => [
                 'title' => 'Límite de streams',
-                'description' => 'Detecta excesos de streams, los registra en Incumplimientos y corta solo si la aplicación automática está activa. Nuevos → alerta admin.',
-                'schedule' => 'Cada 5–15 minutos (o con En directo abierto)',
+                'description' => 'Detecta casa/fuera, registra excesos y avisa en sandbox (WhatsApp/Telegram) sin cortar hasta que actives el corte. Corta solo si «Cortar de verdad» está ON.',
+                'schedule' => 'Cada 1–2 minutos (recomendado) o con En directo abierto',
             ],
         ];
     }
@@ -158,6 +158,14 @@ final class CronService
     {
         $out('Checking concurrent stream limits...');
         try {
+            $dedupe = (new MediaUserDedupeService())->mergeDuplicatesForTenant($tenantId, false);
+            if (($dedupe['groups_merged'] ?? 0) > 0) {
+                $out(sprintf(
+                    '  Duplicados fusionados: %d grupos, %d fichas',
+                    (int) $dedupe['groups_merged'],
+                    (int) $dedupe['records_removed']
+                ));
+            }
             $stats = (new ConcurrentStreamLimitService())->runForTenant($tenantId);
             $out(sprintf(
                 '  Checked sessions: %d, killed: %d, violations logged: %d',

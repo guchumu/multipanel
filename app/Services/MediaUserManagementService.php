@@ -412,12 +412,32 @@ final class MediaUserManagementService
             return ['success' => false, 'message' => 'El email no es válido.'];
         }
         $user->email = $email ?: null;
-        // Vacío / null = usar default del tenant (settings.streams.default_max_streams)
+        if ($email !== '') {
+            $dup = $this->users->findDuplicate((int) ($user->tenant_id ?? 1), '', $email, (int) $user->id);
+            if ($dup !== null) {
+                return ['success' => false, 'message' => 'Ese email ya está en otra ficha. No se duplica.'];
+            }
+        }
         if (array_key_exists('max_streams', $data)) {
             $rawStreams = $data['max_streams'];
             $user->max_streams = ($rawStreams === null || $rawStreams === '')
                 ? null
                 : max(1, min(50, (int) $rawStreams));
+        }
+        if (array_key_exists('max_home_streams', $data)) {
+            $raw = $data['max_home_streams'];
+            $user->max_home_streams = ($raw === null || $raw === '')
+                ? null
+                : max(1, min(50, (int) $raw));
+            if ($user->max_home_streams !== null) {
+                $user->max_streams = $user->max_home_streams;
+            }
+        }
+        if (array_key_exists('max_away_streams', $data)) {
+            $raw = $data['max_away_streams'];
+            $user->max_away_streams = ($raw === null || $raw === '')
+                ? null
+                : max(0, min(20, (int) $raw));
         }
         $user->max_devices = max(1, (int) ($data['max_devices'] ?? $user->max_devices ?? 5));
         $user->save();
@@ -427,6 +447,8 @@ final class MediaUserManagementService
             'display_name' => $user->display_name,
             'email' => $user->email,
             'max_streams' => $user->max_streams,
+            'max_home_streams' => $user->max_home_streams ?? null,
+            'max_away_streams' => $user->max_away_streams ?? null,
             'max_devices' => $user->max_devices,
         ]);
 

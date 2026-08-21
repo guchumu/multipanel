@@ -182,8 +182,8 @@ final class ServerDownAlertService
         $body = $this->buildMessage($server, $diagnosis, $firstSeen, $elapsedMin, $nextLevel, $requiredMin);
         $label = $server->displayLabel();
         $title = $nextLevel === 0
-            ? 'Servidor caído: ' . $label
-            : 'Servidor sigue caído: ' . $label
+            ? 'SERVIDOR CAÍDO: ' . $label
+            : 'SIGUE CAÍDO: ' . $label
         ;
 
         $results = $this->notifications->notify(
@@ -197,6 +197,7 @@ final class ServerDownAlertService
                 'tenant_id' => $tenantId,
                 'server_id' => (int) $server->id,
                 'escalation_level' => $nextLevel,
+                'whatsapp_kind' => 'alert',
             ],
             null,
             $tenantId

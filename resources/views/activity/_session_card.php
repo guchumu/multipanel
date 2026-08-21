@@ -82,6 +82,9 @@ $mediaIcon = match (true) {
 };
 
 $metaSecondary = $sessionSubtitle !== '' ? $sessionSubtitle : ($year !== '' ? $year : '');
+$household = (($session['household'] ?? '') === 'home') ? 'home' : 'away';
+$householdLabel = $household === 'home' ? 'Casa' : 'Fuera';
+$householdClass = $household === 'home' ? 'bg-success' : 'bg-warning text-dark';
 $locationLine = $location !== '' ? $location : strtoupper((string) ($session['server_type'] ?? ''));
 if ($clientIp !== '') {
     $locationLine = ($locationLine !== '' ? $locationLine . ': ' : '') . $clientIp;
@@ -103,7 +106,7 @@ $infoRowsStream = [
     ['Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None', false],
 ];
 $infoRowsFoot = [
-    ['Location', $locationLine !== '' ? $locationLine : '—'],
+    ['Dónde', $householdLabel . ($locationLine !== '' ? ' · ' . $locationLine : '')],
     ['Bandwidth', $bandwidth !== '' ? $bandwidth : ((string) ($session['server_name'] ?? '—'))],
 ];
 ?>
@@ -199,9 +202,9 @@ $infoRowsFoot = [
                     title="<?= e($sessionTitle) ?> — clic para ver completo">
                     <?= e($sessionTitle !== '' ? $sessionTitle : 'Sin título') ?>
                 </h6>
-                <?php if (!empty($session['over_limit'])): ?>
-                <span class="badge bg-danger session-limit-badge" title="Supera el límite (IPs o sesiones distintas: <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>)">
-                    Límite <?= (int) ($session['user_stream_count'] ?? 0) ?>/<?= (int) ($session['stream_limit'] ?? 0) ?>
+                <?php if (!empty($session['over_limit']) || !empty($session['would_cut'])): ?>
+                <span class="badge bg-danger session-limit-badge" title="<?= e(!empty($session['cut_reason']) && $session['cut_reason'] === 'away' ? 'Otra casa / fuera' : 'Demasiadas teles en casa') ?>">
+                    <?= !empty($session['cut_reason']) && $session['cut_reason'] === 'away' ? 'Otra casa' : 'De más' ?>
                 </span>
                 <?php endif; ?>
             </div>
@@ -213,6 +216,7 @@ $infoRowsFoot = [
                 <span class="session-subtitle text-truncate"><?= e((string) ($session['server_name'] ?? '')) ?></span>
                 <?php endif; ?>
                 <span class="session-meta-user">
+                    <span class="badge session-household-badge <?= e($householdClass) ?>"><?= e($householdLabel) ?></span>
                     <?php if ($mediaUserUuid !== ''): ?>
                     <a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($userName) ?></a>
                     <?php else: ?>

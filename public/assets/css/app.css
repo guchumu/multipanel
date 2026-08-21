@@ -527,11 +527,11 @@ body {
     text-decoration: none !important;
 }
 
-.session-limit-badge {
-    flex: 0 0 auto;
+.session-household-badge {
     font-size: 0.62rem;
     padding: 0.15em 0.4em;
-    margin-left: 0.35rem;
+    margin-right: 0.3rem;
+    vertical-align: middle;
 }
 
 /* Compat: expand toggle ya no usa resumen corto; el panel es el detalle */

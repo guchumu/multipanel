@@ -219,4 +219,64 @@ final class MediaUserEndpointService
         }
         $ensured = true;
     }
+
+    /**
+     * @param list<int> $userIds
+     * @return array<int, list<string>>
+     */
+    public function homeIpsByUserIds(array $userIds): array
+    {
+        $this->ensureTable();
+        $userIds = array_values(array_filter(array_map('intval', $userIds), static fn (int $id): bool => $id > 0));
+        if ($userIds === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        try {
+            $rows = Database::getInstance()->fetchAll(
+                "SELECT media_user_id, ip FROM media_user_endpoints
+                 WHERE kind = ? AND media_user_id IN ({$placeholders}) AND ip != ''",
+                array_merge([self::KIND_HOME], $userIds)
+            ) ?: [];
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $uid = (int) $row['media_user_id'];
+            $ip = SessionClientIp::normalize((string) ($row['ip'] ?? ''));
+            if ($ip === '') {
+                continue;
+            }
+            $out[$uid][] = $ip;
+        }
+        foreach ($out as $uid => $ips) {
+            $out[$uid] = array_values(array_unique($ips));
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @param list<string> $homeIps
+     */
+    public function classifyPlayback(array $session, array $homeIps = []): string
+    {
+        $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
+        $lanIp = SessionClientIp::normalize((string) ($session['lan_ip'] ?? ''));
+        $location = SessionClientIp::classifyLocation(
+            isset($session['location']) ? (string) $session['location'] : null,
+            $publicIp !== '' ? $publicIp : $lanIp,
+            $lanIp
+        );
+        if ($location === 'LAN') {
+            return self::KIND_HOME;
+        }
+        if ($publicIp !== '' && in_array($publicIp, $homeIps, true)) {
+            return self::KIND_HOME;
+        }
+
+        return self::KIND_AWAY;
+    }
 }
