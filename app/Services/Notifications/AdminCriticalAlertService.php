@@ -229,7 +229,9 @@ final class AdminCriticalAlertService
             $reason = (string) ($s['cut_reason'] ?? '');
             $isCut = !empty($s['killed']) || !empty($s['would_cut']) || $reason !== '';
             $why = match ($reason) {
-                'away' => 'otra casa',
+                'away' => (($s['household_source'] ?? '') === 'device_mobile' || ($s['device_class'] ?? '') === 'mobile')
+                    ? 'móvil'
+                    : 'otra casa',
                 'home' => 'demasiadas teles',
                 default => !empty($s['killed']) ? 'cortada' : '',
             };

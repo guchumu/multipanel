@@ -541,6 +541,8 @@ final class ConcurrentStreamLimitService
             'location' => (string) ($session['location'] ?? ''),
             'bandwidth' => (string) ($session['bandwidth'] ?? ''),
             'household' => (string) ($session['household'] ?? ''),
+            'household_source' => (string) ($session['household_source'] ?? ''),
+            'device_class' => (string) ($session['device_class'] ?? ''),
             'cut_reason' => (string) ($session['cut_reason'] ?? ''),
             'would_cut' => !empty($session['would_cut']) || $killed,
             'killed' => $killed,
