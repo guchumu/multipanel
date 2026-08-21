@@ -184,7 +184,6 @@ final class MediaUserEndpointService
         string $platform = '',
         string $deviceName = '',
     ): string {
-    {
         $kind = self::inferKindFromLocation($location, $current);
         $deviceClass = self::classifyDeviceClass([
             'product' => $product,
