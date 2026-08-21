@@ -381,7 +381,13 @@ function householdBadgeHtml(s) {
     const home = String(s.household || '') === 'home';
     const label = home ? 'Casa' : 'Fuera';
     const cls = home ? 'bg-success' : 'bg-warning text-dark';
-    return `<span class="badge session-household-badge \${cls}">\${label}</span>`;
+    const src = String(s.household_source || '');
+    let title = home ? 'Casa' : 'Fuera';
+    if (src === 'device_tv') title = 'Tele / Fire Stick';
+    else if (src === 'device_mobile') title = 'Móvil / tablet';
+    else if (src === 'lan') title = 'Misma red que el servidor';
+    else if (src === 'home_ip') title = 'IP marcada como hogar';
+    return `<span class="badge session-household-badge \${cls}" title="\${escapeHtml(title)}">\${label}</span>`;
 }
 
 function stateIconClass(state) {

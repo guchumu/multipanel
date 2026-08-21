@@ -56,4 +56,57 @@ final class MediaUserEndpointServiceTest extends TestCase
             'client_ip' => '203.0.113.10',
         ], ['203.0.113.10']));
     }
+
+    public function testFireStickAndTvAreHomeEvenOnWan(): void
+    {
+        $svc = new MediaUserEndpointService();
+        $this->assertSame('tv', MediaUserEndpointService::classifyDeviceClass([
+            'product' => 'Plex for Amazon Fire TV',
+            'platform' => 'Fire TV',
+            'player' => 'Living Room',
+        ]));
+        $this->assertSame('home', $svc->classifyPlayback([
+            'location' => 'wan',
+            'public_ip' => '8.8.8.8',
+            'product' => 'Plex for Amazon Fire TV',
+            'platform' => 'Fire TV',
+        ]));
+        $this->assertSame('home', $svc->classifyPlayback([
+            'product' => 'Plex for Apple TV',
+            'platform' => 'tvOS',
+            'location' => 'wan',
+        ]));
+    }
+
+    public function testMobileIsAwayEvenOnLan(): void
+    {
+        $svc = new MediaUserEndpointService();
+        $this->assertSame('mobile', MediaUserEndpointService::classifyDeviceClass([
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone',
+        ]));
+        $this->assertSame('away', $svc->classifyPlayback([
+            'location' => 'lan',
+            'client_ip' => '192.168.1.20',
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone de Ana',
+        ]));
+        $this->assertSame('away', $svc->classifyPlayback([
+            'product' => 'Plex for Android',
+            'platform' => 'Android',
+            'player' => 'Pixel 8',
+            'location' => 'lan',
+        ]));
+        $this->assertSame('tv', MediaUserEndpointService::classifyDeviceClass([
+            'product' => 'Plex for Android',
+            'platform' => 'Android TV',
+        ]));
+        $this->assertSame('mobile', MediaUserEndpointService::classifyDeviceClass([
+            'product' => 'Plex for Android',
+            'platform' => 'Android',
+            'player' => 'Samsung Galaxy S23',
+        ]));
+    }
 }

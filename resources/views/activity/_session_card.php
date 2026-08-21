@@ -85,6 +85,13 @@ $metaSecondary = $sessionSubtitle !== '' ? $sessionSubtitle : ($year !== '' ? $y
 $household = (($session['household'] ?? '') === 'home') ? 'home' : 'away';
 $householdLabel = $household === 'home' ? 'Casa' : 'Fuera';
 $householdClass = $household === 'home' ? 'bg-success' : 'bg-warning text-dark';
+$householdTitle = match ((string) ($session['household_source'] ?? '')) {
+    'device_tv' => 'Tele / Fire Stick',
+    'device_mobile' => 'Móvil / tablet',
+    'lan' => 'Misma red que el servidor',
+    'home_ip' => 'IP marcada como hogar',
+    default => $household === 'home' ? 'Casa' : 'Fuera',
+};
 $locationLine = $location !== '' ? $location : strtoupper((string) ($session['server_type'] ?? ''));
 if ($clientIp !== '') {
     $locationLine = ($locationLine !== '' ? $locationLine . ': ' : '') . $clientIp;
@@ -216,7 +223,7 @@ $infoRowsFoot = [
                 <span class="session-subtitle text-truncate"><?= e((string) ($session['server_name'] ?? '')) ?></span>
                 <?php endif; ?>
                 <span class="session-meta-user">
-                    <span class="badge session-household-badge <?= e($householdClass) ?>"><?= e($householdLabel) ?></span>
+                    <span class="badge session-household-badge <?= e($householdClass) ?>" title="<?= e($householdTitle) ?>"><?= e($householdLabel) ?></span>
                     <?php if ($mediaUserUuid !== ''): ?>
                     <a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($userName) ?></a>
                     <?php else: ?>

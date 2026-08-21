@@ -102,7 +102,10 @@ final class ConcurrentStreamLimitService
 
         foreach ($sessions as $i => $session) {
             $uid = (int) ($session['media_user_id'] ?? 0);
-            $sessions[$i]['household'] = $endpoints->classifyPlayback($session, $homeIps[$uid] ?? []);
+            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? []);
+            $sessions[$i]['household'] = $meta['kind'];
+            $sessions[$i]['household_source'] = $meta['source'];
+            $sessions[$i]['device_class'] = $meta['device_class'];
         }
 
         // Group by media_user_id (only matched sessions).

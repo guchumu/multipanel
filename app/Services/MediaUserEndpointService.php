@@ -63,7 +63,7 @@ final class MediaUserEndpointService
                     $kind = (string) ($existing['kind'] ?? self::KIND_UNKNOWN);
                     $locked = (int) ($existing['kind_locked'] ?? 0) === 1;
                     if (!$locked) {
-                        $kind = $this->inferKind($userId, $ip, $location, $kind);
+                        $kind = $this->inferKind($userId, $ip, $location, $kind, $product, $platform, $deviceName);
                     }
                     $db->query(
                         'UPDATE media_user_endpoints
@@ -85,7 +85,7 @@ final class MediaUserEndpointService
                     continue;
                 }
 
-                $kind = $this->inferKind($userId, $ip, $location, self::KIND_UNKNOWN);
+                $kind = $this->inferKind($userId, $ip, $location, self::KIND_UNKNOWN, $product, $platform, $deviceName);
                 $db->insert('media_user_endpoints', [
                     'tenant_id' => $tenantId,
                     'media_user_id' => $userId,
@@ -175,9 +175,28 @@ final class MediaUserEndpointService
         return $current !== '' ? $current : self::KIND_UNKNOWN;
     }
 
-    private function inferKind(int $mediaUserId, string $ip, string $location, string $current): string
+    private function inferKind(
+        int $mediaUserId,
+        string $ip,
+        string $location,
+        string $current,
+        string $product = '',
+        string $platform = '',
+        string $deviceName = '',
+    ): string {
     {
         $kind = self::inferKindFromLocation($location, $current);
+        $deviceClass = self::classifyDeviceClass([
+            'product' => $product,
+            'platform' => $platform,
+            'player' => $deviceName,
+        ]);
+        if ($deviceClass === 'mobile') {
+            return self::KIND_AWAY;
+        }
+        if ($deviceClass === 'tv') {
+            return self::KIND_HOME;
+        }
         if ($kind === self::KIND_HOME) {
             return $kind;
         }
@@ -258,11 +277,75 @@ final class MediaUserEndpointService
     }
 
     /**
+     * Fire Stick / tele → casa. Móvil (iPhone, Android, tablet) → fuera.
+     * PC/navegador u otro: se decide por LAN / IP marcada hogar.
+     *
+     * @param array<string, mixed> $session
+     */
+    public static function classifyDeviceClass(array $session): string
+    {
+        $blob = strtolower(trim(implode(' ', array_filter([
+            (string) ($session['product'] ?? ''),
+            (string) ($session['platform'] ?? ''),
+            (string) ($session['player'] ?? ''),
+            (string) ($session['device'] ?? ''),
+        ], static fn (string $x): bool => trim($x) !== ''))));
+
+        if ($blob === '') {
+            return 'unknown';
+        }
+
+        $tvNeedles = [
+            'fire tv', 'firestick', 'fire stick', 'amazon fire', 'aftv',
+            'roku', 'apple tv', 'tvos', 'android tv', 'androidtv',
+            'google tv', 'googletv', 'chromecast', 'shield',
+            'tizen', 'webos', 'web os', 'smart tv', 'smarttv',
+            'samsung tv', 'lg tv', 'hisense', 'vizio', 'bravia',
+            'xbox', 'playstation', 'ps4', 'ps5', 'vidaa',
+            'plex for samsung', 'plex for lg', 'plex for vizio',
+            'plex for xbox', 'plex for roku',
+        ];
+        foreach ($tvNeedles as $needle) {
+            if (str_contains($blob, $needle)) {
+                return 'tv';
+            }
+        }
+
+        $mobileNeedles = [
+            'iphone', 'ipad', 'ipod', 'plex for ios', 'plex android',
+            'plex for android', 'android mobile', 'mobile safari',
+        ];
+        foreach ($mobileNeedles as $needle) {
+            if (str_contains($blob, $needle)) {
+                return 'mobile';
+            }
+        }
+
+        if (str_contains($blob, 'android') && !str_contains($blob, 'tv')) {
+            return 'mobile';
+        }
+        if (preg_match('/(^|[^a-z])ios([^a-z]|$)/', $blob) === 1) {
+            return 'mobile';
+        }
+
+        return 'unknown';
+    }
+
+    /**
      * @param array<string, mixed> $session
      * @param list<string> $homeIps
+     * @return array{kind: string, source: string, device_class: string}
      */
-    public function classifyPlayback(array $session, array $homeIps = []): string
+    public function classifyPlaybackMeta(array $session, array $homeIps = []): array
     {
+        $deviceClass = self::classifyDeviceClass($session);
+        if ($deviceClass === 'mobile') {
+            return ['kind' => self::KIND_AWAY, 'source' => 'device_mobile', 'device_class' => $deviceClass];
+        }
+        if ($deviceClass === 'tv') {
+            return ['kind' => self::KIND_HOME, 'source' => 'device_tv', 'device_class' => $deviceClass];
+        }
+
         $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
         $lanIp = SessionClientIp::normalize((string) ($session['lan_ip'] ?? ''));
         $location = SessionClientIp::classifyLocation(
@@ -271,12 +354,21 @@ final class MediaUserEndpointService
             $lanIp
         );
         if ($location === 'LAN') {
-            return self::KIND_HOME;
+            return ['kind' => self::KIND_HOME, 'source' => 'lan', 'device_class' => $deviceClass];
         }
         if ($publicIp !== '' && in_array($publicIp, $homeIps, true)) {
-            return self::KIND_HOME;
+            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
         }
 
-        return self::KIND_AWAY;
+        return ['kind' => self::KIND_AWAY, 'source' => 'wan', 'device_class' => $deviceClass];
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @param list<string> $homeIps
+     */
+    public function classifyPlayback(array $session, array $homeIps = []): string
+    {
+        return $this->classifyPlaybackMeta($session, $homeIps)['kind'];
     }
 }
