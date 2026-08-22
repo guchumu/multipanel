@@ -211,7 +211,7 @@ final class PeticionesService
     }
 
     /**
-     * Alta manual (sin ScraperAPI).
+     * Alta manual. IMDb usa TMDb; Filmaffinity raspa og:image (ScraperAPI si está configurado).
      *
      * @return array{ok: bool, message: string, id?: int}
      */
@@ -222,25 +222,34 @@ final class PeticionesService
         $img = trim($img);
 
         $imdbId = TmdbPeticionLookup::imdbIdFromText($url . ' ' . $title);
+        $faId = TmdbPeticionLookup::filmaffinityIdFromText($url . ' ' . $title);
         if ($url === '' && $imdbId !== '') {
             $url = TmdbPeticionLookup::imdbUrl($imdbId);
+        }
+        if ($url === '' && $faId !== '') {
+            $url = TmdbPeticionLookup::filmaffinityUrl($faId);
         }
         if ($title === '' && $imdbId !== '') {
             $title = $imdbId;
         }
+        if ($title === '' && $faId !== '') {
+            $title = 'film' . $faId;
+        }
 
         if ($url === '' || $title === '') {
-            return ['ok' => false, 'message' => 'URL y título son obligatorios (o un enlace IMDb)'];
+            return ['ok' => false, 'message' => 'URL y título son obligatorios (o un enlace IMDb / Filmaffinity)'];
         }
 
         $lookup = ['poster' => '', 'titulo' => ''];
-        if (TmdbPeticionLookup::isWeakPoster($img) || $imdbId !== '') {
+        if (TmdbPeticionLookup::isWeakPoster($img) || $imdbId !== '' || $faId !== '') {
             $lookup = $this->tmdbLookup($title, false, $url);
             if (TmdbPeticionLookup::isWeakPoster($img) && $lookup['poster'] !== '') {
                 $img = $lookup['poster'];
             }
             $tmdbTitle = PeticionText::repair(trim((string) ($lookup['titulo'] ?? '')));
-            if ($tmdbTitle !== '' && $imdbId !== '' && (TmdbPeticionLookup::imdbIdFromText($title) !== '' || $title === $imdbId)) {
+            $titleIsLink = $imdbId !== '' && (TmdbPeticionLookup::imdbIdFromText($title) !== '' || $title === $imdbId);
+            $titleIsFa = $faId !== '' && (TmdbPeticionLookup::filmaffinityIdFromText($title) !== '' || $title === 'film' . $faId);
+            if ($tmdbTitle !== '' && ($titleIsLink || $titleIsFa)) {
                 $title = $tmdbTitle;
             }
         }
@@ -279,7 +288,11 @@ final class PeticionesService
             $id = (int) ($row['id'] ?? 0);
             $title = (string) ($row['nombrepeticion'] ?? '');
             $url = (string) ($row['url'] ?? '');
-            if ($id <= 0 || $apiKey === '') {
+            if ($id <= 0) {
+                continue;
+            }
+            $hasFa = TmdbPeticionLookup::filmaffinityIdFromText($url . ' ' . $title) !== '';
+            if ($apiKey === '' && !$hasFa) {
                 continue;
             }
 
@@ -316,7 +329,7 @@ final class PeticionesService
     /**
      * Consulta TMDb (caché 12 h), actualiza `img` si la carátula actual es débil.
      *
-     * @return array{ok: bool, message: string, id?: int, poster?: string, plataformas?: list<array{nombre: string, logo: string}>}
+     * @return array{ok: bool, message: string, id?: int, titulo?: string, poster?: string, plataformas?: list<array{nombre: string, logo: string}>}
      */
     public function enrichCard(int $id, bool $force = false): array
     {
@@ -326,14 +339,28 @@ final class PeticionesService
         }
 
         $apiKey = $this->tmdbApiKey();
-        if ($apiKey === '') {
+        $url = (string) ($row['url'] ?? '');
+        $title = (string) ($row['nombrepeticion'] ?? '');
+        $faId = TmdbPeticionLookup::filmaffinityIdFromText($url . ' ' . $title);
+        if ($apiKey === '' && $faId === '') {
             return ['ok' => false, 'message' => 'Configura la clave TMDb en Configuración → Peticiones'];
         }
 
-        $title = (string) ($row['nombrepeticion'] ?? '');
-        $lookup = $this->tmdb()->lookup($title, $apiKey, $force, (string) ($row['url'] ?? ''));
+        $lookup = $this->tmdb()->lookup($title, $apiKey, $force, $url, $this->scraperApiKey());
         $poster = (string) ($lookup['poster'] ?? '');
         $plataformas = $lookup['plataformas'] ?? [];
+        $imdbId = TmdbPeticionLookup::imdbIdFromText($url . ' ' . $title);
+        $lookupTitle = PeticionText::repair(trim((string) ($lookup['titulo'] ?? '')));
+        $titleIsPlaceholder = ($imdbId !== '' && (TmdbPeticionLookup::imdbIdFromText($title) !== '' || $title === $imdbId))
+            || ($faId !== '' && (TmdbPeticionLookup::filmaffinityIdFromText($title) !== '' || $title === 'film' . $faId));
+        if ($lookupTitle !== '' && $titleIsPlaceholder && $lookupTitle !== $title) {
+            try {
+                $this->repo->updateTitle($id, $lookupTitle);
+                $title = $lookupTitle;
+            } catch (\Throwable $e) {
+                Logger::warning('No se pudo guardar título de petición: ' . $e->getMessage(), ['id' => $id]);
+            }
+        }
 
         if ($poster !== '' && ($force || TmdbPeticionLookup::isWeakPoster((string) ($row['img'] ?? '')))) {
             try {
@@ -351,6 +378,7 @@ final class PeticionesService
             'ok' => true,
             'message' => isset($lookup['error']) ? (string) $lookup['error'] : 'OK',
             'id' => $id,
+            'titulo' => $title,
             'poster' => $poster,
             'plataformas' => $plataformas,
         ];
@@ -400,12 +428,17 @@ final class PeticionesService
      */
     public function tmdbLookup(string $title, bool $force = false, string $url = ''): array
     {
-        return $this->tmdb()->lookup($title, $this->tmdbApiKey(), $force, $url);
+        return $this->tmdb()->lookup($title, $this->tmdbApiKey(), $force, $url, $this->scraperApiKey());
     }
 
     private function tmdbApiKey(): string
     {
         return trim(PeticionesConfig::forTenant()['tmdb_api_key']);
+    }
+
+    private function scraperApiKey(): string
+    {
+        return trim(PeticionesConfig::forTenant()['scraper_api_key']);
     }
 
     private function shortTitle(string $title): string

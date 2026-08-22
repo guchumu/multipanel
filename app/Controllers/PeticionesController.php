@@ -9,6 +9,7 @@ use App\Services\AuthService;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesDatabase;
 use App\Services\Peticiones\PeticionesService;
+use App\Services\Peticiones\TmdbPeticionLookup;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
@@ -52,6 +53,7 @@ class PeticionesController extends Controller
         $motivos = [];
         $platformsById = [];
         $needsTmdbIds = [];
+        $hasFa = false;
 
         if (!$cfg['configured']) {
             $error = 'Configura la BD remota en Configuración → Peticiones / BD remota.';
@@ -62,7 +64,14 @@ class PeticionesController extends Controller
                 $items = $this->repo->list($filter, $perPage, $offset);
                 $motivos = $this->repo->activeMotivos();
 
-                if ($cfg['tmdb_api_key'] !== '') {
+                $hasFa = false;
+                foreach ($items as $row) {
+                    if (TmdbPeticionLookup::filmaffinityIdFromText((string) ($row['url'] ?? '') . ' ' . (string) ($row['nombrepeticion'] ?? '')) !== '') {
+                        $hasFa = true;
+                        break;
+                    }
+                }
+                if ($cfg['tmdb_api_key'] !== '' || $hasFa) {
                     $hydrated = $this->service->applyCachedMetadata($items);
                     $items = $hydrated['items'];
                     $platformsById = $hydrated['platformsById'];
@@ -86,7 +95,7 @@ class PeticionesController extends Controller
             'configured' => $cfg['configured'],
             'page' => $page,
             'perPage' => $perPage,
-            'hasTmdb' => $cfg['tmdb_api_key'] !== '',
+            'hasTmdb' => $cfg['tmdb_api_key'] !== '' || $hasFa,
         ]);
     }
 

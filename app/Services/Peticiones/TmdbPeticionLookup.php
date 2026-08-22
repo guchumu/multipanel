@@ -67,6 +67,9 @@ final class TmdbPeticionLookup
         if (str_contains($lower, 't/p/w500null') || str_contains($lower, 't/p/w500undefined')) {
             return true;
         }
+        if (str_contains($lower, 'filmaffinity') && (str_contains($lower, 'noimg') || str_contains($lower, 'no-poster') || str_contains($lower, 'noposter'))) {
+            return true;
+        }
 
         return false;
     }
@@ -125,6 +128,16 @@ final class TmdbPeticionLookup
         return 'https://www.imdb.com/title/' . $imdbId . '/';
     }
 
+    public static function filmaffinityIdFromText(string $text): string
+    {
+        return FilmaffinityPage::idFromText($text);
+    }
+
+    public static function filmaffinityUrl(string $filmId): string
+    {
+        return FilmaffinityPage::pageUrl($filmId);
+    }
+
     /**
      * @return array{
      *   titulo: string,
@@ -133,24 +146,28 @@ final class TmdbPeticionLookup
      *   error?: string
      * }
      */
-    public function lookup(string $title, string $apiKey, bool $force = false, string $url = ''): array
+    public function lookup(string $title, string $apiKey, bool $force = false, string $url = '', string $scraperKey = ''): array
     {
         $title = trim($title);
         $url = trim($url);
         $apiKey = trim($apiKey);
+        $scraperKey = trim($scraperKey);
         $imdbId = self::imdbIdFromText($url . ' ' . $title);
+        $faId = FilmaffinityPage::idFromText($url . ' ' . $title);
         $query = self::searchQuery($title);
 
-        if ($apiKey === '') {
-            return self::emptyResult($title, 'Sin clave TMDb.');
-        }
-        if ($imdbId === '' && $query === '') {
+        if ($imdbId === '' && $faId === '' && $query === '') {
             return self::emptyResult($title, 'Título vacío.');
+        }
+        if ($apiKey === '' && $faId === '') {
+            return self::emptyResult($title, 'Sin clave TMDb.');
         }
 
         $cacheKey = $imdbId !== ''
             ? $this->cacheKeyImdb($imdbId, $apiKey)
-            : $this->cacheKey($query, $apiKey);
+            : ($faId !== ''
+                ? $this->cacheKeyFa($faId, $apiKey)
+                : $this->cacheKey($query, $apiKey));
         if (!$force && $this->useCache) {
             $cached = Cache::get($cacheKey);
             if (is_array($cached) && array_key_exists('poster', $cached)) {
@@ -158,14 +175,18 @@ final class TmdbPeticionLookup
             }
         }
 
-        $result = $imdbId !== ''
-            ? $this->fetchByImdb($imdbId, $title !== '' ? $title : $imdbId, $apiKey)
-            : $this->fetch($query, $title, $apiKey);
-
-        if ($imdbId !== '' && isset($result['error'])) {
-            if ($query !== '') {
+        if ($imdbId !== '' && $apiKey !== '') {
+            $result = $this->fetchByImdb($imdbId, $title !== '' ? $title : $imdbId, $apiKey);
+            if (isset($result['error']) && $query !== '') {
                 $result = $this->fetch($query, $title, $apiKey);
             }
+        } elseif ($faId !== '') {
+            $result = $this->fetchByFilmaffinity($faId, $title, $apiKey, $scraperKey);
+            if (isset($result['error']) && $query !== '' && $apiKey !== '') {
+                $result = $this->fetch($query, $title, $apiKey);
+            }
+        } else {
+            $result = $this->fetch($query, $title, $apiKey);
         }
 
         if ($this->useCache) {
@@ -189,14 +210,20 @@ final class TmdbPeticionLookup
 
         $apiKey = trim($apiKey);
         $imdbId = self::imdbIdFromText($url . ' ' . $title);
+        $faId = FilmaffinityPage::idFromText($url . ' ' . $title);
         $query = self::searchQuery($title);
-        if ($apiKey === '' || ($imdbId === '' && $query === '')) {
+        if ($imdbId === '' && $faId === '' && $query === '') {
+            return null;
+        }
+        if ($apiKey === '' && $faId === '') {
             return null;
         }
 
         $cacheKey = $imdbId !== ''
             ? $this->cacheKeyImdb($imdbId, $apiKey)
-            : $this->cacheKey($query, $apiKey);
+            : ($faId !== ''
+                ? $this->cacheKeyFa($faId, $apiKey)
+                : $this->cacheKey($query, $apiKey));
         $cached = Cache::get($cacheKey);
 
         return is_array($cached) && array_key_exists('poster', $cached) ? $cached : null;
@@ -293,6 +320,58 @@ final class TmdbPeticionLookup
     }
 
     /**
+     * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
+     */
+    private function fetchByFilmaffinity(string $faId, string $originalTitle, string $apiKey, string $scraperKey): array
+    {
+        $faTitle = $originalTitle;
+        $faPoster = '';
+        try {
+            $response = $this->client()->get(FilmaffinityPage::fetchUrl($faId, $scraperKey), [
+                'headers' => [
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept' => 'text/html,application/xhtml+xml',
+                    'Accept-Language' => 'es-ES,es;q=0.9',
+                ],
+                'timeout' => 12,
+                'http_errors' => false,
+            ]);
+            $html = (string) $response->getBody();
+            $meta = FilmaffinityPage::parseMeta($html);
+            if ($meta['title'] !== '') {
+                $faTitle = $meta['title'];
+            }
+            if ($meta['poster'] !== '' && !self::isWeakPoster($meta['poster'])) {
+                $faPoster = $meta['poster'];
+            }
+        } catch (\Throwable $e) {
+            Logger::debug('Filmaffinity scrape failed: ' . $e->getMessage());
+        }
+
+        $query = self::searchQuery($faTitle !== '' ? $faTitle : $originalTitle);
+        $tmdb = ['titulo' => $faTitle, 'poster' => '', 'plataformas' => []];
+        if ($apiKey !== '' && $query !== '') {
+            $tmdb = $this->fetch($query, $faTitle !== '' ? $faTitle : $originalTitle, $apiKey);
+        }
+
+        $poster = $faPoster !== '' ? $faPoster : (string) ($tmdb['poster'] ?? '');
+        $titulo = trim((string) ($tmdb['titulo'] ?? ''));
+        if ($titulo === '' || $titulo === $originalTitle) {
+            $titulo = $faTitle !== '' ? $faTitle : $originalTitle;
+        }
+
+        if ($poster === '' && ($tmdb['plataformas'] ?? []) === []) {
+            return self::emptyResult($originalTitle, 'No se encontraron resultados.');
+        }
+
+        return [
+            'titulo' => $titulo,
+            'poster' => $poster,
+            'plataformas' => $tmdb['plataformas'] ?? [],
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $hit
      * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
      */
@@ -371,6 +450,11 @@ final class TmdbPeticionLookup
     private function cacheKeyImdb(string $imdbId, string $apiKey): string
     {
         return 'tmdb:imdb:' . md5(strtolower($imdbId) . '|' . substr($apiKey, 0, 8));
+    }
+
+    private function cacheKeyFa(string $faId, string $apiKey): string
+    {
+        return 'tmdb:fa:' . md5($faId . '|' . substr($apiKey, 0, 8));
     }
 
     /**

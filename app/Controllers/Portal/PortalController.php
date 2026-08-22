@@ -389,14 +389,18 @@ class PortalController extends Controller
         $title = trim((string) $request->input('title', ''));
         $url = trim((string) $request->input('url', ''));
         $imdbId = TmdbPeticionLookup::imdbIdFromText($url . ' ' . $title);
+        $faId = TmdbPeticionLookup::filmaffinityIdFromText($url . ' ' . $title);
 
-        if ($title === '' && $imdbId === '') {
-            Session::getInstance()->flash('error', 'Indica un título o un enlace de IMDb.');
+        if ($title === '' && $imdbId === '' && $faId === '') {
+            Session::getInstance()->flash('error', 'Indica un título o un enlace de IMDb o Filmaffinity.');
             return $this->redirect('/portal/peticiones');
         }
 
         if ($url === '' && $imdbId !== '') {
             $url = TmdbPeticionLookup::imdbUrl($imdbId);
+        }
+        if ($url === '' && $faId !== '') {
+            $url = TmdbPeticionLookup::filmaffinityUrl($faId);
         }
 
         if ($url === '') {

@@ -27,8 +27,10 @@ final class TmdbPeticionLookupTest extends TestCase
         $this->assertTrue(TmdbPeticionLookup::isWeakPoster('images/foo.jpg'));
         $this->assertTrue(TmdbPeticionLookup::isWeakPoster('https://image.tmdb.org/t/p/w500'));
         $this->assertTrue(TmdbPeticionLookup::isWeakPoster('https://image.tmdb.org/t/p/w500null'));
+        $this->assertTrue(TmdbPeticionLookup::isWeakPoster('https://pics.filmaffinity.com/noimg.jpg'));
         $this->assertFalse(TmdbPeticionLookup::isWeakPoster('https://image.tmdb.org/t/p/w500/abc.jpg'));
         $this->assertFalse(TmdbPeticionLookup::isWeakPoster('https://cdn.example.com/poster.jpg'));
+        $this->assertFalse(TmdbPeticionLookup::isWeakPoster('https://pics.filmaffinity.com/dune-809297-large.jpg'));
     }
 
     public function testPosterUrlIgnoresEmptyPath(): void
@@ -164,5 +166,89 @@ final class TmdbPeticionLookupTest extends TestCase
             $result['poster']
         );
         $this->assertSame('Netflix', $result['plataformas'][0]['nombre'] ?? '');
+    }
+
+    public function testFilmaffinityIdFromTypicalUrls(): void
+    {
+        $this->assertSame('809297', TmdbPeticionLookup::filmaffinityIdFromText('https://www.filmaffinity.com/es/film809297.html'));
+        $this->assertSame('809297', TmdbPeticionLookup::filmaffinityIdFromText('https://m.filmaffinity.com/en/film809297.html?ref=x'));
+        $this->assertSame(
+            'https://www.filmaffinity.com/es/film809297.html',
+            TmdbPeticionLookup::filmaffinityUrl('809297')
+        );
+    }
+
+    public function testLookupUsesFilmaffinityOgImageAndPrefersItOverTmdb(): void
+    {
+        $html = <<<'HTML'
+<html><head>
+<meta property="og:title" content="Dune (2021) - FilmAffinity">
+<meta property="og:image" content="http://pics.filmaffinity.com/dune-809297-mmed.jpg">
+</head></html>
+HTML;
+        $mock = new MockHandler([
+            new Response(200, [], $html),
+            new Response(200, [], json_encode([
+                'results' => [[
+                    'id' => 438631,
+                    'media_type' => 'movie',
+                    'title' => 'Dune',
+                    'poster_path' => '/tmdb-poster.jpg',
+                ]],
+            ], JSON_THROW_ON_ERROR)),
+            new Response(200, [], json_encode([
+                'results' => [
+                    'ES' => [
+                        'flatrate' => [
+                            ['provider_name' => 'HBO Max', 'logo_path' => '/hbo.png'],
+                        ],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $client = new Client(['handler' => HandlerStack::create($mock), 'http_errors' => false]);
+        $lookup = new TmdbPeticionLookup($client, false);
+
+        $result = $lookup->lookup(
+            '',
+            'test-key',
+            false,
+            'https://www.filmaffinity.com/es/film809297.html'
+        );
+
+        $this->assertArrayNotHasKey('error', $result);
+        $this->assertSame('Dune', $result['titulo']);
+        $this->assertSame(
+            'https://pics.filmaffinity.com/dune-809297-large.jpg',
+            $result['poster']
+        );
+        $this->assertSame('HBO Max', $result['plataformas'][0]['nombre'] ?? '');
+    }
+
+    public function testLookupFilmaffinityWorksWithoutTmdbKey(): void
+    {
+        $html = <<<'HTML'
+<html><head>
+<meta property="og:title" content="Cadena perpetua - FilmAffinity">
+<meta property="og:image" content="https://pics.filmaffinity.com/cadena-large.jpg">
+</head></html>
+HTML;
+        $mock = new MockHandler([
+            new Response(200, [], $html),
+        ]);
+        $client = new Client(['handler' => HandlerStack::create($mock), 'http_errors' => false]);
+        $lookup = new TmdbPeticionLookup($client, false);
+
+        $result = $lookup->lookup(
+            '',
+            '',
+            false,
+            'https://www.filmaffinity.com/es/film809297.html'
+        );
+
+        $this->assertArrayNotHasKey('error', $result);
+        $this->assertSame('Cadena perpetua', $result['titulo']);
+        $this->assertSame('https://pics.filmaffinity.com/cadena-large.jpg', $result['poster']);
+        $this->assertSame([], $result['plataformas']);
     }
 }

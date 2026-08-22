@@ -208,11 +208,11 @@ if ($hasMore):
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">URL</label>
-                    <input type="url" name="url" class="form-control" required placeholder="https://www.imdb.com/title/tt…">
+                    <input type="url" name="url" class="form-control" required placeholder="https://www.imdb.com/title/tt… o Filmaffinity">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Título</label>
-                    <input type="text" name="titulo" class="form-control" placeholder="Opcional si pegas un enlace IMDb">
+                    <input type="text" name="titulo" class="form-control" placeholder="Opcional si pegas IMDb o Filmaffinity">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Imagen (URL poster)</label>
@@ -228,7 +228,7 @@ if ($hasMore):
                         <input type="text" name="username" class="form-control" placeholder="Opcional">
                     </div>
                 </div>
-                <p class="small text-muted mt-2 mb-0">Si pegas un enlace de IMDb, se toma la carátula (y el título si lo dejas vacío) desde TMDb.</p>
+                <p class="small text-muted mt-2 mb-0">Si pegas IMDb o Filmaffinity, se toma la carátula (y el título si lo dejas vacío).</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -300,6 +300,13 @@ $scripts = <<<'JS'
     if (data.poster) {
       const img = card.querySelector('.peticion-poster');
       if (img) img.src = data.poster;
+    }
+    if (data.titulo) {
+      const titleEl = card.querySelector('.peticion-title');
+      const current = (titleEl?.textContent || '').trim();
+      if (titleEl && (!current || /^tt\d{7,}$/i.test(current) || /^film\d+$/i.test(current))) {
+        titleEl.textContent = data.titulo;
+      }
     }
     const wrap = card.querySelector('.peticion-streaming');
     if (wrap && data.plataformas) {

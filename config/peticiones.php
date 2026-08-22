@@ -16,6 +16,6 @@ return [
     'charset' => env('PETICIONES_DB_CHARSET', 'utf8mb4'),
     // Opcional: plataformas de streaming (vacío = no consultar TMDb)
     'tmdb_api_key' => env('PETICIONES_TMDB_API_KEY', env('TMDB_API_KEY', '')),
-    // Opcional futuro: ScraperAPI para metadatos desde URL
+    // Opcional: ScraperAPI si Filmaffinity bloquea el VPS
     'scraper_api_key' => env('PETICIONES_SCRAPER_API_KEY', ''),
 ];

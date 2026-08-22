@@ -13,7 +13,8 @@ MultiPanel puede gestionar las **peticiones de contenido** del panel antiguo ley
    - Contraseña (se guarda cifrada con SecretCrypt; no va a Git)
 3. Pulsa **Probar conexión**.
 4. Opcional: clave TMDb v3 (carátulas + plataformas de streaming en España). Vacío = se omiten.
-5. Opcional en `.env` local (gitignored):
+5. Opcional: ScraperAPI si Filmaffinity bloquea el VPS al leer la ficha.
+6. Opcional en `.env` local (gitignored):
 
 ```env
 PETICIONES_DB_HOST=servidor.masquecero.net
@@ -22,6 +23,7 @@ PETICIONES_DB_DATABASE=series
 PETICIONES_DB_USERNAME=user_series
 PETICIONES_DB_PASSWORD=
 PETICIONES_TMDB_API_KEY=
+PETICIONES_SCRAPER_API_KEY=
 ```
 
 La UI de settings tiene prioridad sobre `.env` cuando hay valores guardados.
@@ -38,11 +40,13 @@ Acciones: aceptar, subir, denegar (+ motivo), borrar, editar título, añadir UR
 
 Avisos Telegram al aceptar / denegar / subir usando `idusuario` como chat id (mismo bot de Configuración → Telegram).
 
-## Carátulas y plataformas (TMDb)
+## Carátulas y plataformas (TMDb / Filmaffinity)
 
 Si hay clave TMDb, el listado busca el título (`search/multi`, idioma `es-ES`) y:
 
-- Si la petición tiene un enlace IMDb (`tt1234567`), TMDb usa `/find` con ese ID (carátula exacta). Si no, busca por título.
+- Si la petición tiene un enlace IMDb (`tt1234567`), TMDb usa `/find` con ese ID (carátula exacta).
+- Si tiene un enlace Filmaffinity (`film123.html`), se lee `og:image` / `og:title` de la ficha (carátula de FA). Con TMDb se buscan además las plataformas por el título. Sin clave TMDb, la carátula de FA sigue funcionando.
+- Si no hay IMDb ni Filmaffinity, busca por título.
 - Muestra logos de proveedores de suscripción en España (`watch/providers` → `ES.flatrate`).
 - Guarda la carátula en `img` para no repetir la consulta.
 - Cachea cada título 12 horas. La primera visita carga las que faltan en segundo plano (sin bloquear la página). El botón **Actualizar carátulas** fuerza un recálculo de la página actual.
@@ -73,4 +77,3 @@ Si el legacy usaba `localhost` en esa máquina, MultiPanel **no** puede usar loc
 ## Fuera de alcance (MVP)
 
 - Sonarr/Radarr automático (stub futuro).
-- ScraperAPI / scrape de Filmaffinity: por ahora alta manual de título + URL + imagen.
