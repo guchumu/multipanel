@@ -91,6 +91,14 @@ class PeticionesRepository
         );
     }
 
+    public function updateImg(int $id, string $img): void
+    {
+        $this->db()->query(
+            'UPDATE peticiones SET img = ? WHERE id = ?',
+            [$img, $id]
+        );
+    }
+
     public function accept(int $id, string $now): void
     {
         $this->db()->query(

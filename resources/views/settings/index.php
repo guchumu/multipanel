@@ -404,8 +404,8 @@
                     <div class="col-md-6">
                         <label class="form-label">TMDb API key (opcional)</label>
                         <input type="password" name="peticiones_tmdb_api_key" class="form-control" autocomplete="off"
-                               placeholder="<?= !empty($pet['peticiones_tmdb_api_key_set']) ? '•••••••••• (dejar vacío = no cambiar)' : 'Vacío = sin plataformas' ?>">
-                        <div class="form-text">Solo para mostrar plataformas de streaming. No pegues claves antiguas expuestas.</div>
+                               placeholder="<?= !empty($pet['peticiones_tmdb_api_key_set']) ? '•••••••••• (dejar vacío = no cambiar)' : 'Vacío = sin carátulas ni plataformas' ?>">
+                        <div class="form-text">API v3 de The Movie Database: carátulas y plataformas de streaming (España). No pegues claves antiguas expuestas.</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">ScraperAPI key (opcional, futuro)</label>

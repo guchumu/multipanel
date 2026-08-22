@@ -51,6 +51,7 @@ class PeticionesController extends Controller
         $counts = ['pendientes' => 0, 'proceso' => 0, 'denegadas' => 0, 'todas' => 0];
         $motivos = [];
         $platformsById = [];
+        $needsTmdbIds = [];
 
         if (!$cfg['configured']) {
             $error = 'Configura la BD remota en Configuración → Peticiones / BD remota.';
@@ -61,16 +62,11 @@ class PeticionesController extends Controller
                 $items = $this->repo->list($filter, $perPage, $offset);
                 $motivos = $this->repo->activeMotivos();
 
-                // TMDb solo si hay clave; limita a las primeras 12 para no ralentizar
                 if ($cfg['tmdb_api_key'] !== '') {
-                    $i = 0;
-                    foreach ($items as $row) {
-                        if ($i++ >= 12) {
-                            break;
-                        }
-                        $id = (int) ($row['id'] ?? 0);
-                        $platformsById[$id] = $this->service->streamingPlatforms((string) ($row['nombrepeticion'] ?? ''));
-                    }
+                    $hydrated = $this->service->applyCachedMetadata($items);
+                    $items = $hydrated['items'];
+                    $platformsById = $hydrated['platformsById'];
+                    $needsTmdbIds = $hydrated['needsTmdbIds'];
                 }
             } catch (\Throwable $e) {
                 $error = 'No se pudo conectar a la BD remota: ' . $e->getMessage()
@@ -85,6 +81,7 @@ class PeticionesController extends Controller
             'counts' => $counts,
             'motivos' => $motivos,
             'platformsById' => $platformsById,
+            'needsTmdbIds' => $needsTmdbIds,
             'error' => $error,
             'configured' => $cfg['configured'],
             'page' => $page,
@@ -107,6 +104,8 @@ class PeticionesController extends Controller
                 'denegar' => $this->service->denegar($id, (int) ($request->input('id_motivo') ?? 0)),
                 'borrar' => $this->service->borrar($id),
                 'rename', 'titulo' => $this->service->rename($id, (string) ($request->input('titulo') ?? '')),
+                'meta' => $this->service->enrichCard($id),
+                'actualizar-metadatos' => $this->service->refreshMetadata($this->intIds($request->input('ids') ?? [])),
                 'add', 'anadir' => $this->service->addManual(
                     (string) ($request->input('url') ?? ''),
                     (string) ($request->input('titulo') ?? $request->input('nombrepeticion') ?? ''),
@@ -127,5 +126,29 @@ class PeticionesController extends Controller
         $status = !empty($result['ok']) ? 200 : 422;
 
         return $this->json($result, $status);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return list<int>
+     */
+    private function intIds(mixed $raw): array
+    {
+        if (is_string($raw) && $raw !== '') {
+            $raw = preg_split('/[,\s]+/', $raw) ?: [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($raw as $value) {
+            $id = (int) $value;
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 }

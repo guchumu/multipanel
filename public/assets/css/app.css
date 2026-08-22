@@ -799,6 +799,21 @@ body {
     font-weight: 500;
     margin: 0.1rem;
 }
+.peticion-streaming-logos {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    vertical-align: middle;
+}
+.peticion-provider-logo {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #dee2e6;
+}
 
 .peticion-action-btn {
     min-height: 2.25rem;

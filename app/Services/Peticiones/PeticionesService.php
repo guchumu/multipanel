@@ -17,7 +17,13 @@ final class PeticionesService
     public function __construct(
         private PeticionesRepository $repo = new PeticionesRepository(),
         private ?TelegramChannel $telegram = null,
+        private ?TmdbPeticionLookup $tmdb = null,
     ) {
+    }
+
+    private function tmdb(): TmdbPeticionLookup
+    {
+        return $this->tmdb ??= new TmdbPeticionLookup();
     }
 
     private function telegram(): TelegramChannel
@@ -137,7 +143,13 @@ final class PeticionesService
             return ['ok' => false, 'message' => 'URL y título son obligatorios'];
         }
 
-        if ($img === '') {
+        if (TmdbPeticionLookup::isWeakPoster($img)) {
+            $lookup = $this->tmdbLookup($title);
+            if ($lookup['poster'] !== '') {
+                $img = $lookup['poster'];
+            }
+        }
+        if (TmdbPeticionLookup::isWeakPoster($img)) {
             $img = 'https://via.placeholder.com/300x450?text=Sin+poster';
         }
 
@@ -153,70 +165,156 @@ final class PeticionesService
     }
 
     /**
+     * Aplica metadatos TMDb ya cacheados (sin llamar a la API) y persiste carátula si `img` es débil.
+     *
+     * @param list<array<string, mixed>> $items
+     * @return array{
+     *   items: list<array<string, mixed>>,
+     *   platformsById: array<int, list<array{nombre: string, logo: string}>>,
+     *   needsTmdbIds: list<int>
+     * }
+     */
+    public function applyCachedMetadata(array $items): array
+    {
+        $apiKey = $this->tmdbApiKey();
+        $platformsById = [];
+        $needsTmdbIds = [];
+
+        foreach ($items as $i => $row) {
+            $id = (int) ($row['id'] ?? 0);
+            $title = (string) ($row['nombrepeticion'] ?? '');
+            if ($id <= 0 || $apiKey === '') {
+                continue;
+            }
+
+            $cached = $this->tmdb()->cached($title, $apiKey);
+            if ($cached === null) {
+                $needsTmdbIds[] = $id;
+                continue;
+            }
+
+            $platformsById[$id] = $cached['plataformas'];
+            $poster = (string) ($cached['poster'] ?? '');
+            if ($poster === '') {
+                continue;
+            }
+
+            $current = (string) ($row['img'] ?? '');
+            $items[$i]['img'] = $poster;
+            if (TmdbPeticionLookup::isWeakPoster($current)) {
+                try {
+                    $this->repo->updateImg($id, $poster);
+                } catch (\Throwable $e) {
+                    Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $id]);
+                }
+            }
+        }
+
+        return [
+            'items' => $items,
+            'platformsById' => $platformsById,
+            'needsTmdbIds' => $needsTmdbIds,
+        ];
+    }
+
+    /**
+     * Consulta TMDb (caché 12 h), actualiza `img` si la carátula actual es débil.
+     *
+     * @return array{ok: bool, message: string, id?: int, poster?: string, plataformas?: list<array{nombre: string, logo: string}>}
+     */
+    public function enrichCard(int $id, bool $force = false): array
+    {
+        $row = $this->repo->find($id);
+        if ($row === null) {
+            return ['ok' => false, 'message' => 'Petición no encontrada'];
+        }
+
+        $apiKey = $this->tmdbApiKey();
+        if ($apiKey === '') {
+            return ['ok' => false, 'message' => 'Configura la clave TMDb en Configuración → Peticiones'];
+        }
+
+        $title = (string) ($row['nombrepeticion'] ?? '');
+        $lookup = $this->tmdb()->lookup($title, $apiKey, $force);
+        $poster = (string) ($lookup['poster'] ?? '');
+        $plataformas = $lookup['plataformas'] ?? [];
+
+        if ($poster !== '' && ($force || TmdbPeticionLookup::isWeakPoster((string) ($row['img'] ?? '')))) {
+            try {
+                $this->repo->updateImg($id, $poster);
+            } catch (\Throwable $e) {
+                Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $id]);
+            }
+        }
+
+        if ($poster === '' && !TmdbPeticionLookup::isWeakPoster((string) ($row['img'] ?? ''))) {
+            $poster = (string) $row['img'];
+        }
+
+        return [
+            'ok' => true,
+            'message' => isset($lookup['error']) ? (string) $lookup['error'] : 'OK',
+            'id' => $id,
+            'poster' => $poster,
+            'plataformas' => $plataformas,
+        ];
+    }
+
+    /**
+     * Recalcula carátulas/plataformas de las peticiones visibles (página actual).
+     *
+     * @param list<int|string> $ids
+     * @return array{ok: bool, message: string, updated: int}
+     */
+    public function refreshMetadata(array $ids): array
+    {
+        $updated = 0;
+        foreach ($ids as $rawId) {
+            $id = (int) $rawId;
+            if ($id <= 0) {
+                continue;
+            }
+            $result = $this->enrichCard($id, true);
+            if (!empty($result['ok']) && ($result['poster'] ?? '') !== '') {
+                $updated++;
+            }
+        }
+
+        return [
+            'ok' => true,
+            'message' => $updated > 0
+                ? "Carátulas actualizadas: {$updated}"
+                : 'No se pudieron obtener carátulas TMDb',
+            'updated' => $updated,
+        ];
+    }
+
+    /**
      * Plataformas TMDb (watch providers ES). Vacío si no hay API key.
      *
      * @return list<string>
      */
     public function streamingPlatforms(string $title): array
     {
-        $cfg = PeticionesConfig::forTenant();
-        $apiKey = trim($cfg['tmdb_api_key']);
-        if ($apiKey === '' || trim($title) === '') {
-            return [];
-        }
+        return $this->tmdb()->platformNames($title, $this->tmdbApiKey());
+    }
 
-        try {
-            $client = new \GuzzleHttp\Client(['timeout' => 8]);
-            $search = $client->get('https://api.themoviedb.org/3/search/multi', [
-                'query' => [
-                    'api_key' => $apiKey,
-                    'query' => $this->shortTitle($title),
-                    'language' => 'es-ES',
-                    'include_adult' => 'false',
-                ],
-            ]);
-            $data = json_decode((string) $search->getBody(), true);
-            $first = $data['results'][0] ?? null;
-            if (!is_array($first) || empty($first['id']) || empty($first['media_type'])) {
-                return [];
-            }
+    /**
+     * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
+     */
+    public function tmdbLookup(string $title, bool $force = false): array
+    {
+        return $this->tmdb()->lookup($title, $this->tmdbApiKey(), $force);
+    }
 
-            $mediaType = (string) $first['media_type'];
-            if (!in_array($mediaType, ['movie', 'tv'], true)) {
-                return [];
-            }
-
-            $providers = $client->get(
-                "https://api.themoviedb.org/3/{$mediaType}/{$first['id']}/watch/providers",
-                ['query' => ['api_key' => $apiKey]]
-            );
-            $pData = json_decode((string) $providers->getBody(), true);
-            $es = $pData['results']['ES']['flatrate'] ?? [];
-            if (!is_array($es)) {
-                return [];
-            }
-
-            $names = [];
-            foreach ($es as $item) {
-                $name = trim((string) ($item['provider_name'] ?? ''));
-                if ($name !== '') {
-                    $names[] = $name;
-                }
-            }
-
-            return array_values(array_unique($names));
-        } catch (\Throwable $e) {
-            Logger::warning('TMDb streaming lookup failed: ' . $e->getMessage());
-
-            return [];
-        }
+    private function tmdbApiKey(): string
+    {
+        return trim(PeticionesConfig::forTenant()['tmdb_api_key']);
     }
 
     private function shortTitle(string $title): string
     {
-        $parts = explode('(', $title, 2);
-
-        return trim($parts[0]);
+        return TmdbPeticionLookup::shortTitle($title);
     }
 
     /** @param array<string, mixed> $row */

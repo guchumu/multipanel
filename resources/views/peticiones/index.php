@@ -4,6 +4,7 @@
 /** @var array $items */
 /** @var array $motivos */
 /** @var array $platformsById */
+/** @var list<int> $needsTmdbIds */
 /** @var string $filter */
 /** @var string|null $error */
 /** @var bool $configured */
@@ -16,6 +17,8 @@ $tabClass = static function (string $name, string $current): string {
 $badge = static function (int $n): string {
     return $n > 0 ? ' <span class="badge rounded-pill bg-secondary">' . $n . '</span>' : '';
 };
+$needsTmdbIds = $needsTmdbIds ?? [];
+$hasTmdb = $hasTmdb ?? false;
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
@@ -26,6 +29,11 @@ $badge = static function (int $n): string {
         <a href="/settings#peticiones" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-database me-1"></i>BD remota
         </a>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="btnActualizarCaratulas"
+                <?= !$configured || !$hasTmdb ? 'disabled' : '' ?>
+                title="<?= $hasTmdb ? 'Busca carátulas y plataformas en TMDb (página actual)' : 'Configura la clave TMDb en Ajustes' ?>">
+            <i class="bi bi-image me-1"></i>Actualizar carátulas
+        </button>
         <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAddPeticion" <?= !$configured ? 'disabled' : '' ?>>
             <i class="bi bi-plus-lg me-1"></i>Añadir URL
         </button>
@@ -59,6 +67,10 @@ $badge = static function (int $n): string {
     </li>
 </ul>
 
+<?php if ($configured && empty($error) && !$hasTmdb): ?>
+<div class="alert alert-light border small">Sin clave TMDb no se pueden cargar carátulas ni plataformas. Añádela en <a href="/settings#peticiones">Configuración → Peticiones</a>.</div>
+<?php endif; ?>
+
 <?php if ($configured && empty($error) && empty($items)): ?>
 <div class="text-center text-muted py-5">No hay peticiones en esta pestaña.</div>
 <?php endif; ?>
@@ -75,11 +87,12 @@ $badge = static function (int $n): string {
         $img = 'https://via.placeholder.com/300x450?text=Sin+poster';
     }
     $platforms = $platformsById[$id] ?? [];
+    $needsTmdb = $hasTmdb && in_array($id, $needsTmdbIds ?? [], true);
     ?>
-    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>">
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>"<?= $needsTmdb ? ' data-needs-tmdb="1"' : '' ?>>
         <div class="card h-100 shadow-sm peticion-card <?= e($border) ?> border-2">
             <a href="<?= e((string) ($row['url'] ?? '#')) ?>" target="_blank" rel="noopener" class="peticion-poster-link">
-                <img src="<?= e($img) ?>" class="card-img-top peticion-poster" alt="" loading="lazy"
+                <img src="<?= e($img) ?>" class="card-img-top peticion-poster" alt="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" loading="lazy"
                      onerror="this.src='https://via.placeholder.com/300x450?text=Sin+poster'">
             </a>
             <div class="card-body p-2 d-flex flex-column gap-1">
@@ -98,10 +111,20 @@ $badge = static function (int $n): string {
                     <?php if ($platforms === []): ?>
                         <span class="text-muted">Ver: —</span>
                     <?php else: ?>
-                        <span class="text-muted">Ver:</span>
+                        <span class="text-muted">Disponible en:</span>
+                        <span class="peticion-streaming-logos">
                         <?php foreach ($platforms as $p): ?>
-                            <span class="badge text-bg-light border"><?= e($p) ?></span>
+                            <?php
+                            $pName = is_array($p) ? (string) ($p['nombre'] ?? '') : (string) $p;
+                            $pLogo = is_array($p) ? (string) ($p['logo'] ?? '') : '';
+                            ?>
+                            <?php if ($pLogo !== ''): ?>
+                                <img class="peticion-provider-logo" src="<?= e($pLogo) ?>" alt="<?= e($pName) ?>" title="<?= e($pName) ?>" width="32" height="32">
+                            <?php elseif ($pName !== ''): ?>
+                                <span class="badge text-bg-light border"><?= e($pName) ?></span>
+                            <?php endif; ?>
                         <?php endforeach; ?>
+                        </span>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -245,6 +268,55 @@ $scripts = <<<'JS'
     return { res, data };
   }
 
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function renderPlatforms(list) {
+    if (!Array.isArray(list) || list.length === 0) {
+      return '<span class="text-muted">No se encontró en ninguna plataforma de suscripción en España.</span>';
+    }
+    const logos = list.map((p) => {
+      const name = escapeHtml(p.nombre || p || '');
+      const logo = p.logo || '';
+      if (logo) {
+        return '<img class="peticion-provider-logo" src="' + escapeHtml(logo) + '" alt="' + name + '" title="' + name + '" width="32" height="32">';
+      }
+      return name ? '<span class="badge text-bg-light border">' + name + '</span>' : '';
+    }).join('');
+    return '<span class="text-muted">Disponible en:</span> <span class="peticion-streaming-logos">' + logos + '</span>';
+  }
+
+  function applyMeta(id, data) {
+    const card = document.getElementById('peticion-card-' + id);
+    if (!card) return;
+    if (data.poster) {
+      const img = card.querySelector('.peticion-poster');
+      if (img) img.src = data.poster;
+    }
+    const wrap = card.querySelector('.peticion-streaming');
+    if (wrap && data.plataformas) {
+      wrap.innerHTML = renderPlatforms(data.plataformas);
+    }
+    card.removeAttribute('data-needs-tmdb');
+  }
+
+  async function loadMetaQueue(ids) {
+    const queue = ids.slice();
+    const workers = 3;
+    async function worker() {
+      while (queue.length) {
+        const id = queue.shift();
+        if (!id) continue;
+        const { data } = await postAction({ accion: 'meta', id });
+        if (data.ok) applyMeta(id, data);
+      }
+    }
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+  }
+
   document.querySelectorAll('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const action = btn.getAttribute('data-action');
@@ -303,6 +375,26 @@ $scripts = <<<'JS'
     body.accion = 'add';
     const { data } = await postAction(body);
     toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    if (data.ok) location.reload();
+  });
+
+  const pendingIds = Array.from(document.querySelectorAll('[data-needs-tmdb="1"]'))
+    .map((el) => parseInt((el.id || '').replace('peticion-card-', ''), 10))
+    .filter((id) => id > 0);
+  if (pendingIds.length) {
+    loadMetaQueue(pendingIds);
+  }
+
+  document.getElementById('btnActualizarCaratulas')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const ids = Array.from(document.querySelectorAll('[id^="peticion-card-"]'))
+      .map((el) => parseInt((el.id || '').replace('peticion-card-', ''), 10))
+      .filter((id) => id > 0);
+    if (!ids.length) return;
+    btn.disabled = true;
+    const { data } = await postAction({ accion: 'actualizar-metadatos', ids });
+    toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    btn.disabled = false;
     if (data.ok) location.reload();
   });
 })();

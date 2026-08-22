@@ -12,7 +12,7 @@ MultiPanel puede gestionar las **peticiones de contenido** del panel antiguo ley
    - Usuario (ej. `user_series`)
    - Contraseña (se guarda cifrada con SecretCrypt; no va a Git)
 3. Pulsa **Probar conexión**.
-4. Opcional: clave TMDb (plataformas de streaming). Vacío = se omiten.
+4. Opcional: clave TMDb v3 (carátulas + plataformas de streaming en España). Vacío = se omiten.
 5. Opcional en `.env` local (gitignored):
 
 ```env
@@ -34,9 +34,20 @@ La conexión PDO remota usa siempre **utf8mb4** (`charset` en el DSN + `SET NAME
 
 Pestañas: Pendientes · En proceso · Denegadas · Todas.
 
-Acciones: aceptar, subir, denegar (+ motivo), borrar, editar título, añadir URL manual.
+Acciones: aceptar, subir, denegar (+ motivo), borrar, editar título, añadir URL manual, actualizar carátulas TMDb.
 
 Avisos Telegram al aceptar / denegar / subir usando `idusuario` como chat id (mismo bot de Configuración → Telegram).
+
+## Carátulas y plataformas (TMDb)
+
+Si hay clave TMDb, el listado busca el título (`search/multi`, idioma `es-ES`) y:
+
+- Usa el póster de TMDb (`image.tmdb.org/t/p/w500`) cuando el campo `img` de la BD está vacío, es un placeholder o no es una URL http(s).
+- Muestra logos de proveedores de suscripción en España (`watch/providers` → `ES.flatrate`).
+- Guarda la carátula en `img` para no repetir la consulta.
+- Cachea cada título 12 horas. La primera visita carga las que faltan en segundo plano (sin bloquear la página). El botón **Actualizar carátulas** fuerza un recálculo de la página actual.
+
+**No** guardes la API key en Git: solo Configuración o `.env`.
 
 ## Firewall / MySQL remoto
 
