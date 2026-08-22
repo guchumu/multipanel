@@ -25,9 +25,7 @@ return [
     // Si el cron cae más tarde dentro de la misma hora, también se permite (dedup por milestone).
     'notify_window_minutes' => (int) env('EXPIRY_NOTIFY_WINDOW_MINUTES', 15),
 
-    // Precio año en avisos post-caducidad (sin descuento de reenganche).
-    'year_price' => (float) env('EXPIRY_YEAR_PRICE', 70),
-
+    // Precio del preset más largo (Ajustes → Facturación) en avisos post-caducidad.
     'milestones' => [10, 7, 5, 4, 3, 2, 1, 0, -1, -15, -30, -45],
 
     'messages' => [

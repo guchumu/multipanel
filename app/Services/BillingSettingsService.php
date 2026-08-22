@@ -56,6 +56,38 @@ final class BillingSettingsService
         ], $decoded));
     }
 
+    /** Preset de mayor duración (p. ej. 1 año) para avisos y reenganche. */
+    /** @return array{label: string, days: int, price: float}|null */
+    public function yearRenewalPreset(int $tenantId): ?array
+    {
+        $best = null;
+        foreach ($this->getRenewalPresets($tenantId) as $preset) {
+            $days = (int) ($preset['days'] ?? 0);
+            if ($days <= 0 || (float) ($preset['price'] ?? 0) <= 0) {
+                continue;
+            }
+            if ($best === null || $days > (int) $best['days']) {
+                $best = $preset;
+            }
+        }
+
+        return $best;
+    }
+
+    public function yearPrice(int $tenantId): float
+    {
+        $preset = $this->yearRenewalPreset($tenantId);
+
+        return $preset !== null ? round((float) $preset['price'], 2) : 0.0;
+    }
+
+    public static function formatMoney(float $amount): string
+    {
+        $amount = round($amount, 2);
+
+        return fmod($amount, 1.0) < 0.001 ? (string) (int) $amount : number_format($amount, 2, ',', '');
+    }
+
     /** @param array<int, array{label: string, days: int, price: float}> $presets */
     public function saveRenewalPresets(int $tenantId, array $presets): void
     {

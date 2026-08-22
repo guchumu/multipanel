@@ -72,9 +72,9 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
         <div class="min-w-0">
             <strong class="d-block">Gancho para volver</strong>
             <p class="small text-muted mb-0">
-                Antes: renovar a los 15/30/45 días (precio normal).
-                Reenganche (descuento / prueba) desde el día <?= (int) ($reengageCfg['min_expired_days'] ?? 60) ?> caducado:
-                4 avisos en orden o ábreles <?= $trialDays ?> días de prueba.
+                Antes: renovar a los 15/30/45 días (precio de Facturación).
+                Reenganche desde el día <?= (int) ($reengageCfg['min_expired_days'] ?? 60) ?>:
+                enlace de pago con <?= (int) ($reengageCfg['discount_percent'] ?? 15) ?>% único o prueba <?= $trialDays ?>d manual.
                 Se repiten cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
                 <?= !empty($reengageCfg['enabled']) ? '' : ' (automático ahora apagado)' ?>.
                 <a href="/settings/notifications#reengage">Editar mensajes</a>

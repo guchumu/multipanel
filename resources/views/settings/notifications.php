@@ -6,9 +6,13 @@
     </div>
     <a href="/settings" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear me-1"></i>Volver a Configuración</a>
 </div>
+<?php
+$yearPrice = $yearPrice ?? '—';
+?>
 <p class="text-muted small mb-1">Personaliza los mensajes automáticos por días restantes (positivos = antes de caducar; negativos = días tras caducar). Placeholders: <code><?= e($placeholders) ?></code></p>
 <p class="text-muted small">
-    Tras caducar: avisos a los <strong>15, 30 y 45 días</strong> para renovar a precio normal ({year_price} €/año, sin descuento).
+    Tras caducar: avisos a los <strong>15, 30 y 45 días</strong> para renovar a precio normal
+    (<strong><?= e($yearPrice) ?> €/año</strong> según Ajustes → Facturación, sin descuento).
     El reenganche con descuento empieza a los <strong>60 días</strong>.
 </p>
 <p class="text-muted small">
@@ -106,10 +110,10 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {dis
                 <h5 class="mb-1"><i class="bi bi-heart me-1 text-danger"></i>Reenganche de caducados</h5>
                 <p class="text-muted small mb-0">
                     Solo a partir de <strong><?= (int) ($reengage['min_expired_days'] ?? 60) ?> días</strong> caducado
-                    (antes: renovación a 15/30/45 días a precio normal).
-                    Cuatro avisos en orden (1→4) con descuento y enlace de 1 año al portal.
-                    El cron de las 09:00 manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
-                    El <?= (int) ($reengage['discount_percent'] ?? 15) ?>% de descuento va en el texto: aplícalo tú al renovar (aún no se descuenta solo en Stripe).
+                    (antes: renovación a 15/30/45 días a precio de Facturación).
+                    Cuatro avisos en orden con enlace de pago Stripe: preset más largo de Facturación
+                    con <strong><?= (int) ($reengage['discount_percent'] ?? 15) ?>% de descuento único</strong> por cliente.
+                    Si pagan, entran; si no, no pasa nada. El cron manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
                 </p>
             </div>
             <span class="badge bg-light text-dark border">

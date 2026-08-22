@@ -120,30 +120,45 @@ class PortalPaymentController extends Controller
             static fn (string $e): bool => $e !== $buyerEmail
         ));
 
+        $total = (float) $quote['total'];
+        $shopMeta = [
+            'shop' => 1,
+            'months' => (int) $quote['months'],
+            'users' => (int) $quote['users'],
+            'extra_streams' => (int) $quote['extra_streams'],
+            'extra_emails' => $extraEmails,
+            'account_streams' => $quote['streams'],
+            'server_id' => $serverId,
+            'server_type' => $requestedType,
+            'shop_accounts' => array_map(
+                static fn (string $email, int $i): array => [
+                    'email' => $email,
+                    'streams' => (int) ($quote['streams'][$i] ?? \App\Services\PortalShopService::INCLUDED_STREAMS),
+                ],
+                $quote['emails'],
+                array_keys($quote['emails'])
+            ),
+        ];
+
+        $reengage = new \App\Services\ReengageCampaignService();
+        $reengageCfg = $reengage->getConfig($tenantId);
+        if (
+            $reengage->isDiscountEligible($user)
+            && (int) $quote['months'] === 12
+            && (int) $quote['users'] === 1
+        ) {
+            $total = $reengage->applyDiscountAmount($total, (int) ($reengageCfg['discount_percent'] ?? 15));
+            $shopMeta['reengage_discount'] = true;
+            $shopMeta['discount_percent'] = (int) ($reengageCfg['discount_percent'] ?? 15);
+        }
+
         $result = $this->billing->createRenewalCheckout(
             $user,
-            (float) $quote['total'],
+            $total,
             'EUR',
             (int) $quote['days'],
             'stripe',
-            [
-                'shop' => 1,
-                'months' => (int) $quote['months'],
-                'users' => (int) $quote['users'],
-                'extra_streams' => (int) $quote['extra_streams'],
-                'extra_emails' => $extraEmails,
-                'account_streams' => $quote['streams'],
-                'server_id' => $serverId,
-                'server_type' => $requestedType,
-                'shop_accounts' => array_map(
-                    static fn (string $email, int $i): array => [
-                        'email' => $email,
-                        'streams' => (int) ($quote['streams'][$i] ?? \App\Services\PortalShopService::INCLUDED_STREAMS),
-                    ],
-                    $quote['emails'],
-                    array_keys($quote['emails'])
-                ),
-            ]
+            $shopMeta
         );
 
         if (!empty($result['success']) && !empty($result['checkout_url'])) {

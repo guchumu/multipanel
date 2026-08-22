@@ -132,6 +132,9 @@ final class BillingService
                         (string) $sub['currency']
                     );
                     $this->applyShopExtras($mediaUser, $meta, $days);
+                    if (!empty($meta['reengage_discount'])) {
+                        ReengageCampaignService::markDiscountUsed((int) $sub['media_user_id']);
+                    }
                 }
             } catch (\Throwable $e) {
                 Logger::error('No se pudo aplicar el pago al usuario media', [

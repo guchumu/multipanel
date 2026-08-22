@@ -305,6 +305,7 @@ CREATE TABLE IF NOT EXISTS `media_user_reengage` (
     `last_sent_at` DATETIME NULL,
     `last_kind` VARCHAR(20) NOT NULL DEFAULT 'invite',
     `converted_at` DATETIME NULL,
+    `discount_used_at` DATETIME NULL,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

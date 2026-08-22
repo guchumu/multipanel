@@ -6,6 +6,7 @@ namespace App\Services\Notifications;
 
 use App\Models\MediaUser;
 use App\Services\AlertSettingsService;
+use App\Services\BillingSettingsService;
 use App\Services\MediaUserManagementService;
 use App\Services\NotificationTemplateService;
 use Core\Database;
@@ -113,7 +114,7 @@ final class ExpiryNotificationService
                 continue;
             }
 
-            $body = $this->renderTemplate($template, $user, (string) ($row['server_name'] ?? ''), $daysLeft);
+            $body = $this->renderTemplate($template, $user, (string) ($row['server_name'] ?? ''), $daysLeft, $tenantId);
             $result = $this->management->sendClientNotice($user, $title, $body, 'expiry_' . $milestoneKey);
             $sent = !empty($result['sent']);
 
@@ -251,18 +252,15 @@ final class ExpiryNotificationService
         ]);
     }
 
-    private function renderTemplate(string $template, MediaUser $user, string $serverName, int $daysLeft): string
+    private function renderTemplate(string $template, MediaUser $user, string $serverName, int $daysLeft, int $tenantId): string
     {
         $expiresAt = (string) ($user->expires_at ?? '');
         $expiresDate = $expiresAt !== '' ? substr($expiresAt, 0, 10) : '';
         $endDateFormatted = $expiresDate !== ''
             ? (new DateTimeImmutable($expiresDate))->format('d/m/Y')
             : '';
-
-        $yearPrice = (float) config('expiry_notifications.year_price', 70);
-        $yearPriceLabel = fmod($yearPrice, 1.0) < 0.001
-            ? (string) (int) $yearPrice
-            : number_format($yearPrice, 2, ',', '');
+        $billing = new BillingSettingsService();
+        $yearPrice = BillingSettingsService::formatMoney($billing->yearPrice($tenantId));
 
         $replace = [
             '{username}' => (string) $user->username,
@@ -274,7 +272,7 @@ final class ExpiryNotificationService
             '{days}' => (string) abs($daysLeft),
             '{days_left}' => (string) $daysLeft,
             '{server_name}' => $serverName !== '' ? $serverName : '—',
-            '{year_price}' => $yearPriceLabel,
+            '{year_price}' => $yearPrice,
         ];
 
         return str_replace(array_keys($replace), array_values($replace), $template);

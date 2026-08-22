@@ -26,6 +26,8 @@ final class ReengageCampaignService
         private ClientWhatsAppChannel $whatsapp = new ClientWhatsAppChannel(),
         private AlertSettingsService $alerts = new AlertSettingsService(),
         private PortalLoginLinkService $portalLinks = new PortalLoginLinkService(),
+        private BillingSettingsService $billing = new BillingSettingsService(),
+        private BillingService $billingCheckout = new BillingService(),
     ) {
     }
 
@@ -124,8 +126,9 @@ final class ReengageCampaignService
 
     /**
      * @param array{trial_days?: int, discount_percent?: int, link_ttl_days?: int} $cfg
+     * @param array<string, string> $offer
      */
-    public function render(string $template, MediaUser $user, array $cfg, string $serverName = '', ?string $portalUrl = null): string
+    public function render(string $template, MediaUser $user, array $cfg, string $serverName = '', array $offer = []): string
     {
         $expiresAt = (string) ($user->expires_at ?? '');
         $expiresDate = $expiresAt !== '' ? substr($expiresAt, 0, 10) : '';
@@ -151,8 +154,9 @@ final class ReengageCampaignService
             }
         }
 
-        if ($portalUrl === null || $portalUrl === '') {
-            $portalUrl = $this->loginFallbackUrl();
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        if ($offer === []) {
+            $offer = $this->renewalOffer($user, $cfg);
         }
 
         $replace = [
@@ -167,10 +171,149 @@ final class ReengageCampaignService
             '{trial_days}' => (string) (int) ($cfg['trial_days'] ?? 3),
             '{discount_percent}' => (string) (int) ($cfg['discount_percent'] ?? 15),
             '{link_years}' => $linkYears,
-            '{portal_url}' => $portalUrl,
+            '{year_price}' => (string) ($offer['year_price'] ?? BillingSettingsService::formatMoney($this->billing->yearPrice($tenantId))),
+            '{discounted_price}' => (string) ($offer['discounted_price'] ?? ''),
+            '{renew_label}' => (string) ($offer['renew_label'] ?? '1 año'),
+            '{payment_url}' => (string) ($offer['payment_url'] ?? ''),
+            '{portal_url}' => (string) ($offer['portal_url'] ?? $this->loginFallbackUrl()),
         ];
 
         return str_replace(array_keys($replace), array_values($replace), $template);
+    }
+
+    /** Descuento de reenganche aún no usado (15% único por cliente). */
+    public function isDiscountEligible(MediaUser $user): bool
+    {
+        if (empty($user->id)) {
+            return true;
+        }
+        self::ensureTable();
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT discount_used_at FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
+                [(int) $user->id]
+            );
+        } catch (\Throwable) {
+            return true;
+        }
+        if ($row === null) {
+            return true;
+        }
+
+        return empty($row['discount_used_at']);
+    }
+
+    public function applyDiscountAmount(float $amount, int $discountPercent): float
+    {
+        $discountPercent = max(0, min(90, $discountPercent));
+
+        return round(max(0.5, $amount * (1 - $discountPercent / 100)), 2);
+    }
+
+    /**
+     * Oferta de renovación: preset más largo de Facturación con descuento y enlace de pago.
+     *
+     * @return array{
+     *   has_offer: bool, eligible: bool, year_price: string, discounted_price: string,
+     *   renew_label: string, renew_days: int, payment_url: string, portal_url: string
+     * }
+     */
+    public function renewalOffer(MediaUser $user, array $cfg, bool $createCheckout = true): array
+    {
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $preset = $this->billing->yearRenewalPreset($tenantId);
+        $portalUrl = $this->magicPortalUrl($user, $cfg);
+        if ($preset === null) {
+            return [
+                'has_offer' => false,
+                'eligible' => false,
+                'year_price' => '0',
+                'discounted_price' => '0',
+                'renew_label' => '1 año',
+                'renew_days' => 365,
+                'payment_url' => '',
+                'portal_url' => $portalUrl,
+            ];
+        }
+
+        $listPrice = round((float) $preset['price'], 2);
+        $days = (int) $preset['days'];
+        $label = trim((string) ($preset['label'] ?? '1 año')) ?: '1 año';
+        $discountPercent = (int) ($cfg['discount_percent'] ?? 15);
+        $eligible = $this->isDiscountEligible($user);
+        $discounted = $eligible
+            ? $this->applyDiscountAmount($listPrice, $discountPercent)
+            : $listPrice;
+        $paymentUrl = '';
+
+        if ($createCheckout && !empty($user->id) && $days > 0) {
+            $chargeAmount = $eligible ? $discounted : $listPrice;
+            $shopMeta = ['renew_label' => $label];
+            if ($eligible) {
+                $shopMeta['reengage_discount'] = true;
+                $shopMeta['discount_percent'] = $discountPercent;
+                $shopMeta['list_price'] = $listPrice;
+            }
+            if ($chargeAmount > 0) {
+                $checkout = $this->billingCheckout->createRenewalCheckout(
+                    $user,
+                    $chargeAmount,
+                    'EUR',
+                    $days,
+                    'stripe',
+                    $shopMeta
+                );
+                if (!empty($checkout['checkout_url'])) {
+                    $paymentUrl = (string) $checkout['checkout_url'];
+                }
+            }
+        }
+
+        if ($paymentUrl === '' && !$createCheckout) {
+            $paymentUrl = rtrim((string) config('app.url', ''), '/') . '/p/EjemploPagoReenganche';
+        }
+
+        return [
+            'has_offer' => true,
+            'eligible' => $eligible,
+            'year_price' => BillingSettingsService::formatMoney($listPrice),
+            'discounted_price' => BillingSettingsService::formatMoney($discounted),
+            'renew_label' => $label,
+            'renew_days' => $days,
+            'payment_url' => $paymentUrl,
+            'portal_url' => $portalUrl,
+        ];
+    }
+
+    public static function markDiscountUsed(int $mediaUserId): void
+    {
+        if ($mediaUserId <= 0) {
+            return;
+        }
+        self::ensureTable();
+        $db = Database::getInstance();
+        $now = date('Y-m-d H:i:s');
+        $existing = $db->fetchOne(
+            'SELECT id, converted_at FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
+            [$mediaUserId]
+        );
+        if ($existing) {
+            $db->update('media_user_reengage', [
+                'discount_used_at' => $now,
+                'converted_at' => $existing['converted_at'] ?? $now,
+            ], 'id = ?', [$existing['id']]);
+            return;
+        }
+
+        $user = MediaUser::find($mediaUserId);
+        $db->insert('media_user_reengage', [
+            'tenant_id' => (int) ($user->tenant_id ?? 1),
+            'media_user_id' => $mediaUserId,
+            'send_count' => 0,
+            'last_kind' => 'paid',
+            'discount_used_at' => $now,
+            'converted_at' => $now,
+        ]);
     }
 
     /**
@@ -227,9 +370,23 @@ final class ReengageCampaignService
             return ['success' => false, 'message' => 'No hay texto de reenganche. Guárdalo en Mensajes a usuarios.', 'sent' => false];
         }
 
-        $portalUrl = $this->magicPortalUrl($user, $cfg);
-        $title = $this->render($tpl['title'], $user, $cfg, (string) ($user->server_name ?? ''), $portalUrl);
-        $text = $this->render($tpl['body'], $user, $cfg, (string) ($user->server_name ?? ''), $portalUrl);
+        $offer = $this->renewalOffer($user, $cfg);
+        $title = $this->render($tpl['title'], $user, $cfg, (string) ($user->server_name ?? ''), $offer);
+        $text = $this->render($tpl['body'], $user, $cfg, (string) ($user->server_name ?? ''), $offer);
+        if ($offer['eligible'] && ($offer['payment_url'] ?? '') === '') {
+            return [
+                'success' => false,
+                'message' => 'Stripe no está listo: configura Facturación antes de invitar con descuento.',
+                'sent' => false,
+            ];
+        }
+        if (($offer['payment_url'] ?? '') === '') {
+            return [
+                'success' => false,
+                'message' => 'No se pudo generar el enlace de pago. Revisa Stripe en Facturación.',
+                'sent' => false,
+            ];
+        }
         $result = $this->management->sendClientNotice($user, $title, $text, 'reengage_invite');
         if (!empty($result['sent'])) {
             $this->recordSend($user, 'invite');
@@ -251,9 +408,9 @@ final class ReengageCampaignService
         $fresh = MediaUser::find((int) $user->id) ?? $user;
         $fresh->server_name = $user->server_name ?? null;
         $tpl = $this->templateFor($cfg, 'trial');
-        $portalUrl = $this->magicPortalUrl($fresh, $cfg);
-        $title = $this->render((string) ($tpl['title'] ?? $cfg['trial_title']), $fresh, $cfg, (string) ($user->server_name ?? ''), $portalUrl);
-        $text = $this->render((string) ($tpl['body'] ?? $cfg['trial_body']), $fresh, $cfg, (string) ($user->server_name ?? ''), $portalUrl);
+        $offer = $this->renewalOffer($fresh, $cfg);
+        $title = $this->render((string) ($tpl['title'] ?? $cfg['trial_title']), $fresh, $cfg, (string) ($user->server_name ?? ''), $offer);
+        $text = $this->render((string) ($tpl['body'] ?? $cfg['trial_body']), $fresh, $cfg, (string) ($user->server_name ?? ''), $offer);
         $notice = $this->management->sendClientNotice($fresh, $title, $text, 'reengage_trial');
         $this->recordSend($fresh, 'trial');
 
@@ -377,6 +534,7 @@ final class ReengageCampaignService
                     `last_sent_at` DATETIME NULL,
                     `last_kind` VARCHAR(20) NOT NULL DEFAULT \'invite\',
                     `converted_at` DATETIME NULL,
+                    `discount_used_at` DATETIME NULL,
                     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),

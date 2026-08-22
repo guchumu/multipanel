@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Services\AuthService;
+use App\Services\BillingSettingsService;
 use App\Services\NotificationTemplateService;
 use App\Services\ReengageCampaignService;
 use App\Services\TelegramSandboxSender;
@@ -31,14 +32,17 @@ class NotificationSettingsController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $messages = $this->templates->getExpiryMessages($tenantId);
         $milestones = $this->templates->getMilestones($tenantId);
+        $billing = new BillingSettingsService();
+        $yearPrice = BillingSettingsService::formatMoney($billing->yearPrice($tenantId));
 
         return $this->view('settings.notifications', [
             'title' => 'Mensajes a los usuarios',
             'messages' => $messages,
             'milestones' => $milestones,
+            'yearPrice' => $yearPrice,
             'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}, {year_price}',
             'reengage' => $this->reengage->getConfig($tenantId),
-            'reengagePlaceholders' => '{username}, {email}, {display_name}, {end_date}, {server_name}, {service_name}, {trial_days}, {discount_percent}, {link_years}, {portal_url}',
+            'reengagePlaceholders' => '{username}, {email}, {display_name}, {server_name}, {trial_days}, {discount_percent}, {year_price}, {discounted_price}, {renew_label}, {payment_url}',
             'reengageStats' => $this->reengage->stats($tenantId),
         ]);
     }
@@ -87,7 +91,7 @@ class NotificationSettingsController extends Controller
         }
 
         $title = (string) config('expiry_notifications.title', 'Aviso de tu acceso');
-        $body = TelegramSandboxSender::renderWithSamples($template, $daysLeft);
+        $body = TelegramSandboxSender::renderWithSamples($template, $daysLeft, $tenantId);
         $label = $daysLeft === -1
             ? 'caducó ayer (-1)'
             : ($daysLeft < 0
@@ -147,9 +151,9 @@ class NotificationSettingsController extends Controller
             'email' => 'ana@ejemplo.com',
             'expires_at' => date('Y-m-d', strtotime('+3 days')),
         ]);
-        $demoUrl = rtrim((string) config('app.url', ''), '/') . '/u/EjemploEnlace1AnoPlexDemo';
-        $body = $this->reengage->render($tpl['body'], $sample, $cfg, 'Server10', $demoUrl);
-        $head = $this->reengage->render($tpl['title'], $sample, $cfg, 'Server10', $demoUrl);
+        $offer = $this->reengage->renewalOffer($sample, $cfg, false);
+        $body = $this->reengage->render($tpl['body'], $sample, $cfg, 'Server10', $offer);
+        $head = $this->reengage->render($tpl['title'], $sample, $cfg, 'Server10', $offer);
         $label = $kind === 'trial' ? 'prueba abierta' : ('aviso ' . $tpl['step'] . '/4');
         $text = "*{$head}*\n\n{$body}\n\n_[PRUEBA reenganche · {$label}]_";
         $result = $this->sandboxSender->sendToSandbox($tenantId, $text, 'Markdown');

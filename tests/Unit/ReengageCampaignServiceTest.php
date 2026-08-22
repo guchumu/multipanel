@@ -10,7 +10,7 @@ use Tests\TestCase;
 
 final class ReengageCampaignServiceTest extends TestCase
 {
-    public function testRenderReplacesHookPlaceholders(): void
+    public function testRenderReplacesOfferPlaceholders(): void
     {
         $svc = new ReengageCampaignService();
         $user = new MediaUser([
@@ -20,20 +20,32 @@ final class ReengageCampaignServiceTest extends TestCase
             'expires_at' => '2026-08-01',
         ]);
         $cfg = ['trial_days' => 3, 'discount_percent' => 15, 'link_ttl_days' => 365];
+        $offer = [
+            'year_price' => '70',
+            'discounted_price' => '59,50',
+            'renew_label' => '1 año',
+            'payment_url' => 'https://ejemplo.test/p/abc123',
+            'portal_url' => 'https://ejemplo.test/u/xyz',
+        ];
         $out = $svc->render(
-            'Hola {display_name}, Plex {trial_days}d, -{discount_percent}%, {link_years} año. {portal_url}',
+            'Hola {display_name}, {renew_label} {discounted_price}€ (antes {year_price}€). Paga: {payment_url}',
             $user,
             $cfg,
             'NucBox',
-            'https://ejemplo.test/u/abc123xyzABCDEFG'
+            $offer
         );
 
         $this->assertStringContainsString('Ana López', $out);
-        $this->assertStringContainsString('3d', $out);
-        $this->assertStringContainsString('-15%', $out);
         $this->assertStringContainsString('1 año', $out);
-        $this->assertStringContainsString('/u/abc123xyzABCDEFG', $out);
-        $this->assertStringNotContainsString('{display_name}', $out);
+        $this->assertStringContainsString('59,50', $out);
+        $this->assertStringContainsString('/p/abc123', $out);
+        $this->assertStringNotContainsString('{payment_url}', $out);
+    }
+
+    public function testApplyDiscountAmount(): void
+    {
+        $svc = new ReengageCampaignService();
+        $this->assertSame(59.5, $svc->applyDiscountAmount(70.0, 15));
     }
 
     public function testTemplateForReturnsInviteByStep(): void

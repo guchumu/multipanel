@@ -77,12 +77,15 @@ final class TelegramSandboxSender
      *
      * @return array<string, string>
      */
-    public static function samplePlaceholders(int $daysLeft): array
+    public static function samplePlaceholders(int $daysLeft, ?int $tenantId = null): array
     {
         $expires = (new DateTimeImmutable('today'))->modify(sprintf('%+d days', $daysLeft));
         $expiresAt = $expires->format('Y-m-d') . ' 23:59:59';
         $expiresDate = $expires->format('Y-m-d');
         $endDate = $expires->format('d/m/Y');
+        $billing = new BillingSettingsService();
+        $tid = $tenantId ?? 1;
+        $yearPrice = BillingSettingsService::formatMoney($billing->yearPrice($tid));
 
         return [
             '{username}' => 'usuario.demo',
@@ -94,13 +97,13 @@ final class TelegramSandboxSender
             '{days}' => (string) abs($daysLeft),
             '{days_left}' => (string) $daysLeft,
             '{server_name}' => 'Servidor Demo',
-            '{year_price}' => (string) (int) config('expiry_notifications.year_price', 70),
+            '{year_price}' => $yearPrice,
         ];
     }
 
-    public static function renderWithSamples(string $template, int $daysLeft): string
+    public static function renderWithSamples(string $template, int $daysLeft, ?int $tenantId = null): string
     {
-        $replace = self::samplePlaceholders($daysLeft);
+        $replace = self::samplePlaceholders($daysLeft, $tenantId);
 
         return str_replace(array_keys($replace), array_values($replace), $template);
     }

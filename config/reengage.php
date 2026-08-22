@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Campaña de reenganche: 4 avisos en orden + mensaje al abrir prueba.
  * Placeholders: {username}, {email}, {display_name}, {end_date}, {days_left},
  *               {server_name}, {service_name}, {trial_days}, {discount_percent},
- *               {portal_url}, {link_years}
+ *               {year_price}, {discounted_price}, {renew_label}, {payment_url}, {portal_url}, {link_years}
  */
 return [
     'enabled' => env('REENGAGE_ENABLED', true),
@@ -24,14 +24,14 @@ return [
             'body' => <<<'TXT'
 Hola {display_name},
 
-Hace tiempo que no pasas por *Plex* ({server_name}). Tu historial sigue ahí: lo último que dejaste no se ha tocado.
+Hace tiempo que no pasas por *Plex* ({server_name}). Tu historial sigue ahí.
 
-Si vuelves, te hacemos un *{discount_percent}% de descuento* en la renovación. También podemos abrirte *{trial_days} días de prueba* sin compromiso: responde a este mensaje y te la dejamos lista.
+Renueva *{renew_label}* con un *{discount_percent}% de descuento* (solo para ti, esta vez): *{discounted_price} €* en lugar de {year_price} €.
 
-Enlace directo (sin contraseña, válido *{link_years} año*):
-{portal_url}
+Paga aquí y activamos tu acceso al momento. Si no te encaja, ignora el mensaje:
+{payment_url}
 
-Ahí entras al portal. Para ver series y pelis, abre la app de *Plex* con tu usuario de siempre.
+Para ver: app de *Plex* con tu usuario de siempre.
 TXT,
         ],
         [
@@ -40,14 +40,12 @@ TXT,
             'body' => <<<'TXT'
 Hola {display_name},
 
-Ya hace bastante que no te vemos en *Plex*. Sin presiones: si ahora no es el momento, este mensaje se puede ignorar.
+Ya hace bastante que no te vemos en *Plex*. Sin presiones: si ahora no es el momento, ignora esto.
 
-Si sí te apetece, hay *{trial_days} días de prueba* y, si te quedas, *{discount_percent}% de descuento* en la renovación. Responde “prueba” y te la abrimos.
+Si sí te apetece volver: *{renew_label}* por *{discounted_price} €* (precio normal {year_price} €, −{discount_percent}% solo esta vez).
 
-Enlace directo (sin contraseña, válido *{link_years} año*):
-{portal_url}
-
-Para ver contenido: app de *Plex* con tu usuario habitual.
+Enlace de pago:
+{payment_url}
 TXT,
         ],
         [
@@ -56,12 +54,10 @@ TXT,
             'body' => <<<'TXT'
 Hola {display_name},
 
-Te echamos en falta en *Plex* ({server_name}). Tu plaza sigue libre: no la hemos ocupado.
+Te echamos en falta en *Plex* ({server_name}). Tu plaza sigue libre.
 
-*{trial_days} días de prueba* para volver sin compromiso, y si renuevas te aplicamos un *{discount_percent}% de descuento*. Responde y te abrimos la prueba.
-
-Enlace directo (sin contraseña, válido *{link_years} año*):
-{portal_url}
+*{renew_label}* con *{discount_percent}% de descuento*: *{discounted_price} €* (antes {year_price} €). Un solo toque:
+{payment_url}
 TXT,
         ],
         [
@@ -70,10 +66,11 @@ TXT,
             'body' => <<<'TXT'
 Hola {display_name},
 
-Este es el último toque. Si quieres volver a *Plex*, *{trial_days} días de prueba* y un *{discount_percent}% de descuento* si te quedas. Si no, no pasa nada: se cierra aquí y dejamos de escribir.
+Último toque. Si quieres volver a *Plex*, *{renew_label}* por *{discounted_price} €* (−{discount_percent}%, precio normal {year_price} €).
 
-Enlace directo (sin contraseña, válido *{link_years} año*):
-{portal_url}
+{payment_url}
+
+Si no, cerramos aquí y no molestamos más.
 TXT,
         ],
     ],
@@ -81,11 +78,9 @@ TXT,
     'trial_body' => <<<'TXT'
 Hola {display_name},
 
-Hecho: te hemos abierto *{trial_days} días de prueba* en *Plex* ({server_name}). Tienes hasta el {end_date}.
+Hecho: *{trial_days} días de prueba* en *Plex* ({server_name}), hasta el {end_date}.
 
-Abre la app de *Plex* con tu usuario de siempre y dale al play. Si te encaja, renueva con *{discount_percent}% de descuento*. Si no, se cierra sola. Sin letras pequeñas.
-
-Portal (sin contraseña, válido *{link_years} año*):
-{portal_url}
+Abre la app de *Plex* con tu usuario de siempre. Si te encaja, renueva con descuento aquí:
+{payment_url}
 TXT,
 ];
