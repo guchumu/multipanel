@@ -258,6 +258,65 @@ final class PlexService
     }
 
     /**
+     * Busca películas/series en las bibliotecas (hubs/search).
+     *
+     * @return list<array{title: string, type: string, year: string}>
+     */
+    public function searchCatalog(string $query, int $limit = 8): array
+    {
+        $query = trim($query);
+        if ($query === '' || $this->lastError !== null) {
+            return [];
+        }
+
+        try {
+            $response = $this->client->get('/hubs/search', [
+                'headers' => $this->authHeaders(),
+                'query' => [
+                    'query' => $query,
+                    'limit' => max(1, min(15, $limit)),
+                ],
+                'timeout' => 8,
+            ]);
+            $xml = simplexml_load_string($response->getBody()->getContents());
+            if ($xml === false) {
+                return [];
+            }
+
+            $out = [];
+            foreach ($xml->Hub as $hub) {
+                if (!isset($hub->Metadata)) {
+                    continue;
+                }
+                foreach ($hub->Metadata as $meta) {
+                    $type = (string) ($meta['type'] ?? '');
+                    if ($type !== 'movie' && $type !== 'show') {
+                        continue;
+                    }
+                    $title = trim((string) ($meta['title'] ?? ''));
+                    if ($title === '') {
+                        continue;
+                    }
+                    $out[] = [
+                        'title' => $title,
+                        'type' => $type,
+                        'year' => (string) ($meta['year'] ?? ''),
+                    ];
+                }
+            }
+
+            return $out;
+        } catch (GuzzleException $e) {
+            Logger::debug('Plex catalog search failed', [
+                'server_id' => $this->server->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
      * Trigger a library section scan on the Plex Media Server.
      * POST /library/sections/{id}/refresh
      */

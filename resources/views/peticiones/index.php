@@ -29,6 +29,11 @@ $hasTmdb = $hasTmdb ?? false;
         <a href="/settings#peticiones" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-database me-1"></i>BD remota
         </a>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnComprobarServidor"
+                <?= !$configured ? 'disabled' : '' ?>
+                title="Si una denegada ya está en Plex o Jellyfin, se marca como subida y deja de aparecer aquí">
+            <i class="bi bi-hdd-network me-1"></i>Comprobar en servidor
+        </button>
         <button type="button" class="btn btn-outline-danger btn-sm" id="btnActualizarCaratulas"
                 <?= !$configured || !$hasTmdb ? 'disabled' : '' ?>
                 title="<?= $hasTmdb ? 'Busca carátulas y plataformas en TMDb (página actual)' : 'Configura la clave TMDb en Ajustes' ?>">
@@ -89,7 +94,7 @@ $hasTmdb = $hasTmdb ?? false;
     $platforms = $platformsById[$id] ?? [];
     $needsTmdb = $hasTmdb && in_array($id, $needsTmdbIds ?? [], true);
     ?>
-    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>"<?= $needsTmdb ? ' data-needs-tmdb="1"' : '' ?>>
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>"<?= $needsTmdb ? ' data-needs-tmdb="1"' : '' ?><?= $isDenied ? ' data-denied="1"' : '' ?>>
         <div class="card h-100 shadow-sm peticion-card <?= e($border) ?> border-2">
             <a href="<?= e((string) ($row['url'] ?? '#')) ?>" target="_blank" rel="noopener" class="peticion-poster-link">
                 <img src="<?= e($img) ?>" class="card-img-top peticion-poster" alt="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" loading="lazy"
@@ -396,6 +401,51 @@ $scripts = <<<'JS'
     toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
     btn.disabled = false;
     if (data.ok) location.reload();
+  });
+
+  async function checkOnServer(ids) {
+    if (!ids.length) return { data: { ok: true, updated: 0, message: 'Nada que comprobar' } };
+    return postAction({ accion: 'comprobar-servidor', ids });
+  }
+
+  const deniedIds = Array.from(document.querySelectorAll('[data-denied="1"]'))
+    .map((el) => parseInt((el.id || '').replace('peticion-card-', ''), 10))
+    .filter((id) => id > 0);
+  if (deniedIds.length) {
+    (async () => {
+      const queue = deniedIds.slice();
+      const workers = 2;
+      let found = 0;
+      async function worker() {
+        while (queue.length) {
+          const id = queue.shift();
+          if (!id) continue;
+          const { data } = await postAction({ accion: 'comprobar-servidor', id });
+          if (data.ok && data.found) {
+            found++;
+            document.getElementById('peticion-card-' + id)?.remove();
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: workers }, () => worker()));
+      if (found > 0) toast('En catálogo (ya no denegadas): ' + found, true);
+    })();
+  }
+
+  document.getElementById('btnComprobarServidor')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const ids = Array.from(document.querySelectorAll('[data-denied="1"]'))
+      .map((el) => parseInt((el.id || '').replace('peticion-card-', ''), 10))
+      .filter((id) => id > 0);
+    if (!ids.length) {
+      toast('No hay denegadas visibles para comprobar', false);
+      return;
+    }
+    btn.disabled = true;
+    const { data } = await checkOnServer(ids);
+    toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    btn.disabled = false;
+    if (data.ok && (data.updated || 0) > 0) location.reload();
   });
 })();
 </script>

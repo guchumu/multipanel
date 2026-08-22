@@ -104,6 +104,64 @@ final class JellyfinService
     }
 
     /**
+     * Busca películas/series en las bibliotecas.
+     *
+     * @return list<array{title: string, type: string, year: string}>
+     */
+    public function searchCatalog(string $query, int $limit = 8): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return [];
+        }
+
+        try {
+            $response = $this->client->get('/Items', [
+                'headers' => $this->authHeaders(),
+                'query' => [
+                    'searchTerm' => $query,
+                    'Recursive' => 'true',
+                    'IncludeItemTypes' => 'Movie,Series',
+                    'Limit' => max(1, min(15, $limit)),
+                    'Fields' => 'ProductionYear',
+                ],
+                'timeout' => 8,
+            ]);
+            $data = json_decode($response->getBody()->getContents(), true);
+            $items = is_array($data) ? ($data['Items'] ?? []) : [];
+            if (!is_array($items)) {
+                return [];
+            }
+
+            $out = [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $title = trim((string) ($item['Name'] ?? ''));
+                if ($title === '') {
+                    continue;
+                }
+                $type = strtolower((string) ($item['Type'] ?? ''));
+                $out[] = [
+                    'title' => $title,
+                    'type' => $type === 'series' ? 'show' : 'movie',
+                    'year' => (string) ($item['ProductionYear'] ?? ''),
+                ];
+            }
+
+            return $out;
+        } catch (GuzzleException $e) {
+            Logger::debug('Jellyfin catalog search failed', [
+                'server_id' => $this->server->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
      * Trigger a scan/refresh for a single Jellyfin library (CollectionFolder ItemId).
      * POST /Items/{itemId}/Refresh
      */

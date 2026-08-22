@@ -49,6 +49,10 @@ Si hay clave TMDb, el listado busca el título (`search/multi`, idioma `es-ES`) 
 
 **No** guardes la API key en Git: solo Configuración o `.env`.
 
+## Denegadas que ya están en el servidor
+
+Al abrir **Denegadas** (o con **Comprobar en servidor**), MultiPanel busca el título en Plex y Jellyfin. Si hay coincidencia clara, marca la petición como **subida** (`subido=1`) y deja de listarla como denegada. Avisa al usuario por Telegram como cuando pulsas «Subir».
+
 ## Firewall / MySQL remoto
 
 El servidor MySQL (`servidor.masquecero.net:3306`) debe **permitir conexiones desde la IP pública del VPS donde corre MultiPanel**.

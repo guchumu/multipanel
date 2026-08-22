@@ -106,6 +106,9 @@ class PeticionesController extends Controller
                 'rename', 'titulo' => $this->service->rename($id, (string) ($request->input('titulo') ?? '')),
                 'meta' => $this->service->enrichCard($id),
                 'actualizar-metadatos' => $this->service->refreshMetadata($this->intIds($request->input('ids') ?? [])),
+                'comprobar-servidor' => $id > 0
+                    ? $this->service->markIfOnServer($id)
+                    : $this->service->reconcileOnServer($this->intIds($request->input('ids') ?? [])),
                 'add', 'anadir' => $this->service->addManual(
                     (string) ($request->input('url') ?? ''),
                     (string) ($request->input('titulo') ?? $request->input('nombrepeticion') ?? ''),

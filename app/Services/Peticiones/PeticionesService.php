@@ -18,12 +18,18 @@ final class PeticionesService
         private PeticionesRepository $repo = new PeticionesRepository(),
         private ?TelegramChannel $telegram = null,
         private ?TmdbPeticionLookup $tmdb = null,
+        private ?MediaCatalogSearchService $catalog = null,
     ) {
     }
 
     private function tmdb(): TmdbPeticionLookup
     {
         return $this->tmdb ??= new TmdbPeticionLookup();
+    }
+
+    private function catalog(): MediaCatalogSearchService
+    {
+        return $this->catalog ??= new MediaCatalogSearchService();
     }
 
     private function telegram(): TelegramChannel
@@ -69,6 +75,82 @@ final class PeticionesService
         $this->notifyUser($row, 'Contenido disponible', $mensaje);
 
         return ['ok' => true, 'message' => 'Marcada como subida'];
+    }
+
+    /**
+     * Si el título ya está en Plex/Jellyfin, lo marca como subido (sale de denegadas).
+     *
+     * @return array{ok: bool, found: bool, message: string, id?: int, server?: string}
+     */
+    public function markIfOnServer(int $id, bool $notify = true): array
+    {
+        $row = $this->repo->find($id);
+        if ($row === null) {
+            return ['ok' => false, 'found' => false, 'message' => 'Petición no encontrada'];
+        }
+        if ((string) ($row['subido'] ?? '0') === '1') {
+            return ['ok' => true, 'found' => true, 'message' => 'Ya estaba marcada como subida', 'id' => $id];
+        }
+
+        $tenantId = (int) (Session::getInstance()->get('tenant_id') ?? 1);
+        $hit = $this->catalog()->findTitle($tenantId, (string) ($row['nombrepeticion'] ?? ''));
+        if ($hit === null) {
+            return ['ok' => true, 'found' => false, 'message' => 'No está en el catálogo', 'id' => $id];
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $this->repo->markUploaded($id, $now);
+
+        if ($notify) {
+            $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
+            $mensaje = "Su petición de {$corto} ha sido añadida al catálogo. Disfrute del contenido.";
+            $this->notifyUser($row, 'Contenido disponible', $mensaje);
+        }
+
+        $server = trim($hit['server']);
+        $foundTitle = trim($hit['title']);
+
+        return [
+            'ok' => true,
+            'found' => true,
+            'message' => $server !== ''
+                ? "Ya está en {$server}: {$foundTitle}"
+                : "Ya está en el servidor: {$foundTitle}",
+            'id' => $id,
+            'server' => $server,
+        ];
+    }
+
+    /**
+     * Comprueba denegadas (u otros ids) contra el catálogo.
+     *
+     * @param list<int|string> $ids
+     * @return array{ok: bool, message: string, updated: int, checked: int}
+     */
+    public function reconcileOnServer(array $ids): array
+    {
+        $updated = 0;
+        $checked = 0;
+        foreach ($ids as $rawId) {
+            $id = (int) $rawId;
+            if ($id <= 0) {
+                continue;
+            }
+            $checked++;
+            $result = $this->markIfOnServer($id, true);
+            if (!empty($result['ok']) && !empty($result['found']) && ($result['message'] ?? '') !== 'Ya estaba marcada como subida') {
+                $updated++;
+            }
+        }
+
+        return [
+            'ok' => true,
+            'updated' => $updated,
+            'checked' => $checked,
+            'message' => $updated > 0
+                ? "Encontradas en el servidor y marcadas como subidas: {$updated}"
+                : ($checked > 0 ? 'Ninguna de estas denegadas está ahora en el catálogo' : 'Nada que comprobar'),
+        ];
     }
 
     /**
