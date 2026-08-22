@@ -1,16 +1,24 @@
 ---
-description: Commit y push automático a GitHub tras cada cambio en el proyecto
+description: Sincronizar con GitHub al empezar, commit y push al terminar
 alwaysApply: true
 ---
 
-# Git: commit y push automático
+# Git: sync al empezar, push al terminar
 
-Tras completar cambios de código en este repositorio:
+Este repo se programa también desde otro sitio. Nunca se trabaja a la vez.
 
-1. Haz **commit** con mensaje claro en español (qué y por qué).
-2. Haz **push** a `origin main` inmediatamente después.
-3. No esperes a que el usuario lo pida.
-4. No commitear `.env`, credenciales ni `plex_manager.sql`.
-5. Informa al usuario el hash del commit y confirma que el push a GitHub fue correcto.
+## Al empezar a hablar (antes de cualquier cambio)
+
+1. `git fetch origin`
+2. Si `origin/main` tiene commits nuevos: `git pull --ff-only`
+3. No editar hasta tener el árbol limpio y al día con `origin/main`
+4. Si el pull no es fast-forward, parar e informar. No rebase ni force.
+
+## Al terminar el trabajo
+
+1. Commit con mensaje claro en español (qué y por qué). No esperar a que lo pidan.
+2. Push inmediato a `origin main`.
+3. No commitear `.env`, credenciales ni `plex_manager.sql`.
+4. Informar hash del commit y confirmar que el push a GitHub fue correcto.
 
 Repositorio: https://github.com/guchumu/multipanel
