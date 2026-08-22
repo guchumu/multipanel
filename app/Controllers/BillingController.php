@@ -29,13 +29,9 @@ class BillingController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
 
-        // Sustituye seeds viejos (4.99…) por los precios de Configuración → Facturación.
+        // Misma fuente que Configuración → Facturación (portal, reenganche, ficha).
         $this->billingSettings->syncSubscriptionPlansFromPresets($tenantId);
-
-        $plans = Database::getInstance()->fetchAll(
-            'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order, price',
-            [$tenantId]
-        );
+        $renewalPresets = $this->billingSettings->getRenewalPresets($tenantId);
 
         $subscriptions = Database::getInstance()->fetchAll(
             "SELECT s.*, c.email as customer_email, c.first_name, c.last_name, p.name as plan_name
@@ -55,7 +51,7 @@ class BillingController extends Controller
 
         return $this->view('billing.index', [
             'title' => 'Facturación',
-            'plans' => $plans,
+            'renewalPresets' => $renewalPresets,
             'subscriptions' => $subscriptions,
             'stats' => $stats,
         ]);
@@ -63,17 +59,9 @@ class BillingController extends Controller
 
     public function createPlan(Request $request): Response
     {
-        $data = $this->validate($request, [
-            'name' => 'required|max:100',
-            'price' => 'required|numeric',
-            'interval' => 'required|in:daily,weekly,monthly,quarterly,yearly,lifetime',
-        ]);
-
-        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $this->billing->createPlan($tenantId, $data);
-
-        Session::getInstance()->flash('success', 'Plan creado.');
-        return $this->redirect('/billing');
+        // Los planes legacy no se usan; los precios se editan en Configuración → Facturación.
+        Session::getInstance()->flash('info', 'Los precios se editan en Configuración → Facturación.');
+        return $this->redirect('/settings#billing');
     }
 
     public function markPaid(Request $request, int $id): Response
