@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Services\Peticiones\PeticionText;
 use App\Services\Peticiones\PeticionesDatabase;
 
 /**
@@ -73,21 +74,25 @@ class PeticionesRepository
             default => "subido = '0'",
         };
 
-        return $this->db()->fetchAll(
+        $rows = $this->db()->fetchAll(
             "SELECT * FROM peticiones WHERE {$where} ORDER BY id DESC LIMIT {$limit} OFFSET {$offset}"
         );
+
+        return $this->normalizeRows($rows, true);
     }
 
     public function find(int $id): ?array
     {
-        return $this->db()->fetchOne('SELECT * FROM peticiones WHERE id = ? LIMIT 1', [$id]);
+        $row = $this->db()->fetchOne('SELECT * FROM peticiones WHERE id = ? LIMIT 1', [$id]);
+
+        return $row !== null ? $this->normalizeRow($row, true) : null;
     }
 
     public function updateTitle(int $id, string $title): void
     {
         $this->db()->query(
             'UPDATE peticiones SET nombrepeticion = ? WHERE id = ?',
-            [$title, $id]
+            [PeticionText::repair($title), $id]
         );
     }
 
@@ -139,7 +144,7 @@ class PeticionesRepository
              VALUES (?, ?, ?, '0', '0', '1', ?)",
             [
                 $data['url'],
-                $data['nombrepeticion'],
+                PeticionText::repair((string) $data['nombrepeticion']),
                 $data['img'],
                 $now,
             ]
@@ -281,8 +286,42 @@ class PeticionesRepository
 
         return [
             'ok' => true,
-            'items' => $items,
+            'items' => $this->normalizeRows($items, false),
             'linked_by' => $linkedBy,
         ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeRows(array $rows, bool $persist): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->normalizeRow($row, $persist);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function normalizeRow(array $row, bool $persist): array
+    {
+        $raw = (string) ($row['nombrepeticion'] ?? '');
+        $fixed = PeticionText::repair($raw);
+        $row['nombrepeticion'] = $fixed;
+        $id = (int) ($row['id'] ?? 0);
+        if ($persist && $id > 0 && $fixed !== $raw) {
+            try {
+                $this->updateTitle($id, $fixed);
+            } catch (\Throwable) {
+            }
+        }
+
+        return $row;
     }
 }

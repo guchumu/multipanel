@@ -115,7 +115,7 @@ final class PeticionesService
      */
     public function rename(int $id, string $title): array
     {
-        $title = trim($title);
+        $title = PeticionText::repair(trim($title));
         if ($title === '') {
             return ['ok' => false, 'message' => 'Título vacío'];
         }
@@ -136,7 +136,7 @@ final class PeticionesService
     public function addManual(string $url, string $title, string $img = '', ?string $idusuario = null, ?string $username = null): array
     {
         $url = trim($url);
-        $title = trim($title);
+        $title = PeticionText::repair(trim($title));
         $img = trim($img);
 
         if ($url === '' || $title === '') {

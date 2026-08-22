@@ -24,10 +24,24 @@ final class TmdbPeticionLookup
     }
 
     /**
+     * Título limpio para TMDb: tildes, entidades HTML, sin año ni «en español».
+     */
+    public static function searchQuery(string $title): string
+    {
+        $title = PeticionText::repair($title);
+        $title = self::shortTitle($title);
+        $title = preg_replace('/\s+en\s+espa[ñn]ol\s*$/iu', '', $title) ?? $title;
+        $title = preg_replace('/\s+en\s+castellano\s*$/iu', '', $title) ?? $title;
+
+        return trim($title);
+    }
+
+    /**
      * Título sin el año entre paréntesis (mejor hit en TMDb).
      */
     public static function shortTitle(string $title): string
     {
+        $title = PeticionText::repair($title);
         $parts = explode('(', $title, 2);
 
         return trim($parts[0]);
@@ -101,7 +115,7 @@ final class TmdbPeticionLookup
     {
         $title = trim($title);
         $apiKey = trim($apiKey);
-        $query = self::shortTitle($title);
+        $query = self::searchQuery($title);
 
         if ($apiKey === '') {
             return self::emptyResult($title, 'Sin clave TMDb.');
@@ -138,7 +152,7 @@ final class TmdbPeticionLookup
             return null;
         }
 
-        $query = self::shortTitle($title);
+        $query = self::searchQuery($title);
         $apiKey = trim($apiKey);
         if ($query === '' || $apiKey === '') {
             return null;
