@@ -42,7 +42,7 @@ Avisos Telegram al aceptar / denegar / subir usando `idusuario` como chat id (mi
 
 Si hay clave TMDb, el listado busca el título (`search/multi`, idioma `es-ES`) y:
 
-- Usa el póster de TMDb (`image.tmdb.org/t/p/w500`) cuando el campo `img` de la BD está vacío, es un placeholder o no es una URL http(s).
+- Si la petición tiene un enlace IMDb (`tt1234567`), TMDb usa `/find` con ese ID (carátula exacta). Si no, busca por título.
 - Muestra logos de proveedores de suscripción en España (`watch/providers` → `ES.flatrate`).
 - Guarda la carátula en `img` para no repetir la consulta.
 - Cachea cada título 12 horas. La primera visita carga las que faltan en segundo plano (sin bloquear la página). El botón **Actualizar carátulas** fuerza un recálculo de la página actual.

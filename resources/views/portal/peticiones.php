@@ -31,16 +31,16 @@ ob_start();
 <div class="card portal-card mb-4">
     <div class="card-body">
         <h2 class="portal-section-title">Nueva petición</h2>
-        <p class="small text-muted mb-3">Indica el título (y la URL si la tienes). Se asociará a tu usuario<?= !empty($portalUser->telegram_chat_id) ? ' y Telegram' : '' ?>.</p>
+        <p class="small text-muted mb-3">Indica el título o pega el enlace de IMDb. Se asociará a tu usuario<?= !empty($portalUser->telegram_chat_id) ? ' y Telegram' : '' ?>.</p>
         <form method="POST" action="/portal/peticiones">
             <?= csrf_field() ?>
             <div class="mb-3">
                 <label class="form-label" for="peticion-title">Título</label>
-                <input id="peticion-title" name="title" class="form-control" required maxlength="255" placeholder="Ej. Nombre de la película o serie">
+                <input id="peticion-title" name="title" class="form-control" maxlength="255" placeholder="Ej. Nombre de la película o serie">
             </div>
             <div class="mb-3">
-                <label class="form-label" for="peticion-url">URL <span class="text-muted">(opcional)</span></label>
-                <input id="peticion-url" name="url" type="url" class="form-control" placeholder="https://…">
+                <label class="form-label" for="peticion-url">URL <span class="text-muted">(IMDb u otra)</span></label>
+                <input id="peticion-url" name="url" type="url" class="form-control" placeholder="https://www.imdb.com/title/tt…">
             </div>
             <button class="btn btn-primary" type="submit">Enviar petición</button>
         </form>

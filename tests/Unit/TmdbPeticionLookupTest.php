@@ -113,4 +113,56 @@ final class TmdbPeticionLookupTest extends TestCase
         $this->assertSame('', $result['poster']);
         $this->assertSame('No se encontraron resultados.', $result['error'] ?? '');
     }
+
+    public function testImdbIdFromTypicalUrls(): void
+    {
+        $this->assertSame('tt0111161', TmdbPeticionLookup::imdbIdFromText('https://www.imdb.com/title/tt0111161/'));
+        $this->assertSame('tt0111161', TmdbPeticionLookup::imdbIdFromText('https://m.imdb.com/title/tt0111161/?ref_=nv'));
+        $this->assertSame('tt12345678', TmdbPeticionLookup::imdbIdFromText('tt12345678'));
+        $this->assertSame('', TmdbPeticionLookup::imdbIdFromText('https://www.filmaffinity.com/es/film123.html'));
+        $this->assertSame(
+            'https://www.imdb.com/title/tt0111161/',
+            TmdbPeticionLookup::imdbUrl('https://imdb.com/title/tt0111161/?ref=x')
+        );
+    }
+
+    public function testLookupUsesImdbFindForPoster(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'movie_results' => [[
+                    'id' => 278,
+                    'title' => 'Cadena perpetua',
+                    'poster_path' => '/xBKGJQsAIeweesB79KC89FpBrVr.jpg',
+                ]],
+                'tv_results' => [],
+            ], JSON_THROW_ON_ERROR)),
+            new Response(200, [], json_encode([
+                'results' => [
+                    'ES' => [
+                        'flatrate' => [
+                            ['provider_name' => 'Netflix', 'logo_path' => '/netflix.png'],
+                        ],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)),
+        ]);
+        $client = new Client(['handler' => HandlerStack::create($mock), 'http_errors' => false]);
+        $lookup = new TmdbPeticionLookup($client, false);
+
+        $result = $lookup->lookup(
+            'lo que sea',
+            'test-key',
+            false,
+            'https://www.imdb.com/title/tt0111161/'
+        );
+
+        $this->assertArrayNotHasKey('error', $result);
+        $this->assertSame('Cadena perpetua', $result['titulo']);
+        $this->assertSame(
+            'https://image.tmdb.org/t/p/w500/xBKGJQsAIeweesB79KC89FpBrVr.jpg',
+            $result['poster']
+        );
+        $this->assertSame('Netflix', $result['plataformas'][0]['nombre'] ?? '');
+    }
 }

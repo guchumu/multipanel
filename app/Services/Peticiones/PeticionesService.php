@@ -221,14 +221,27 @@ final class PeticionesService
         $title = PeticionText::repair(trim($title));
         $img = trim($img);
 
-        if ($url === '' || $title === '') {
-            return ['ok' => false, 'message' => 'URL y título son obligatorios'];
+        $imdbId = TmdbPeticionLookup::imdbIdFromText($url . ' ' . $title);
+        if ($url === '' && $imdbId !== '') {
+            $url = TmdbPeticionLookup::imdbUrl($imdbId);
+        }
+        if ($title === '' && $imdbId !== '') {
+            $title = $imdbId;
         }
 
-        if (TmdbPeticionLookup::isWeakPoster($img)) {
-            $lookup = $this->tmdbLookup($title);
-            if ($lookup['poster'] !== '') {
+        if ($url === '' || $title === '') {
+            return ['ok' => false, 'message' => 'URL y título son obligatorios (o un enlace IMDb)'];
+        }
+
+        $lookup = ['poster' => '', 'titulo' => ''];
+        if (TmdbPeticionLookup::isWeakPoster($img) || $imdbId !== '') {
+            $lookup = $this->tmdbLookup($title, false, $url);
+            if (TmdbPeticionLookup::isWeakPoster($img) && $lookup['poster'] !== '') {
                 $img = $lookup['poster'];
+            }
+            $tmdbTitle = PeticionText::repair(trim((string) ($lookup['titulo'] ?? '')));
+            if ($tmdbTitle !== '' && $imdbId !== '' && (TmdbPeticionLookup::imdbIdFromText($title) !== '' || $title === $imdbId)) {
+                $title = $tmdbTitle;
             }
         }
         if (TmdbPeticionLookup::isWeakPoster($img)) {
@@ -265,11 +278,12 @@ final class PeticionesService
         foreach ($items as $i => $row) {
             $id = (int) ($row['id'] ?? 0);
             $title = (string) ($row['nombrepeticion'] ?? '');
+            $url = (string) ($row['url'] ?? '');
             if ($id <= 0 || $apiKey === '') {
                 continue;
             }
 
-            $cached = $this->tmdb()->cached($title, $apiKey);
+            $cached = $this->tmdb()->cached($title, $apiKey, $url);
             if ($cached === null) {
                 $needsTmdbIds[] = $id;
                 continue;
@@ -317,7 +331,7 @@ final class PeticionesService
         }
 
         $title = (string) ($row['nombrepeticion'] ?? '');
-        $lookup = $this->tmdb()->lookup($title, $apiKey, $force);
+        $lookup = $this->tmdb()->lookup($title, $apiKey, $force, (string) ($row['url'] ?? ''));
         $poster = (string) ($lookup['poster'] ?? '');
         $plataformas = $lookup['plataformas'] ?? [];
 
@@ -384,9 +398,9 @@ final class PeticionesService
     /**
      * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
      */
-    public function tmdbLookup(string $title, bool $force = false): array
+    public function tmdbLookup(string $title, bool $force = false, string $url = ''): array
     {
-        return $this->tmdb()->lookup($title, $this->tmdbApiKey(), $force);
+        return $this->tmdb()->lookup($title, $this->tmdbApiKey(), $force, $url);
     }
 
     private function tmdbApiKey(): string

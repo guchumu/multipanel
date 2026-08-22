@@ -9,6 +9,7 @@ use App\Services\BillingSettingsService;
 use App\Services\PasswordService;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesService;
+use App\Services\Peticiones\TmdbPeticionLookup;
 use App\Services\PortalAuthService;
 use App\Services\PortalDefaultPasswordService;
 use App\Services\PortalMessagingLinkService;
@@ -387,10 +388,15 @@ class PortalController extends Controller
 
         $title = trim((string) $request->input('title', ''));
         $url = trim((string) $request->input('url', ''));
+        $imdbId = TmdbPeticionLookup::imdbIdFromText($url . ' ' . $title);
 
-        if ($title === '') {
-            Session::getInstance()->flash('error', 'Indica un título para la petición.');
+        if ($title === '' && $imdbId === '') {
+            Session::getInstance()->flash('error', 'Indica un título o un enlace de IMDb.');
             return $this->redirect('/portal/peticiones');
+        }
+
+        if ($url === '' && $imdbId !== '') {
+            $url = TmdbPeticionLookup::imdbUrl($imdbId);
         }
 
         if ($url === '') {

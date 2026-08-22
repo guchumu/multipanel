@@ -104,6 +104,28 @@ final class TmdbPeticionLookup
     }
 
     /**
+     * Extrae tt1234567 de un enlace IMDb o de un texto que lo contenga.
+     */
+    public static function imdbIdFromText(string $text): string
+    {
+        if (preg_match('/tt\d{7,}/i', $text, $m) !== 1) {
+            return '';
+        }
+
+        return strtolower($m[0]);
+    }
+
+    public static function imdbUrl(string $imdbId): string
+    {
+        $imdbId = self::imdbIdFromText($imdbId);
+        if ($imdbId === '') {
+            return '';
+        }
+
+        return 'https://www.imdb.com/title/' . $imdbId . '/';
+    }
+
+    /**
      * @return array{
      *   titulo: string,
      *   poster: string,
@@ -111,20 +133,24 @@ final class TmdbPeticionLookup
      *   error?: string
      * }
      */
-    public function lookup(string $title, string $apiKey, bool $force = false): array
+    public function lookup(string $title, string $apiKey, bool $force = false, string $url = ''): array
     {
         $title = trim($title);
+        $url = trim($url);
         $apiKey = trim($apiKey);
+        $imdbId = self::imdbIdFromText($url . ' ' . $title);
         $query = self::searchQuery($title);
 
         if ($apiKey === '') {
             return self::emptyResult($title, 'Sin clave TMDb.');
         }
-        if ($query === '') {
+        if ($imdbId === '' && $query === '') {
             return self::emptyResult($title, 'Título vacío.');
         }
 
-        $cacheKey = $this->cacheKey($query, $apiKey);
+        $cacheKey = $imdbId !== ''
+            ? $this->cacheKeyImdb($imdbId, $apiKey)
+            : $this->cacheKey($query, $apiKey);
         if (!$force && $this->useCache) {
             $cached = Cache::get($cacheKey);
             if (is_array($cached) && array_key_exists('poster', $cached)) {
@@ -132,7 +158,16 @@ final class TmdbPeticionLookup
             }
         }
 
-        $result = $this->fetch($query, $title, $apiKey);
+        $result = $imdbId !== ''
+            ? $this->fetchByImdb($imdbId, $title !== '' ? $title : $imdbId, $apiKey)
+            : $this->fetch($query, $title, $apiKey);
+
+        if ($imdbId !== '' && isset($result['error'])) {
+            if ($query !== '') {
+                $result = $this->fetch($query, $title, $apiKey);
+            }
+        }
+
         if ($this->useCache) {
             $ttl = isset($result['error']) ? 3600 : self::CACHE_TTL;
             Cache::set($cacheKey, $result, $ttl);
@@ -146,19 +181,23 @@ final class TmdbPeticionLookup
      *
      * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}|null
      */
-    public function cached(string $title, string $apiKey): ?array
+    public function cached(string $title, string $apiKey, string $url = ''): ?array
     {
         if (!$this->useCache) {
             return null;
         }
 
-        $query = self::searchQuery($title);
         $apiKey = trim($apiKey);
-        if ($query === '' || $apiKey === '') {
+        $imdbId = self::imdbIdFromText($url . ' ' . $title);
+        $query = self::searchQuery($title);
+        if ($apiKey === '' || ($imdbId === '' && $query === '')) {
             return null;
         }
 
-        $cached = Cache::get($this->cacheKey($query, $apiKey));
+        $cacheKey = $imdbId !== ''
+            ? $this->cacheKeyImdb($imdbId, $apiKey)
+            : $this->cacheKey($query, $apiKey);
+        $cached = Cache::get($cacheKey);
 
         return is_array($cached) && array_key_exists('poster', $cached) ? $cached : null;
     }
@@ -201,14 +240,72 @@ final class TmdbPeticionLookup
                 return self::emptyResult($originalTitle, 'No se encontraron resultados.');
             }
 
-            $id = (int) ($hit['id'] ?? 0);
             $mediaType = (string) ($hit['media_type'] ?? '');
-            $displayTitle = trim((string) ($hit['title'] ?? $hit['name'] ?? $originalTitle));
-            $poster = self::posterUrl(isset($hit['poster_path']) ? (string) $hit['poster_path'] : null);
 
-            $plataformas = [];
-            if ($id > 0) {
-                $providers = $client->get(
+            return $this->detailsFromHit($hit, $mediaType, $originalTitle, $apiKey);
+        } catch (\Throwable $e) {
+            Logger::warning('TMDb streaming lookup failed: ' . $e->getMessage());
+
+            return self::emptyResult($originalTitle, 'Error al consultar TMDb.');
+        }
+    }
+
+    /**
+     * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
+     */
+    private function fetchByImdb(string $imdbId, string $originalTitle, string $apiKey): array
+    {
+        try {
+            $client = $this->client();
+            $find = $client->get('https://api.themoviedb.org/3/find/' . rawurlencode($imdbId), [
+                'query' => [
+                    'api_key' => $apiKey,
+                    'external_source' => 'imdb_id',
+                    'language' => 'es-ES',
+                ],
+            ]);
+            $data = json_decode((string) $find->getBody(), true);
+            if (!is_array($data)) {
+                return self::emptyResult($originalTitle, 'No se encontraron resultados.');
+            }
+
+            $movies = $data['movie_results'] ?? [];
+            $shows = $data['tv_results'] ?? [];
+            if (is_array($movies) && $movies !== [] && is_array($movies[0])) {
+                $hit = $movies[0];
+                $hit['media_type'] = 'movie';
+
+                return $this->detailsFromHit($hit, 'movie', $originalTitle, $apiKey);
+            }
+            if (is_array($shows) && $shows !== [] && is_array($shows[0])) {
+                $hit = $shows[0];
+                $hit['media_type'] = 'tv';
+
+                return $this->detailsFromHit($hit, 'tv', $originalTitle, $apiKey);
+            }
+
+            return self::emptyResult($originalTitle, 'No se encontraron resultados.');
+        } catch (\Throwable $e) {
+            Logger::warning('TMDb IMDb find failed: ' . $e->getMessage());
+
+            return self::emptyResult($originalTitle, 'Error al consultar TMDb.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $hit
+     * @return array{titulo: string, poster: string, plataformas: list<array{nombre: string, logo: string}>, error?: string}
+     */
+    private function detailsFromHit(array $hit, string $mediaType, string $originalTitle, string $apiKey): array
+    {
+        $id = (int) ($hit['id'] ?? 0);
+        $displayTitle = trim((string) ($hit['title'] ?? $hit['name'] ?? $originalTitle));
+        $poster = self::posterUrl(isset($hit['poster_path']) ? (string) $hit['poster_path'] : null);
+        $plataformas = [];
+
+        if ($id > 0 && ($mediaType === 'movie' || $mediaType === 'tv')) {
+            try {
+                $providers = $this->client()->get(
                     "https://api.themoviedb.org/3/{$mediaType}/{$id}/watch/providers",
                     ['query' => ['api_key' => $apiKey]]
                 );
@@ -230,18 +327,16 @@ final class TmdbPeticionLookup
                         ];
                     }
                 }
+            } catch (\Throwable $e) {
+                Logger::debug('TMDb providers failed: ' . $e->getMessage());
             }
-
-            return [
-                'titulo' => $displayTitle !== '' ? $displayTitle : $originalTitle,
-                'poster' => $poster,
-                'plataformas' => $plataformas,
-            ];
-        } catch (\Throwable $e) {
-            Logger::warning('TMDb streaming lookup failed: ' . $e->getMessage());
-
-            return self::emptyResult($originalTitle, 'Error al consultar TMDb.');
         }
+
+        return [
+            'titulo' => $displayTitle !== '' ? $displayTitle : $originalTitle,
+            'poster' => $poster,
+            'plataformas' => $plataformas,
+        ];
     }
 
     /**
@@ -271,6 +366,11 @@ final class TmdbPeticionLookup
     private function cacheKey(string $query, string $apiKey): string
     {
         return 'tmdb:peticion:' . md5(mb_strtolower($query) . '|' . substr($apiKey, 0, 8));
+    }
+
+    private function cacheKeyImdb(string $imdbId, string $apiKey): string
+    {
+        return 'tmdb:imdb:' . md5(strtolower($imdbId) . '|' . substr($apiKey, 0, 8));
     }
 
     /**

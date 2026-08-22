@@ -208,11 +208,11 @@ if ($hasMore):
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">URL</label>
-                    <input type="url" name="url" class="form-control" required placeholder="https://…">
+                    <input type="url" name="url" class="form-control" required placeholder="https://www.imdb.com/title/tt…">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Título</label>
-                    <input type="text" name="titulo" class="form-control" required>
+                    <input type="text" name="titulo" class="form-control" placeholder="Opcional si pegas un enlace IMDb">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Imagen (URL poster)</label>
@@ -228,7 +228,7 @@ if ($hasMore):
                         <input type="text" name="username" class="form-control" placeholder="Opcional">
                     </div>
                 </div>
-                <p class="small text-muted mt-2 mb-0">Sin ScraperAPI: introduce título e imagen a mano. El scrape automático se puede activar más adelante.</p>
+                <p class="small text-muted mt-2 mb-0">Si pegas un enlace de IMDb, se toma la carátula (y el título si lo dejas vacío) desde TMDb.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
