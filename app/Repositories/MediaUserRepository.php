@@ -45,7 +45,7 @@ class MediaUserRepository
     ): array {
         $offset = ($page - 1) * $perPage;
         $params = [$tenantId];
-        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type
                 FROM `media_users` mu
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
@@ -188,7 +188,7 @@ class MediaUserRepository
         $matchSql .= '
                   )';
 
-        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type
                 FROM `media_users` mu
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
@@ -375,7 +375,7 @@ class MediaUserRepository
     public function findExpiringSoon(int $tenantId, int $days = 30, ?int $serverId = null, bool $includeExpired = true): array
     {
         $params = [$tenantId];
-        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid,
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type,
                        DATEDIFF(mu.expires_at, CURDATE()) AS days_left
                 FROM `media_users` mu
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
@@ -644,7 +644,7 @@ class MediaUserRepository
         ?int $afterId = null,
     ): ?MediaUser {
         $params = [$tenantId];
-        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type
                 FROM `media_users` mu
                 LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
                 WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';

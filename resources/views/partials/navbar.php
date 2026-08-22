@@ -2,7 +2,7 @@
     <button class="btn btn-outline-secondary d-lg-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas" aria-controls="sidebarOffcanvas" aria-label="Menú">
         <i class="bi bi-list fs-5"></i>
     </button>
-    <button class="btn btn-outline-secondary d-none d-lg-inline-flex me-2" type="button" id="sidebarToggle" title="Ocultar menú lateral" aria-pressed="false" aria-label="Ocultar o mostrar menú lateral">
+    <button class="btn btn-outline-secondary d-none d-lg-inline-flex me-2" type="button" id="sidebarToggle" title="Contraer menú a iconos" aria-pressed="false" aria-label="Contraer o ampliar menú lateral">
         <i class="bi bi-layout-sidebar"></i>
     </button>
     <a class="navbar-brand d-lg-none text-truncate" href="/dashboard" style="max-width: 40vw;">

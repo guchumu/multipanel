@@ -18,7 +18,7 @@ $phpPostMax = $phpPostMax ?? (string) ini_get('post_max_size');
     <code>servicio</code> / <code>service</code> <strong>1</strong> (Server10) o <strong>5</strong> (NucBox).
     El resto de códigos de servicio se ignora. Si la fila no trae esa columna, se infiere por
     <code>payments_history.service</code> o por el nombre del servidor legacy (Server10/Nucbox).
-    Flujo limpio: <a href="/media-users/limpieza">Usuarios → Limpieza / reinicio</a>
+    Flujo limpio: <a href="/media-users/limpieza">Ajustes → Limpieza / reinicio</a>
     (borrar todos → sync → importar fechas).
 </div>
 

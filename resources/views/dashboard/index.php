@@ -154,7 +154,7 @@ $nextMonthCount = (int) ($renewalOutlook['next_month']['caducidades'] ?? 0);
 </div>
 
 <div class="modal fade" id="liveActivityModal" tabindex="-1" aria-labelledby="liveActivityModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <div>
@@ -211,12 +211,12 @@ $nextMonthCount = (int) ($renewalOutlook['next_month']['caducidades'] ?? 0);
                 </div>
 
                 <h6 class="mb-2">Reproducciones actuales</h6>
-                <div id="live-modal-sessions" class="list-group list-group-flush border rounded">
-                    <div class="list-group-item text-muted text-center py-3">Cargando…</div>
+                <div id="live-modal-sessions" class="live-modal-sessions">
+                    <div class="text-muted text-center py-3">Cargando…</div>
                 </div>
             </div>
             <div class="modal-footer justify-content-between">
-                <small class="text-muted">Datos del snapshot en vivo (mismo que En directo)</small>
+                <small class="text-muted">Mismas tarjetas que En directo</small>
                 <a href="/activity" class="btn btn-primary btn-sm">
                     <i class="bi bi-broadcast-pin me-1"></i>Ir a En directo
                 </a>
@@ -358,8 +358,23 @@ $usersChartData = json_encode([
     (int) $stats['users_expired'],
 ]);
 
+$stopMessages = $stopMessages ?? [];
+$stopMessagesJson = json_encode(
+    array_map(static fn (array $m): array => [
+        'id' => (int) $m['id'],
+        'title' => (string) $m['title'],
+        'body' => (string) $m['body'],
+        'is_default' => (int) $m['is_default'],
+    ], $stopMessages),
+    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+if ($stopMessagesJson === false) {
+    $stopMessagesJson = '[]';
+}
+
 $scripts = <<<JS
 <script>
+window.MP_STOP_MESSAGES = {$stopMessagesJson};
 document.addEventListener('DOMContentLoaded', function() {
     try {
         const ctx = document.getElementById('usersChart');
@@ -410,8 +425,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Tarjeta / modal de actividad en directo (reutiliza /activity/api + summary)
     (function initLiveActivityCard() {
-        const playLabels = { direct_play: 'Direct Play', direct_stream: 'Direct Stream', transcode: 'Transcode' };
-        const playBadges = { direct_play: 'success', direct_stream: 'info', transcode: 'warning' };
         const REFRESH_MS = 20000;
         let timer = null;
         let lastPayload = null;
@@ -461,34 +474,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const list = document.getElementById('live-modal-sessions');
             if (list) {
                 const rows = Array.isArray(sessions) ? sessions : [];
-                if (rows.length === 0) {
-                    list.innerHTML = '<div class="list-group-item text-muted text-center py-3">No hay reproducciones activas</div>';
+                const cards = window.MPSessionCards;
+                if (cards && typeof cards.sessionsGridHtml === 'function') {
+                    list.innerHTML = cards.sessionsGridHtml(rows, 'No hay reproducciones activas');
+                } else if (rows.length === 0) {
+                    list.innerHTML = '<div class="text-muted text-center py-3">No hay reproducciones activas</div>';
                 } else {
-                    list.innerHTML = rows.slice(0, 40).map(s => {
-                        const method = s.play_method || 'direct_play';
-                        const badge = playBadges[method] || 'secondary';
-                        const label = playLabels[method] || method;
-                        const title = s.title || 'Sin título';
-                        const sub = s.subtitle || '';
-                        const user = s.user || '—';
-                        const server = s.server_name || '—';
-                        const thumb = s.thumb_url
-                            ? `<img src="\${esc(s.thumb_url)}" alt="" class="rounded me-2" width="40" height="60" style="object-fit:cover" loading="lazy">`
-                            : `<div class="bg-secondary bg-opacity-25 rounded me-2 d-inline-flex align-items-center justify-content-center" style="width:40px;height:60px"><i class="bi bi-film text-muted"></i></div>`;
-                        return `
-                            <div class="list-group-item d-flex align-items-start gap-2 py-2">
-                                \${thumb}
-                                <div class="flex-grow-1 min-w-0">
-                                    <div class="fw-medium text-truncate">\${esc(title)}</div>
-                                    \${sub ? `<div class="small text-muted text-truncate">\${esc(sub)}</div>` : ''}
-                                    <div class="small text-muted text-truncate">
-                                        \${esc(user)} · \${esc(server)}
-                                        <span class="badge bg-\${badge} ms-1">\${esc(label)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
+                    list.innerHTML = '<div class="text-muted text-center py-3">' + rows.length + ' reproducciones</div>';
                 }
             }
 
@@ -520,6 +512,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         refresh();
         timer = setInterval(refresh, REFRESH_MS);
+        window.MP_REFRESH_SESSIONS = refresh;
 
         const modal = document.getElementById('liveActivityModal');
         if (modal) {

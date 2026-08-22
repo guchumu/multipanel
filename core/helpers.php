@@ -274,3 +274,18 @@ if (!function_exists('can')) {
         return (new \App\Services\PermissionService())->can($user, $permission);
     }
 }
+
+if (!function_exists('media_service_badge')) {
+    function media_service_badge(?string $type): string
+    {
+        $type = strtolower(trim((string) $type));
+        if ($type === 'plex') {
+            return '<span class="badge badge-service-plex">Plex</span>';
+        }
+        if ($type === 'jellyfin') {
+            return '<span class="badge badge-service-jellyfin">Jellyfin</span>';
+        }
+
+        return '';
+    }
+}

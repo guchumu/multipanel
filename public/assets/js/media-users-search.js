@@ -19,6 +19,13 @@
             .replaceAll('"', '&quot;');
     }
 
+    function serviceBadgeHtml(type) {
+        const t = String(type || '').toLowerCase();
+        if (t === 'plex') return '<span class="badge badge-service-plex">Plex</span>';
+        if (t === 'jellyfin') return '<span class="badge badge-service-jellyfin">Jellyfin</span>';
+        return '';
+    }
+
     function normalizeTelegram(value) {
         const tg = String(value ?? '').trim();
         if (!tg || tg.toLowerCase() === 'null') return '';
@@ -92,8 +99,8 @@
         tbody.innerHTML = users.map((u) => {
             const active = u.status === 'active';
             const serverBadge = u.server_name
-                ? `<span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
-                : '<span class="text-muted">—</span>';
+                ? `${serviceBadgeHtml(u.server_type)} <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
+                : (serviceBadgeHtml(u.server_type) || '<span class="text-muted">—</span>');
             const actionBtn = active
                 ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')" title="Pausar"><i class="bi bi-pause"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')" title="Activar"><i class="bi bi-play"></i></button>`;

@@ -139,7 +139,6 @@ ob_start();
         <a href="/media-users/revisar?filter_empty=expires,telegram" class="btn btn-outline-primary btn-sm" title="Revisar uno a uno usuarios sin fecha/Telegram">
             <i class="bi bi-list-check me-1"></i><span class="d-none d-lg-inline">Revisar</span>
         </a>
-        <a href="/media-users/limpieza" class="btn btn-outline-danger btn-sm"><i class="bi bi-recycle me-1"></i><span class="d-none d-lg-inline">Limpieza</span></a>
         <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
         <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
         <a href="/media-users/broadcast" class="btn btn-outline-info btn-sm"><i class="bi bi-megaphone me-1"></i><span class="d-none d-lg-inline">Mensaje masivo</span></a>
@@ -311,9 +310,10 @@ ob_start();
                     </td>
                     <td class="small d-none d-md-table-cell text-truncate media-users-email"><?= e($u->email ?? '-') ?></td>
                     <td class="small d-none d-xl-table-cell">
+                        <?= media_service_badge($u->server_type ?? null) ?>
                         <?php if ($u->server_name): ?>
                         <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge"><?= e($u->server_name) ?></span>
-                        <?php else: ?>
+                        <?php elseif (!($u->server_type ?? null)): ?>
                         <span class="text-muted">—</span>
                         <?php endif; ?>
                     </td>

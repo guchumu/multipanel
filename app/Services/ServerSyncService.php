@@ -10,6 +10,7 @@ use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
 use App\Services\Media\ServerEndpoint;
+use App\Services\Media\SessionClientIp;
 use Core\Cache;
 use Core\Database;
 use Core\Logger;
@@ -612,6 +613,7 @@ final class ServerSyncService
     /** @param array<int, array<string, mixed>> $sessions */
     private function recordActiveSessions(Server $server, array $sessions): void
     {
+        $geo = new GeoIpService();
         $db = Database::getInstance();
         $now = now()->format('Y-m-d H:i:s');
         $activeKeys = [];
@@ -626,7 +628,7 @@ final class ServerSyncService
             $activeKeys[] = $sessionKey;
 
             $existing = $db->fetchOne(
-                'SELECT id FROM playback_sessions WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL LIMIT 1',
+                'SELECT id, country FROM playback_sessions WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL LIMIT 1',
                 [$server->id, $sessionKey]
             );
 
@@ -640,6 +642,12 @@ final class ServerSyncService
                 $mediaUserId = $mediaUser['id'] ?? null;
             }
 
+            $ip = SessionClientIp::normalize((string) ($session['client_ip'] ?? $session['public_ip'] ?? ''));
+            $country = null;
+            if ($existing === null || empty($existing['country'])) {
+                $country = $geo->countryCode($ip);
+            }
+
             $payload = [
                 'title' => $session['title'] ?? null,
                 'media_type' => $session['media_type'] ?? null,
@@ -647,6 +655,12 @@ final class ServerSyncService
                 'device' => $session['platform'] ?? null,
                 'quality' => $session['play_method'] ?? null,
             ];
+            if ($ip !== '') {
+                $payload['ip_address'] = $ip;
+            }
+            if ($country !== null) {
+                $payload['country'] = $country;
+            }
 
             if ($existing) {
                 $db->update('playback_sessions', $payload, 'id = ?', [$existing['id']]);

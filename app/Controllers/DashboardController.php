@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\AuthService;
 use App\Services\MediaUserBulkService;
 use App\Services\MonthlyRenewalEstimateService;
+use App\Services\PlaybackStopMessageService;
 use App\Services\ServerSyncService;
 use Core\Cache;
 use Core\Controller;
@@ -28,6 +29,7 @@ class DashboardController extends Controller
         private ServerSyncService $sync = new ServerSyncService(),
         private MediaUserBulkService $bulk = new MediaUserBulkService(),
         private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
+        private PlaybackStopMessageService $stopMessages = new PlaybackStopMessageService(),
     ) {
     }
 
@@ -74,6 +76,7 @@ class DashboardController extends Controller
             'defaultPlexServerId' => $plex?->id ? (int) $plex->id : null,
             'defaultJellyfinServerId' => $jelly?->id ? (int) $jelly->id : null,
             'renewalOutlook' => $renewalOutlook,
+            'stopMessages' => $this->stopMessages->listForTenant($tenantId),
         ]);
     }
 

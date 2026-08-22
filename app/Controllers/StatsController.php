@@ -30,24 +30,44 @@ class StatsController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $this->maybeRecordSnapshot($tenantId);
 
+        $period = $this->stats->resolvePeriod(
+            (string) $request->input('preset', '30d'),
+            $request->input('from'),
+            $request->input('to')
+        );
+        $mediaType = $this->stats->normalizeMediaType($request->input('type'));
+
+        $query = array_filter([
+            'preset' => $period['preset'] !== '30d' ? $period['preset'] : null,
+            'from' => $period['preset'] === 'custom' ? $period['from_date'] : null,
+            'to' => $period['preset'] === 'custom' ? $period['to_date'] : null,
+            'type' => $mediaType !== '' ? $mediaType : null,
+        ], static fn ($v) => $v !== null && $v !== '');
+
         return $this->view('stats.index', [
             'title' => 'Estadísticas',
             'stats' => $this->stats->getDashboardStats($tenantId),
-            'daily' => $this->stats->getDailyStreaming($tenantId),
-            'countries' => $this->stats->getTopCountries($tenantId),
-            'devices' => $this->stats->getTopDevices($tenantId),
-            'topContent' => $this->stats->getTopContent($tenantId),
-            'hourly' => $this->stats->getHourlyDistribution($tenantId),
+            'period' => $period,
+            'mediaType' => $mediaType,
+            'filterQuery' => $query,
+            'daily' => $this->stats->getDailyStreaming($tenantId, $period, $mediaType),
+            'countries' => $this->stats->getTopCountries($tenantId, $period, $mediaType),
+            'devices' => $this->stats->getTopDevices($tenantId, $period, $mediaType),
+            'topContent' => $this->stats->getTopContent($tenantId, $period, $mediaType),
+            'topUsers' => $this->stats->getTopUsers($tenantId, $period, $mediaType),
+            'hourly' => $this->stats->getHourlyDistribution($tenantId, $period, $mediaType),
+            'typeBreakdown' => $this->stats->getTypeBreakdown($tenantId, $period),
         ]);
     }
 
     public function api(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $period = $this->stats->resolvePeriod('7d');
 
         return $this->json([
             'stats' => $this->stats->getDashboardStats($tenantId),
-            'daily' => $this->stats->getDailyStreaming($tenantId, 7),
+            'daily' => $this->stats->getDailyStreaming($tenantId, $period),
             'timestamp' => now()->format('c'),
         ]);
     }
@@ -55,7 +75,13 @@ class StatsController extends Controller
     public function export(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $daily = $this->stats->getDailyStreaming($tenantId, 90);
+        $period = $this->stats->resolvePeriod(
+            (string) $request->input('preset', '30d'),
+            $request->input('from'),
+            $request->input('to')
+        );
+        $mediaType = $this->stats->normalizeMediaType($request->input('type'));
+        $daily = $this->stats->getDailyStreaming($tenantId, $period, $mediaType);
 
         $export = new ExportService();
         $path = $export->toCsv($daily, ['date', 'sessions', 'hours'], 'streaming_stats_' . date('Y-m-d') . '.csv');

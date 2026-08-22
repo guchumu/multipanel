@@ -35,7 +35,7 @@
         document.body.classList.toggle('sidebar-collapsed', !!collapsed);
         if (sidebarToggle) {
             sidebarToggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
-            sidebarToggle.title = collapsed ? 'Mostrar menú lateral' : 'Ocultar menú lateral';
+            sidebarToggle.title = collapsed ? 'Ampliar menú' : 'Contraer menú a iconos';
             const icon = sidebarToggle.querySelector('i');
             if (icon) {
                 icon.className = collapsed ? 'bi bi-layout-sidebar-inset' : 'bi bi-layout-sidebar';

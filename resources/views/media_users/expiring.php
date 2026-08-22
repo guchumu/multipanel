@@ -1,121 +1,45 @@
 <?php
-$cutoffTs = strtotime('-15 days');
-$proximos = [];
-$antiguos = [];
+$buckets = [
+    'expired' => [],
+    'd3' => [],
+    'd7' => [],
+    'd30' => [],
+];
 foreach ($users as $u) {
-    $expTs = $u->expires_at ? strtotime((string) $u->expires_at) : false;
-    if ($expTs !== false && $expTs < $cutoffTs) {
-        $antiguos[] = $u;
+    $days = isset($u->days_left) ? (int) $u->days_left : (int) (days_left($u->expires_at) ?? 0);
+    if ($days < 0) {
+        $buckets['expired'][] = $u;
+    } elseif ($days <= 3) {
+        $buckets['d3'][] = $u;
+    } elseif ($days <= 7) {
+        $buckets['d7'][] = $u;
     } else {
-        $proximos[] = $u;
+        $buckets['d30'][] = $u;
     }
 }
 
-$renderExpiringRows = static function (array $list): void {
-    if ($list === []) {
-        echo '<tr><td colspan="8" class="text-center text-muted py-4">Ningún usuario en esta sección</td></tr>';
-        return;
-    }
-    foreach ($list as $u) {
-        $dl = days_left_badge($u->expires_at);
-        ?>
-        <tr>
-            <td>
-                <input type="checkbox" class="form-check-input expiring-select"
-                       value="<?= e($u->uuid) ?>"
-                       data-has-telegram="<?= $u->telegram_chat_id ? '1' : '0' ?>"
-                       aria-label="Seleccionar <?= e($u->display_name ?? $u->username) ?>">
-            </td>
-            <td class="min-w-0">
-                <a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none text-truncate d-inline-block" style="max-width: 12rem;">
-                    <?= e($u->display_name ?? $u->username) ?>
-                </a>
-                <div class="small text-muted d-md-none text-truncate" style="max-width: 12rem;"><?= e($u->email ?? '-') ?></div>
-            </td>
-            <td class="small d-none d-md-table-cell text-truncate" style="max-width: 10rem;"><?= e($u->email ?? '-') ?></td>
-            <td class="small">
-                <?php if ($u->server_name): ?>
-                <span class="badge bg-light text-dark border text-truncate d-inline-block" style="max-width: 8rem;"><?= e($u->server_name) ?></span>
-                <?php else: ?>
-                <span class="text-muted">—</span>
-                <?php endif; ?>
-            </td>
-            <td class="d-none d-lg-table-cell">
-                <span class="badge <?= $u->status === 'active' ? 'bg-success' : ($u->status === 'suspended' ? 'bg-warning text-dark' : 'bg-secondary') ?>">
-                    <?= e($u->status) ?>
-                </span>
-            </td>
-            <td class="small text-nowrap"><?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '-') ?></td>
-            <td><span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span></td>
-            <td class="text-end">
-                <div class="btn-group btn-group-sm flex-wrap justify-content-end">
-                    <a href="/media-users/<?= e($u->uuid) ?>" class="btn btn-outline-primary" title="Ver ficha"><i class="bi bi-eye"></i></a>
-                    <a href="/media-users/<?= e($u->uuid) ?>#stripe" class="btn btn-outline-warning" title="Enlace de pago"><i class="bi bi-credit-card"></i></a>
-                    <button type="button" class="btn btn-outline-success btn-quick-renew" data-uuid="<?= e($u->uuid) ?>" data-days="30" title="Sumar 30 días">
-                        <i class="bi bi-calendar-plus"></i><span class="d-none d-xl-inline"> +30d</span>
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" title="Otras cantidades">
-                        <span class="visually-hidden">Otras cantidades</span>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <?php foreach ([7, 15, 30, 90, 365] as $opt): ?>
-                        <li><a class="dropdown-item btn-quick-renew" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= $opt ?>">+<?= $opt ?> días</a></li>
-                        <?php endforeach; ?>
-                    </ul>
-                    <?php if ($u->telegram_chat_id): ?>
-                    <span class="btn btn-outline-info disabled" title="Tiene Telegram"><i class="bi bi-telegram"></i></span>
-                    <?php endif; ?>
-                </div>
-            </td>
-        </tr>
-        <?php
-    }
-};
+$bucketMeta = [
+    'expired' => ['title' => 'Caducados', 'hint' => 'Ya vencidos', 'icon' => 'bi-exclamation-octagon', 'class' => 'urgency-card--expired'],
+    'd3' => ['title' => '3 días', 'hint' => 'Hoy a 3 días', 'icon' => 'bi-hourglass-split', 'class' => 'urgency-card--soon'],
+    'd7' => ['title' => '7 días', 'hint' => '4 a 7 días', 'icon' => 'bi-calendar-week', 'class' => 'urgency-card--week'],
+    'd30' => ['title' => '30 días', 'hint' => '8 a 30 días', 'icon' => 'bi-calendar3', 'class' => 'urgency-card--month'],
+];
 
-$renderExpiringSection = static function (string $id, string $title, string $hint, array $list, string $badgeClass) use ($renderExpiringRows): void {
-    ?>
-    <div class="card border-0 shadow-sm expiring-card mb-3" data-expiring-section="<?= e($id) ?>">
-        <div class="px-3 py-2 border-bottom bg-light small d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span>
-                <span class="badge <?= e($badgeClass) ?> me-1"><?= e($title) ?></span>
-                <strong><?= count($list) ?></strong>
-                <span class="text-muted">· <?= e($hint) ?></span>
-            </span>
-            <label class="mb-0 d-inline-flex align-items-center gap-1">
-                <input type="checkbox" class="form-check-input m-0 expiring-select-all" data-section="<?= e($id) ?>">
-                <span>Seleccionar sección</span>
-            </label>
-        </div>
-        <div class="table-responsive expiring-table-wrap">
-            <table class="table table-hover mb-0 align-middle expiring-table">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 2.5rem;"></th>
-                        <th>Usuario</th>
-                        <th class="d-none d-md-table-cell">Email</th>
-                        <th>Servidor</th>
-                        <th class="d-none d-lg-table-cell">Estado</th>
-                        <th>Vence</th>
-                        <th>Días</th>
-                        <th class="text-end">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php $renderExpiringRows($list); ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <?php
-};
+$activeBucket = 'expired';
+foreach (['expired', 'd3', 'd7', 'd30'] as $key) {
+    if ($buckets[$key] !== []) {
+        $activeBucket = $key;
+        break;
+    }
+}
 
 ob_start();
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div class="min-w-0">
         <a href="/media-users" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Usuarios</a>
-        <h4 class="mb-0 mt-1 text-truncate">Próximos vencimientos</h4>
-        <p class="text-muted small mb-0">Próximos (incluye caducados ≤15 días) y antiguos (&gt;15 días). Selección y mensaje Telegram por sección o combinado.</p>
+        <h4 class="mb-0 mt-1 text-truncate">Vencimientos</h4>
+        <p class="text-muted small mb-0">Por urgencia. Selecciona una tarjeta y actúa sobre esa lista.</p>
     </div>
     <a href="/media-users/broadcast" class="btn btn-outline-info btn-sm flex-shrink-0"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
 </div>
@@ -123,12 +47,6 @@ ob_start();
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
         <form method="GET" action="/media-users/expiring" class="d-flex flex-wrap gap-2 gap-md-3 align-items-center">
-            <div class="btn-group btn-group-sm flex-wrap">
-                <?php foreach ([3, 7, 15, 30, 60] as $opt): ?>
-                <a href="?days=<?= $opt ?><?= $currentServerId ? '&server_id=' . (int) $currentServerId : '' ?>"
-                   class="btn btn-outline-warning <?= $currentDays === $opt ? 'active' : '' ?>"><?= $opt ?>d</a>
-                <?php endforeach; ?>
-            </div>
             <label class="small text-muted mb-0">Servidor:</label>
             <select name="server_id" class="form-select form-select-sm" style="min-width: 140px; max-width: 220px;" onchange="this.form.submit()">
                 <option value="">Todos</option>
@@ -136,14 +54,33 @@ ob_start();
                 <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>><?= e($server->name) ?></option>
                 <?php endforeach; ?>
             </select>
-            <input type="hidden" name="days" value="<?= (int) $currentDays ?>">
+            <input type="hidden" name="days" value="30">
             <span class="small text-muted ms-md-auto">
-                Total filtro: <strong><?= count($users) ?></strong>
-                · Próximos <strong><?= count($proximos) ?></strong>
-                · Antiguos <strong><?= count($antiguos) ?></strong>
+                Total: <strong><?= count($users) ?></strong>
             </span>
         </form>
     </div>
+</div>
+
+<div class="row g-3 mb-3" id="urgencyCards">
+    <?php foreach ($bucketMeta as $id => $meta): ?>
+    <?php $count = count($buckets[$id]); ?>
+    <div class="col-6 col-lg-3">
+        <button type="button"
+                class="urgency-card <?= e($meta['class']) ?> <?= $activeBucket === $id ? 'is-active' : '' ?>"
+                data-bucket="<?= e($id) ?>"
+                <?= $count === 0 ? 'disabled' : '' ?>>
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <div class="urgency-card-title"><?= e($meta['title']) ?></div>
+                    <div class="urgency-card-hint"><?= e($meta['hint']) ?></div>
+                </div>
+                <i class="bi <?= e($meta['icon']) ?> opacity-75"></i>
+            </div>
+            <div class="urgency-card-count"><?= $count ?></div>
+        </button>
+    </div>
+    <?php endforeach; ?>
 </div>
 
 <div id="bulkMessageBar" class="card border-0 shadow-sm mb-3 d-none">
@@ -166,7 +103,7 @@ ob_start();
         </div>
         <form method="POST" action="/media-users/expiring/broadcast" id="bulkMessageForm">
             <?= csrf_field() ?>
-            <input type="hidden" name="days" value="<?= (int) $currentDays ?>">
+            <input type="hidden" name="days" value="30">
             <?php if ($currentServerId): ?>
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
@@ -192,31 +129,102 @@ ob_start();
 <?php if (empty($users)): ?>
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center text-muted py-5">
-        No hay vencimientos en este rango
+        No hay vencimientos en los próximos 30 días
     </div>
 </div>
 <?php else: ?>
-<?php
-$renderExpiringSection(
-    'proximos',
-    'Próximos',
-    'aún no caducados o caducados hace ≤15 días (rango ' . (int) $currentDays . 'd)',
-    $proximos,
-    'bg-warning text-dark'
-);
-$renderExpiringSection(
-    'antiguos',
-    'Antiguos',
-    'caducados hace más de 15 días',
-    $antiguos,
-    'bg-secondary'
-);
-?>
+<div class="card border-0 shadow-sm expiring-card" data-expiring-section="active">
+    <div class="px-3 py-2 border-bottom bg-light small d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span id="expiringListTitle"><?= e($bucketMeta[$activeBucket]['title']) ?></span>
+        <label class="mb-0 d-inline-flex align-items-center gap-1">
+            <input type="checkbox" class="form-check-input m-0 expiring-select-all" data-section="active">
+            <span>Seleccionar visibles</span>
+        </label>
+    </div>
+    <div class="table-responsive expiring-table-wrap">
+        <table class="table table-hover mb-0 align-middle expiring-table expiring-table-compact">
+            <thead class="table-light">
+                <tr>
+                    <th style="width: 2.5rem;"></th>
+                    <th>Usuario</th>
+                    <th>Servidor</th>
+                    <th>Días</th>
+                    <th class="text-end">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($users as $u): ?>
+                <?php
+                $days = isset($u->days_left) ? (int) $u->days_left : (int) (days_left($u->expires_at) ?? 0);
+                if ($days < 0) {
+                    $bucket = 'expired';
+                } elseif ($days <= 3) {
+                    $bucket = 'd3';
+                } elseif ($days <= 7) {
+                    $bucket = 'd7';
+                } else {
+                    $bucket = 'd30';
+                }
+                $dl = days_left_badge($u->expires_at);
+                $hidden = $bucket !== $activeBucket ? ' d-none' : '';
+                ?>
+                <tr class="expiring-row<?= $hidden ?>" data-bucket="<?= e($bucket) ?>">
+                    <td>
+                        <input type="checkbox" class="form-check-input expiring-select"
+                               value="<?= e($u->uuid) ?>"
+                               data-has-telegram="<?= $u->telegram_chat_id ? '1' : '0' ?>"
+                               aria-label="Seleccionar <?= e($u->display_name ?? $u->username) ?>">
+                    </td>
+                    <td class="min-w-0">
+                        <a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none text-truncate d-inline-block" style="max-width: 14rem;">
+                            <?= e($u->display_name ?? $u->username) ?>
+                        </a>
+                        <?php if (!empty($u->email)): ?>
+                        <div class="small text-muted text-truncate" style="max-width: 14rem;"><?= e($u->email) ?></div>
+                        <?php endif; ?>
+                    </td>
+                    <td class="small">
+                        <?php if ($u->server_name): ?>
+                        <span class="badge bg-light text-dark border text-truncate d-inline-block" style="max-width: 9rem;"><?= e($u->server_name) ?></span>
+                        <?php else: ?>
+                        <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span></td>
+                    <td class="text-end">
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>"><i class="bi bi-eye me-2"></i>Ver ficha</a></li>
+                                <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>#stripe"><i class="bi bi-credit-card me-2"></i>Enlace de pago</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <?php foreach ([7, 15, 30, 90, 365] as $opt): ?>
+                                <li>
+                                    <a class="dropdown-item btn-quick-renew" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= $opt ?>">
+                                        <i class="bi bi-calendar-plus me-2"></i>+<?= $opt ?> días
+                                    </a>
+                                </li>
+                                <?php endforeach; ?>
+                                <?php if ($u->telegram_chat_id): ?>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><span class="dropdown-item-text small text-muted"><i class="bi bi-telegram me-2"></i>Tiene Telegram</span></li>
+                                <?php endif; ?>
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
 <?php endif; ?>
 <?php
 $content = ob_get_clean();
-$scripts = '<script>window.EXPIRING_FILTER_DAYS = ' . (int) $currentDays . ';'
-    . 'window.EXPIRING_SERVER_ID = ' . json_encode($currentServerId ? (int) $currentServerId : null) . ';</script>';
-$scripts .= '<script src="' . e(asset('js/media-users-expiring.js')) . '"></script>';
+$scripts = '<script>window.EXPIRING_FILTER_DAYS = 30;'
+    . 'window.EXPIRING_SERVER_ID = ' . json_encode($currentServerId ? (int) $currentServerId : null) . ';'
+    . 'window.EXPIRING_BUCKET_TITLES = ' . json_encode(array_map(static fn ($m) => $m['title'], $bucketMeta), JSON_UNESCAPED_UNICODE) . ';</script>';
+$scripts .= '<script src="' . e(asset('js/media-users-expiring.js')) . '?v=' . (@filemtime(public_path('assets/js/media-users-expiring.js')) ?: '1') . '"></script>';
 include base_path('resources/views/layouts/app.php');
-?>

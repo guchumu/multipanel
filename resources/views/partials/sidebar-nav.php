@@ -25,8 +25,8 @@ $childLinkClass = static function (string $path) use ($currentPath): string {
     return 'nav-link text-white-50 nav-link-child py-1' . ($active ? ' active text-white bg-primary rounded' : '');
 };
 
-$mediaUsersActive = $startsWith('/media-users');
-$settingsActive = $startsWith('/settings');
+$mediaUsersActive = $startsWith('/media-users') && !$startsWith('/media-users/limpieza');
+$settingsActive = $startsWith('/settings') || $startsWith('/import') || $startsWith('/media-users/limpieza');
 ?>
 <ul class="nav flex-column p-2">
     <li class="nav-item"><a class="<?= $linkClass('/dashboard') ?>" href="/dashboard"><i class="bi bi-speedometer2 me-2"></i><?= __('dashboard') ?></a></li>
@@ -44,13 +44,11 @@ $settingsActive = $startsWith('/settings');
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/stream-violations') ?>" href="/media-users/stream-violations"><i class="bi bi-exclamation-octagon me-2"></i>Incumplimientos streams</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/expiring') ?>" href="/media-users/expiring"><i class="bi bi-hourglass-split me-2"></i>Vencimientos</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/estimacion') ?>" href="/media-users/estimacion"><i class="bi bi-calendar3 me-2"></i>Estimación mensual</a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/limpieza') ?>" href="/media-users/limpieza"><i class="bi bi-recycle me-2"></i>Limpieza / reinicio</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/broadcast') ?>" href="/media-users/broadcast"><i class="bi bi-megaphone me-2"></i>Mensaje masivo</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/media-users/bulk') ?>" href="/media-users/bulk"><i class="bi bi-envelope-plus me-2"></i>Añadir emails</a></li>
         </ul>
     </li>
 
-    <li class="nav-item"><a class="<?= $linkClass('/import') ?>" href="/import"><i class="bi bi-upload me-2"></i><?= __('import_export') ?></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/peticiones') ?>" href="/peticiones"><i class="bi bi-film me-2"></i>Peticiones</a></li>
     <li class="nav-item mt-3"><small class="text-muted px-3"><?= __('management') ?></small></li>
     <li class="nav-item"><a class="<?= $linkClass('/integrations') ?>" href="/integrations"><i class="bi bi-plug me-2"></i><?= __('integrations') ?></a></li>
@@ -76,6 +74,8 @@ $settingsActive = $startsWith('/settings');
             <li class="nav-item"><a class="<?= $childLinkClass('/settings/notifications') ?>" href="/settings/notifications"><i class="bi bi-chat-dots me-2"></i>Mensajes a usuarios</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/settings/stop-messages') ?>" href="/settings/stop-messages"><i class="bi bi-chat-left-text me-2"></i>Mensajes al detener</a></li>
             <li class="nav-item"><a class="<?= $childLinkClass('/settings/stream-limits') ?>" href="/settings/stream-limits"><i class="bi bi-collection-play me-2"></i>Límite de streams</a></li>
+            <li class="nav-item"><a class="<?= $childLinkClass('/import') ?>" href="/import"><i class="bi bi-upload me-2"></i><?= __('import_export') ?></a></li>
+            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/limpieza') ?>" href="/media-users/limpieza"><i class="bi bi-recycle me-2"></i>Limpieza / reinicio</a></li>
         </ul>
     </li>
 

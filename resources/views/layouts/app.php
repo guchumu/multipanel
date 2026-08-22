@@ -49,6 +49,7 @@
     <script src="<?= asset('js/app.js') ?>?v=<?= @filemtime(public_path('assets/js/app.js')) ?: '2' ?>"></script>
     <script src="<?= asset('js/realtime.js') ?>"></script>
     <?php if (isset($user)): ?>
+    <script src="<?= asset('js/session-cards.js') ?>?v=<?= @filemtime(public_path('assets/js/session-cards.js')) ?: '1' ?>"></script>
     <script src="<?= asset('js/global-search.js') ?>?v=<?= @filemtime(public_path('assets/js/global-search.js')) ?: '1' ?>"></script>
     <?php endif; ?>
     <?= $scripts ?? '' ?>

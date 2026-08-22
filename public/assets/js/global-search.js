@@ -36,6 +36,13 @@
         }
     }
 
+    function serviceBadgeHtml(type) {
+        const t = String(type || '').toLowerCase();
+        if (t === 'plex') return '<span class="badge badge-service-plex">Plex</span>';
+        if (t === 'jellyfin') return '<span class="badge badge-service-jellyfin">Jellyfin</span>';
+        return '';
+    }
+
     function hide() {
         results.classList.add('d-none');
         results.innerHTML = '';
@@ -98,6 +105,7 @@
             ].filter(Boolean);
             const meta = metaParts.join(' · ');
             const status = String(u.status || '');
+            const service = serviceBadgeHtml(u.server_type);
             const serverLink = u.server_uuid
                 ? `<a href="/servers/${escapeHtml(u.server_uuid)}" class="global-search-server-link link-primary" tabindex="-1">abrir servidor</a>`
                 : '';
@@ -112,6 +120,7 @@
                 <span class="global-search-body">
                     <span class="global-search-title">
                         <span class="global-search-title-text">${name}</span>
+                        ${service}
                         ${serverLink}
                     </span>
                     <span class="global-search-meta">${meta}</span>

@@ -144,7 +144,7 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $this->dedupe->mergeDuplicatesForTenant($tenantId);
-        $days = max(1, (int) $request->input('days', 15));
+        $days = max(1, (int) $request->input('days', 30));
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
 
         $users = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
@@ -569,6 +569,7 @@ class MediaUserController extends Controller
                         'email' => (string) ($u->email ?? ''),
                         'server_name' => (string) ($u->server_name ?? ''),
                         'server_uuid' => (string) ($u->server_uuid ?? ''),
+                        'server_type' => (string) ($u->server_type ?? ''),
                         'status' => (string) $u->status,
                         'on_server' => isset($u->on_server) ? (int) $u->on_server : null,
                         'membership_synced_at' => $u->membership_synced_at ?? null,

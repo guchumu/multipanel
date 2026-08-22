@@ -1,5 +1,8 @@
 :root {
     --sidebar-width: 260px;
+    --sidebar-collapsed-width: 4.25rem;
+    --plex-color: #E5A00D;
+    --jellyfin-color: #00A4DC;
 }
 
 body {
@@ -36,27 +39,69 @@ body {
     overflow: hidden;
 }
 
-/* Desktop: ocultar menú lateral y dar todo el ancho al contenido */
+/* Desktop: menú en rail de iconos; al pasar el ratón se amplía */
 @media (min-width: 992px) {
     html.sidebar-collapsed body .sidebar,
     body.sidebar-collapsed .sidebar {
-        width: 0;
-        min-width: 0;
-        opacity: 0;
-        pointer-events: none;
-        border: 0;
+        width: var(--sidebar-collapsed-width);
+        min-width: var(--sidebar-collapsed-width);
+        opacity: 1;
+        pointer-events: auto;
+        overflow-x: hidden;
+        z-index: 1030;
     }
 
-    html.sidebar-collapsed body .app-main,
-    body.sidebar-collapsed .app-main {
-        max-width: 100%;
-        width: 100%;
+    html.sidebar-collapsed body .sidebar:hover,
+    html.sidebar-collapsed body .sidebar:focus-within,
+    body.sidebar-collapsed .sidebar:hover,
+    body.sidebar-collapsed .sidebar:focus-within {
+        width: var(--sidebar-width);
+        min-width: var(--sidebar-width);
+        z-index: 1050;
+        box-shadow: 0.65rem 0 1.75rem rgba(0, 0, 0, 0.28);
+    }
+
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .sidebar-label,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .sidebar-label,
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .nav-children,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .nav-children,
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .nav-item.mt-3,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .nav-item.mt-3 {
+        display: none;
+    }
+
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .nav-link,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .nav-link {
+        font-size: 0;
+        line-height: 0;
+        padding-left: 0.7rem;
+        padding-right: 0.7rem;
+        text-align: center;
+        justify-content: center;
+    }
+
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .nav-link i,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .nav-link i {
+        font-size: 1.2rem;
+        line-height: 1;
+        margin-right: 0 !important;
+    }
+
+    html.sidebar-collapsed body .sidebar:not(:hover):not(:focus-within) .sidebar-brand,
+    body.sidebar-collapsed .sidebar:not(:hover):not(:focus-within) .sidebar-brand {
+        padding-left: 0.65rem;
+        padding-right: 0.65rem;
+        text-align: center;
     }
 }
 
 .sidebar .nav-link.active,
 .offcanvas .nav-link.active {
     font-weight: 600;
+}
+
+.sidebar .nav-link {
+    white-space: nowrap;
 }
 
 .sidebar .nav-link:hover:not(.active),
@@ -1019,4 +1064,64 @@ body {
         margin-left: auto !important;
     }
 }
+
+.badge-service-plex {
+    background-color: var(--plex-color);
+    color: #1a1204;
+    font-weight: 600;
+}
+.badge-service-jellyfin {
+    background-color: var(--jellyfin-color);
+    color: #fff;
+    font-weight: 600;
+}
+
+.urgency-card {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: #fff;
+    box-shadow: 0 0.15rem 0.5rem rgba(15, 23, 42, 0.06);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+.urgency-card:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0.4rem 1rem rgba(15, 23, 42, 0.1);
+}
+.urgency-card:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.urgency-card.is-active {
+    border-color: transparent;
+    box-shadow: 0 0 0 2px currentColor;
+}
+.urgency-card-title {
+    font-weight: 600;
+}
+.urgency-card-hint {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color, #6c757d);
+}
+.urgency-card-count {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 0.55rem;
+}
+.urgency-card--expired { color: #dc3545; }
+.urgency-card--soon { color: #fd7e14; }
+.urgency-card--week { color: #ffc107; }
+.urgency-card--month { color: #0d6efd; }
+[data-bs-theme="dark"] .urgency-card {
+    background: var(--bs-body-bg, #1a1d21);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.live-modal-sessions .session-col {
+    min-width: 0;
+}
+
 
