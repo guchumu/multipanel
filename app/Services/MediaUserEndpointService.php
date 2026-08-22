@@ -28,7 +28,10 @@ final class MediaUserEndpointService
         $now = date('Y-m-d H:i:s');
         $db = Database::getInstance();
 
-        foreach ($sessions as $session) {
+        // Primero teles/Fire Stick para marcar su IP como casa antes de ver móviles.
+        $ordered = $this->sessionsTvFirst($sessions);
+
+        foreach ($ordered as $session) {
             $userId = (int) ($session['media_user_id'] ?? 0);
             if ($userId <= 0) {
                 continue;
@@ -113,6 +116,25 @@ final class MediaUserEndpointService
     }
 
     /**
+     * @param array<int, array<string, mixed>> $sessions
+     * @return list<array<string, mixed>>
+     */
+    private function sessionsTvFirst(array $sessions): array
+    {
+        $tvs = [];
+        $rest = [];
+        foreach ($sessions as $session) {
+            if (self::classifyDeviceClass($session) === 'tv') {
+                $tvs[] = $session;
+            } else {
+                $rest[] = $session;
+            }
+        }
+
+        return array_merge($tvs, $rest);
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function listForUser(int $mediaUserId): array
@@ -175,6 +197,27 @@ final class MediaUserEndpointService
         return $current !== '' ? $current : self::KIND_UNKNOWN;
     }
 
+    /**
+     * IPs públicas/LAN de una sesión, para comparar con las marcadas como casa.
+     *
+     * @param array<string, mixed> $session
+     * @return list<string>
+     */
+    public static function sessionIps(array $session): array
+    {
+        $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
+        $lanIp = SessionClientIp::normalize((string) ($session['lan_ip'] ?? ''));
+        $ips = [];
+        if ($publicIp !== '') {
+            $ips[] = $publicIp;
+        }
+        if ($lanIp !== '' && $lanIp !== $publicIp) {
+            $ips[] = $lanIp;
+        }
+
+        return $ips;
+    }
+
     private function inferKind(
         int $mediaUserId,
         string $ip,
@@ -184,38 +227,63 @@ final class MediaUserEndpointService
         string $platform = '',
         string $deviceName = '',
     ): string {
-        $kind = self::inferKindFromLocation($location, $current);
         $deviceClass = self::classifyDeviceClass([
             'product' => $product,
             'platform' => $platform,
             'player' => $deviceName,
         ]);
-        if ($deviceClass === 'mobile') {
-            return self::KIND_AWAY;
-        }
         if ($deviceClass === 'tv') {
             return self::KIND_HOME;
         }
+
+        if ($ip !== '' && $this->ipIsKnownHome($mediaUserId, $ip)) {
+            return self::KIND_HOME;
+        }
+
+        if ($deviceClass === 'mobile') {
+            if (strtoupper($location) === 'LAN' && $this->userHasHomeEndpoint($mediaUserId)) {
+                return self::KIND_HOME;
+            }
+
+            return self::KIND_AWAY;
+        }
+
+        $kind = self::inferKindFromLocation($location, $current);
         if ($kind === self::KIND_HOME) {
             return $kind;
         }
-        if ($ip === '') {
-            return $kind;
-        }
 
+        return $kind !== '' ? $kind : self::KIND_UNKNOWN;
+    }
+
+    private function ipIsKnownHome(int $mediaUserId, string $ip): bool
+    {
         try {
             $home = Database::getInstance()->fetchOne(
                 'SELECT id FROM media_user_endpoints
                  WHERE media_user_id = ? AND ip = ? AND kind = ? LIMIT 1',
                 [$mediaUserId, $ip, self::KIND_HOME]
             );
-            if ($home) {
-                return self::KIND_HOME;
-            }
-        } catch (\Throwable) {
-        }
 
-        return $kind;
+            return $home !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function userHasHomeEndpoint(int $mediaUserId): bool
+    {
+        try {
+            $home = Database::getInstance()->fetchOne(
+                'SELECT id FROM media_user_endpoints
+                 WHERE media_user_id = ? AND kind = ? LIMIT 1',
+                [$mediaUserId, self::KIND_HOME]
+            );
+
+            return $home !== null;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function ensureTable(): void
@@ -276,7 +344,35 @@ final class MediaUserEndpointService
     }
 
     /**
-     * Fire Stick / tele → casa. Móvil (iPhone, Android, tablet) → fuera.
+     * Añade las IPs de teles/Fire Stick de este lote (para que un móvil en la misma IP cuente casa al momento).
+     *
+     * @param array<int, array<string, mixed>> $sessions
+     * @param array<int, list<string>> $homeIpsByUser
+     * @return array<int, list<string>>
+     */
+    public function mergeSessionHomeIps(array $sessions, array $homeIpsByUser = []): array
+    {
+        foreach ($sessions as $session) {
+            if (self::classifyDeviceClass($session) !== 'tv') {
+                continue;
+            }
+            $uid = (int) ($session['media_user_id'] ?? 0);
+            if ($uid <= 0) {
+                continue;
+            }
+            foreach (self::sessionIps($session) as $ip) {
+                $homeIpsByUser[$uid][] = $ip;
+            }
+        }
+        foreach ($homeIpsByUser as $uid => $ips) {
+            $homeIpsByUser[$uid] = array_values(array_unique($ips));
+        }
+
+        return $homeIpsByUser;
+    }
+
+    /**
+     * Fire Stick / tele → casa. Móvil (iPhone, Android, tablet) → fuera, salvo misma IP de casa.
      * PC/navegador u otro: se decide por LAN / IP marcada hogar.
      *
      * @param array<string, mixed> $session
@@ -338,11 +434,12 @@ final class MediaUserEndpointService
     public function classifyPlaybackMeta(array $session, array $homeIps = []): array
     {
         $deviceClass = self::classifyDeviceClass($session);
-        if ($deviceClass === 'mobile') {
-            return ['kind' => self::KIND_AWAY, 'source' => 'device_mobile', 'device_class' => $deviceClass];
-        }
         if ($deviceClass === 'tv') {
             return ['kind' => self::KIND_HOME, 'source' => 'device_tv', 'device_class' => $deviceClass];
+        }
+
+        if (self::sessionHasHomeIp($session, $homeIps)) {
+            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
         }
 
         $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
@@ -352,14 +449,39 @@ final class MediaUserEndpointService
             $publicIp !== '' ? $publicIp : $lanIp,
             $lanIp
         );
+
+        // Misma red que el servidor Plex y ya hay una tele/IP de casa → el móvil también es casa.
+        if ($deviceClass === 'mobile') {
+            if ($location === 'LAN' && $homeIps !== []) {
+                return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
+            }
+
+            return ['kind' => self::KIND_AWAY, 'source' => 'device_mobile', 'device_class' => $deviceClass];
+        }
+
         if ($location === 'LAN') {
             return ['kind' => self::KIND_HOME, 'source' => 'lan', 'device_class' => $deviceClass];
         }
-        if ($publicIp !== '' && in_array($publicIp, $homeIps, true)) {
-            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
-        }
 
         return ['kind' => self::KIND_AWAY, 'source' => 'wan', 'device_class' => $deviceClass];
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @param list<string> $homeIps
+     */
+    public static function sessionHasHomeIp(array $session, array $homeIps): bool
+    {
+        if ($homeIps === []) {
+            return false;
+        }
+        foreach (self::sessionIps($session) as $ip) {
+            if (in_array($ip, $homeIps, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

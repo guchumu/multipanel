@@ -99,6 +99,7 @@ final class ConcurrentStreamLimitService
             }
         }
         $homeIps = $endpoints->homeIpsByUserIds(array_values($matchedIds));
+        $homeIps = $endpoints->mergeSessionHomeIps($sessions, $homeIps);
 
         foreach ($sessions as $i => $session) {
             $uid = (int) ($session['media_user_id'] ?? 0);

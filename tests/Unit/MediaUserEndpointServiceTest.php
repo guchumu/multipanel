@@ -78,7 +78,7 @@ final class MediaUserEndpointServiceTest extends TestCase
         ]));
     }
 
-    public function testMobileIsAwayEvenOnLan(): void
+    public function testMobileIsAwayUnlessOnKnownHomeIp(): void
     {
         $svc = new MediaUserEndpointService();
         $this->assertSame('mobile', MediaUserEndpointService::classifyDeviceClass([
@@ -97,8 +97,17 @@ final class MediaUserEndpointServiceTest extends TestCase
             'product' => 'Plex for Android',
             'platform' => 'Android',
             'player' => 'Pixel 8',
-            'location' => 'lan',
+            'location' => 'wan',
+            'public_ip' => '8.8.8.8',
         ]));
+        $this->assertSame('home', $svc->classifyPlayback([
+            'location' => 'wan',
+            'public_ip' => '203.0.113.10',
+            'client_ip' => '203.0.113.10',
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone de Ana',
+        ], ['203.0.113.10']));
         $this->assertSame('tv', MediaUserEndpointService::classifyDeviceClass([
             'product' => 'Plex for Android',
             'platform' => 'Android TV',
@@ -108,5 +117,44 @@ final class MediaUserEndpointServiceTest extends TestCase
             'platform' => 'Android',
             'player' => 'Samsung Galaxy S23',
         ]));
+    }
+
+    public function testTvIpMakesSameBatchMobileHome(): void
+    {
+        $svc = new MediaUserEndpointService();
+        $tv = [
+            'media_user_id' => 7,
+            'product' => 'Plex for Amazon Fire TV',
+            'platform' => 'Fire TV',
+            'public_ip' => '203.0.113.44',
+            'client_ip' => '203.0.113.44',
+            'location' => 'wan',
+        ];
+        $phone = [
+            'media_user_id' => 7,
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone',
+            'public_ip' => '203.0.113.44',
+            'client_ip' => '203.0.113.44',
+            'location' => 'wan',
+        ];
+        $homeIps = $svc->mergeSessionHomeIps([$phone, $tv], []);
+
+        $this->assertSame(['203.0.113.44'], $homeIps[7]);
+        $this->assertSame('home', $svc->classifyPlayback($phone, $homeIps[7]));
+        $meta = $svc->classifyPlaybackMeta($phone, $homeIps[7]);
+        $this->assertSame('home_ip', $meta['source']);
+        $this->assertSame('mobile', $meta['device_class']);
+
+        $phoneOnLan = [
+            'media_user_id' => 7,
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone',
+            'client_ip' => '192.168.1.40',
+            'location' => 'lan',
+        ];
+        $this->assertSame('home', $svc->classifyPlayback($phoneOnLan, $homeIps[7]));
     }
 }

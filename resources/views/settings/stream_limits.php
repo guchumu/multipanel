@@ -92,8 +92,10 @@ ob_start();
             <div class="card-body">
                 <h6 class="mb-2">Cómo funciona</h6>
                 <ul class="small text-muted mb-3 ps-3">
-                    <li>Casa = Fire Stick y tele. Fuera = móvil y tablet. PC/navegador: LAN o IP marcada Hogar.</li>
-                    <li>Fuera = WAN / otra IP no marcada.</li>
+                    <li>Casa = Fire Stick y tele. Su IP queda marcada como hogar.</li>
+                    <li>Un móvil o tablet en esa misma IP también cuenta como casa.</li>
+                    <li>Fuera = móvil/tablet u otro dispositivo en una IP que no es del hogar.</li>
+                    <li>PC/navegador: LAN o IP marcada Hogar = casa.</li>
                     <li>El corte no arranca solo: tú lo activas aquí.</li>
                     <li>Sandbox: te llega el momento exacto y el motivo.</li>
                     <li>Cron <code>streams</code> o <code>all</code> — mejor cada 1–2 min para no llegar tarde.</li>
