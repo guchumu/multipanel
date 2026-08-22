@@ -782,10 +782,43 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
 }
+.peticion-poster-link {
+    position: relative;
+    display: block;
+}
 .peticion-poster {
     aspect-ratio: 2 / 3;
     object-fit: cover;
     background: #e9ecef;
+}
+.peticion-count-badge {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    min-width: 1.6rem;
+    height: 1.6rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: rgba(33, 37, 41, 0.88);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.6rem;
+    text-align: center;
+}
+.peticion-requesters {
+    line-height: 1.25;
+}
+.peticion-requesters-count {
+    font-weight: 600;
+}
+.peticion-requesters-names {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    line-clamp: 3;
+    overflow: hidden;
+    word-break: break-word;
 }
 .peticion-title {
     min-height: 2.4rem;

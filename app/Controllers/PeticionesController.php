@@ -60,8 +60,9 @@ class PeticionesController extends Controller
         } else {
             try {
                 PeticionesDatabase::reset();
-                $counts = $this->repo->counts();
-                $items = $this->repo->list($filter, $perPage, $offset);
+                $board = $this->service->adminBoard($filter, $page, $perPage);
+                $counts = $board['counts'];
+                $items = $board['items'];
                 $motivos = $this->repo->activeMotivos();
 
                 $hasFa = false;

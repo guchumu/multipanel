@@ -93,20 +93,48 @@ $hasTmdb = $hasTmdb ?? false;
     }
     $platforms = $platformsById[$id] ?? [];
     $needsTmdb = $hasTmdb && in_array($id, $needsTmdbIds ?? [], true);
+    $requestCount = max(1, (int) ($row['request_count'] ?? 1));
+    $requesters = is_array($row['requesters'] ?? null) ? $row['requesters'] : [];
+    if ($requesters === []) {
+        $fallbackName = trim((string) ($row['username'] ?? ''));
+        if ($fallbackName === '') {
+            $fallbackName = trim((string) ($row['idusuario'] ?? '')) ?: 'Sin nombre';
+        }
+        $requesters = [['name' => $fallbackName, 'fecha' => (string) ($row['fechapeticion'] ?? ''), 'count' => 1]];
+    }
+    $requesterLabels = [];
+    $requesterTitle = [];
+    foreach ($requesters as $who) {
+        $name = trim((string) ($who['name'] ?? ''));
+        if ($name === '') {
+            continue;
+        }
+        $times = (int) ($who['count'] ?? 1);
+        $label = $times > 1 ? $name . ' ×' . $times : $name;
+        $requesterLabels[] = $label;
+        $fecha = trim((string) ($who['fecha'] ?? ''));
+        $requesterTitle[] = $fecha !== '' ? $label . ' (' . $fecha . ')' : $label;
+    }
+    $requesterText = $requesterLabels === [] ? '—' : implode(', ', $requesterLabels);
     ?>
-    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>"<?= $needsTmdb ? ' data-needs-tmdb="1"' : '' ?><?= $isDenied ? ' data-denied="1"' : '' ?>>
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2" id="peticion-card-<?= $id ?>"<?= $needsTmdb ? ' data-needs-tmdb="1"' : '' ?><?= $isDenied ? ' data-denied="1"' : '' ?> data-count="<?= $requestCount ?>">
         <div class="card h-100 shadow-sm peticion-card <?= e($border) ?> border-2">
             <a href="<?= e((string) ($row['url'] ?? '#')) ?>" target="_blank" rel="noopener" class="peticion-poster-link">
                 <img src="<?= e($img) ?>" class="card-img-top peticion-poster" alt="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" loading="lazy"
                      onerror="this.src='https://via.placeholder.com/300x450?text=Sin+poster'">
+                <?php if ($requestCount > 1): ?>
+                <span class="peticion-count-badge" title="<?= $requestCount ?> solicitudes"><?= $requestCount ?></span>
+                <?php endif; ?>
             </a>
             <div class="card-body p-2 d-flex flex-column gap-1">
                 <div class="peticion-title form-control form-control-sm"
                      contenteditable="true"
                      data-id="<?= $id ?>"
                      title="Editar título (se guarda al salir)"><?= e((string) ($row['nombrepeticion'] ?? '')) ?></div>
-                <div class="small text-muted text-truncate" title="<?= e((string) ($row['username'] ?? '')) ?>">
-                    <i class="bi bi-person"></i> <?= e((string) ($row['username'] ?? $row['idusuario'] ?? '—')) ?>
+                <div class="small peticion-requesters" title="<?= e(implode("\n", $requesterTitle)) ?>">
+                    <i class="bi bi-people"></i>
+                    <span class="peticion-requesters-count"><?= $requestCount === 1 ? '1 solicitud' : $requestCount . ' solicitudes' ?></span>
+                    <div class="peticion-requesters-names text-muted"><?= e($requesterText) ?></div>
                 </div>
                 <div class="small text-muted">
                     <i class="bi bi-calendar3"></i> <?= e((string) ($row['fechapeticion'] ?? '—')) ?>
@@ -135,22 +163,22 @@ $hasTmdb = $hasTmdb ?? false;
                 <?php endif; ?>
                 <div class="mt-auto d-flex flex-wrap gap-1 pt-1 peticion-actions">
                     <?php if (!$isDenied && !$isAccepted): ?>
-                    <button type="button" class="btn btn-success btn-sm flex-fill peticion-action-btn" data-action="aceptar" data-id="<?= $id ?>" title="Aceptar">
+                    <button type="button" class="btn btn-success btn-sm flex-fill peticion-action-btn" data-action="aceptar" data-id="<?= $id ?>" data-count="<?= $requestCount ?>" title="Aceptar">
                         <i class="bi bi-check-lg"></i><span class="d-none d-sm-inline ms-1">Aceptar</span>
                     </button>
                     <?php endif; ?>
                     <?php if ($isAccepted && !$isDenied): ?>
-                    <button type="button" class="btn btn-primary btn-sm flex-fill peticion-action-btn" data-action="subir" data-id="<?= $id ?>" title="Marcar subida">
+                    <button type="button" class="btn btn-primary btn-sm flex-fill peticion-action-btn" data-action="subir" data-id="<?= $id ?>" data-count="<?= $requestCount ?>" title="Marcar subida">
                         <i class="bi bi-cloud-upload"></i><span class="d-none d-sm-inline ms-1">Subir</span>
                     </button>
                     <?php endif; ?>
                     <?php if (!$isDenied): ?>
-                    <button type="button" class="btn btn-warning btn-sm flex-fill peticion-action-btn" data-action="denegar-open" data-id="<?= $id ?>"
+                    <button type="button" class="btn btn-warning btn-sm flex-fill peticion-action-btn" data-action="denegar-open" data-id="<?= $id ?>" data-count="<?= $requestCount ?>"
                             data-title="<?= e((string) ($row['nombrepeticion'] ?? '')) ?>" title="Denegar">
                         <i class="bi bi-x-lg"></i><span class="d-none d-sm-inline ms-1">Denegar</span>
                     </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-outline-danger btn-sm flex-fill peticion-action-btn" data-action="borrar" data-id="<?= $id ?>" title="Borrar">
+                    <button type="button" class="btn btn-outline-danger btn-sm flex-fill peticion-action-btn" data-action="borrar" data-id="<?= $id ?>" data-count="<?= $requestCount ?>" title="Borrar">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -181,6 +209,7 @@ if ($hasMore):
             <div class="modal-body">
                 <input type="hidden" name="id" id="modal_id_peli" value="">
                 <p class="small text-muted mb-2" id="modal_titulo_peli"></p>
+                <p class="small text-muted mb-2 d-none" id="modal_grupo_peli"></p>
                 <label class="form-label">Motivo</label>
                 <select name="id_motivo" id="motivo_denegacion" class="form-select" required>
                     <option value="">Selecciona…</option>
@@ -333,16 +362,29 @@ $scripts = <<<'JS'
     btn.addEventListener('click', async () => {
       const action = btn.getAttribute('data-action');
       const id = parseInt(btn.getAttribute('data-id') || '0', 10);
+      const count = parseInt(btn.getAttribute('data-count') || '1', 10);
       if (!id) return;
 
       if (action === 'denegar-open') {
         document.getElementById('modal_id_peli').value = String(id);
         document.getElementById('modal_titulo_peli').textContent = btn.getAttribute('data-title') || '';
+        const groupHint = document.getElementById('modal_grupo_peli');
+        if (groupHint) {
+          if (count > 1) {
+            groupHint.textContent = 'Se denegará a las ' + count + ' solicitudes y se avisará a todos.';
+            groupHint.classList.remove('d-none');
+          } else {
+            groupHint.textContent = '';
+            groupHint.classList.add('d-none');
+          }
+        }
         bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDenegar')).show();
         return;
       }
 
-      if (action === 'borrar' && !confirm('¿Borrar esta petición?')) return;
+      if (action === 'borrar' && !confirm(count > 1
+        ? '¿Borrar esta película y las ' + count + ' solicitudes?'
+        : '¿Borrar esta petición?')) return;
 
       btn.disabled = true;
       const { data } = await postAction({ accion: action, id });

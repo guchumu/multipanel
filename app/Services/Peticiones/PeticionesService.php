@@ -14,6 +14,9 @@ use Core\Session;
  */
 final class PeticionesService
 {
+    /** @var list<array<string, mixed>>|null */
+    private ?array $openCache = null;
+
     public function __construct(
         private PeticionesRepository $repo = new PeticionesRepository(),
         private ?TelegramChannel $telegram = null,
@@ -38,23 +41,81 @@ final class PeticionesService
     }
 
     /**
+     * Listado admin agrupado por película (una ficha por título/IMDb/Filmaffinity).
+     *
+     * @return array{
+     *   items: list<array<string, mixed>>,
+     *   counts: array{pendientes: int, proceso: int, denegadas: int, todas: int}
+     * }
+     */
+    public function adminBoard(string $filter, int $page, int $perPage): array
+    {
+        $open = $this->openRows();
+        $cards = [
+            PeticionesRepository::FILTER_PENDIENTES => [],
+            PeticionesRepository::FILTER_PROCESO => [],
+            PeticionesRepository::FILTER_DENEGADAS => [],
+        ];
+        foreach (PeticionGroup::group($open) as $members) {
+            $card = PeticionGroup::toCard($members);
+            $status = PeticionGroup::statusBucket($card);
+            if (isset($cards[$status])) {
+                $cards[$status][] = $card;
+            }
+        }
+
+        $todas = array_merge(
+            $cards[PeticionesRepository::FILTER_PENDIENTES],
+            $cards[PeticionesRepository::FILTER_PROCESO],
+            $cards[PeticionesRepository::FILTER_DENEGADAS],
+        );
+        usort($todas, static fn (array $a, array $b): int => (int) ($b['id'] ?? 0) <=> (int) ($a['id'] ?? 0));
+
+        $counts = [
+            'pendientes' => count($cards[PeticionesRepository::FILTER_PENDIENTES]),
+            'proceso' => count($cards[PeticionesRepository::FILTER_PROCESO]),
+            'denegadas' => count($cards[PeticionesRepository::FILTER_DENEGADAS]),
+            'todas' => count($todas),
+        ];
+
+        $pool = match ($filter) {
+            PeticionesRepository::FILTER_PROCESO => $cards[PeticionesRepository::FILTER_PROCESO],
+            PeticionesRepository::FILTER_DENEGADAS => $cards[PeticionesRepository::FILTER_DENEGADAS],
+            PeticionesRepository::FILTER_TODAS => $todas,
+            default => $cards[PeticionesRepository::FILTER_PENDIENTES],
+        };
+
+        $page = max(1, $page);
+        $perPage = max(1, min(100, $perPage));
+        $items = array_slice($pool, ($page - 1) * $perPage, $perPage);
+
+        return [
+            'items' => $items,
+            'counts' => $counts,
+        ];
+    }
+
+    /**
      * @return array{ok: bool, message: string}
      */
     public function aceptar(int $id): array
     {
-        $row = $this->repo->find($id);
-        if ($row === null) {
+        $rows = $this->rowsInGroup($id, true);
+        if ($rows === []) {
             return ['ok' => false, 'message' => 'Petición no encontrada'];
         }
 
         $now = date('Y-m-d H:i:s');
-        $this->repo->accept($id, $now);
+        foreach ($rows as $row) {
+            $this->repo->accept((int) $row['id'], $now);
+        }
+        $this->forgetOpenRows();
 
-        $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
+        $corto = $this->shortTitle((string) ($rows[0]['nombrepeticion'] ?? ''));
         $mensaje = "Su petición de {$corto} ha sido aceptada. Se la avisaremos tan pronto esté disponible para su reproducción.";
-        $this->notifyUser($row, 'Petición aceptada', $mensaje);
+        $this->notifyGroup($rows, 'Petición aceptada', $mensaje);
 
-        return ['ok' => true, 'message' => 'Aceptada'];
+        return ['ok' => true, 'message' => $this->groupActionMessage('Aceptada', $rows)];
     }
 
     /**
@@ -62,19 +123,22 @@ final class PeticionesService
      */
     public function subir(int $id): array
     {
-        $row = $this->repo->find($id);
-        if ($row === null) {
+        $rows = $this->rowsInGroup($id, false);
+        if ($rows === []) {
             return ['ok' => false, 'message' => 'Petición no encontrada'];
         }
 
         $now = date('Y-m-d H:i:s');
-        $this->repo->markUploaded($id, $now);
+        foreach ($rows as $row) {
+            $this->repo->markUploaded((int) $row['id'], $now);
+        }
+        $this->forgetOpenRows();
 
-        $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
+        $corto = $this->shortTitle((string) ($rows[0]['nombrepeticion'] ?? ''));
         $mensaje = "Su petición de {$corto} ha sido añadida al catálogo. Disfrute del contenido.";
-        $this->notifyUser($row, 'Contenido disponible', $mensaje);
+        $this->notifyGroup($rows, 'Contenido disponible', $mensaje);
 
-        return ['ok' => true, 'message' => 'Marcada como subida'];
+        return ['ok' => true, 'message' => $this->groupActionMessage('Marcada como subida', $rows)];
     }
 
     /**
@@ -98,13 +162,24 @@ final class PeticionesService
             return ['ok' => true, 'found' => false, 'message' => 'No está en el catálogo', 'id' => $id];
         }
 
+        $rows = $this->rowsInGroup($id, false);
+        if ($rows === []) {
+            $rows = [$row];
+        }
+
         $now = date('Y-m-d H:i:s');
-        $this->repo->markUploaded($id, $now);
+        foreach ($rows as $member) {
+            if ((string) ($member['subido'] ?? '0') === '1') {
+                continue;
+            }
+            $this->repo->markUploaded((int) $member['id'], $now);
+        }
+        $this->forgetOpenRows();
 
         if ($notify) {
             $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
             $mensaje = "Su petición de {$corto} ha sido añadida al catálogo. Disfrute del contenido.";
-            $this->notifyUser($row, 'Contenido disponible', $mensaje);
+            $this->notifyGroup($rows, 'Contenido disponible', $mensaje);
         }
 
         $server = trim($hit['server']);
@@ -166,15 +241,23 @@ final class PeticionesService
             return ['ok' => false, 'message' => 'Selecciona un motivo'];
         }
 
+        $rows = $this->rowsInGroup($id, true);
+        if ($rows === []) {
+            $rows = [$row];
+        }
+
         $now = date('Y-m-d H:i:s');
-        $this->repo->deny($id, $motivoId, $now);
+        foreach ($rows as $member) {
+            $this->repo->deny((int) $member['id'], $motivoId, $now);
+        }
+        $this->forgetOpenRows();
 
         $corto = $this->shortTitle((string) ($row['nombrepeticion'] ?? ''));
         $motivo = $this->repo->motivoNombre($motivoId);
         $mensaje = "Su petición de {$corto} no ha podido ser aceptada. Motivo: {$motivo}\nLamentamos las molestias.";
-        $this->notifyUser($row, 'Petición denegada', $mensaje);
+        $this->notifyGroup($rows, 'Petición denegada', $mensaje);
 
-        return ['ok' => true, 'message' => 'Denegada'];
+        return ['ok' => true, 'message' => $this->groupActionMessage('Denegada', $rows)];
     }
 
     /**
@@ -187,9 +270,16 @@ final class PeticionesService
             return ['ok' => false, 'message' => 'Petición no encontrada'];
         }
 
-        $this->repo->delete($id);
+        $rows = $this->rowsInGroup($id, true);
+        if ($rows === []) {
+            $rows = [$row];
+        }
+        foreach ($rows as $member) {
+            $this->repo->delete((int) $member['id']);
+        }
+        $this->forgetOpenRows();
 
-        return ['ok' => true, 'message' => 'Eliminada'];
+        return ['ok' => true, 'message' => $this->groupActionMessage('Eliminada', $rows, false)];
     }
 
     /**
@@ -201,11 +291,13 @@ final class PeticionesService
         if ($title === '') {
             return ['ok' => false, 'message' => 'Título vacío'];
         }
-        if ($this->repo->find($id) === null) {
+        $rows = $this->rowsInGroup($id, true);
+        if ($rows === []) {
             return ['ok' => false, 'message' => 'Petición no encontrada'];
         }
-
-        $this->repo->updateTitle($id, $title);
+        foreach ($rows as $member) {
+            $this->repo->updateTitle((int) $member['id'], $title);
+        }
 
         return ['ok' => true, 'message' => 'Título actualizado'];
     }
@@ -264,6 +356,7 @@ final class PeticionesService
             'idusuario' => $idusuario,
             'username' => $username,
         ], date('Y-m-d H:i:s'));
+        $this->forgetOpenRows();
 
         return ['ok' => true, 'message' => 'Petición añadida', 'id' => $id];
     }
@@ -311,10 +404,17 @@ final class PeticionesService
             $current = (string) ($row['img'] ?? '');
             $items[$i]['img'] = $poster;
             if (TmdbPeticionLookup::isWeakPoster($current)) {
-                try {
-                    $this->repo->updateImg($id, $poster);
-                } catch (\Throwable $e) {
-                    Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $id]);
+                $ids = $row['group_ids'] ?? [$id];
+                foreach ($ids as $gid) {
+                    $gid = (int) $gid;
+                    if ($gid <= 0) {
+                        continue;
+                    }
+                    try {
+                        $this->repo->updateImg($gid, $poster);
+                    } catch (\Throwable $e) {
+                        Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $gid]);
+                    }
                 }
             }
         }
@@ -353,20 +453,28 @@ final class PeticionesService
         $lookupTitle = PeticionText::repair(trim((string) ($lookup['titulo'] ?? '')));
         $titleIsPlaceholder = ($imdbId !== '' && (TmdbPeticionLookup::imdbIdFromText($title) !== '' || $title === $imdbId))
             || ($faId !== '' && (TmdbPeticionLookup::filmaffinityIdFromText($title) !== '' || $title === 'film' . $faId));
+        $group = $this->rowsInGroup($id, true);
+        if ($group === []) {
+            $group = [$row];
+        }
         if ($lookupTitle !== '' && $titleIsPlaceholder && $lookupTitle !== $title) {
-            try {
-                $this->repo->updateTitle($id, $lookupTitle);
-                $title = $lookupTitle;
-            } catch (\Throwable $e) {
-                Logger::warning('No se pudo guardar título de petición: ' . $e->getMessage(), ['id' => $id]);
+            foreach ($group as $member) {
+                try {
+                    $this->repo->updateTitle((int) $member['id'], $lookupTitle);
+                } catch (\Throwable $e) {
+                    Logger::warning('No se pudo guardar título de petición: ' . $e->getMessage(), ['id' => $member['id'] ?? null]);
+                }
             }
+            $title = $lookupTitle;
         }
 
         if ($poster !== '' && ($force || TmdbPeticionLookup::isWeakPoster((string) ($row['img'] ?? '')))) {
-            try {
-                $this->repo->updateImg($id, $poster);
-            } catch (\Throwable $e) {
-                Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $id]);
+            foreach ($group as $member) {
+                try {
+                    $this->repo->updateImg((int) $member['id'], $poster);
+                } catch (\Throwable $e) {
+                    Logger::warning('No se pudo guardar carátula TMDb: ' . $e->getMessage(), ['id' => $member['id'] ?? null]);
+                }
             }
         }
 
@@ -446,14 +554,101 @@ final class PeticionesService
         return TmdbPeticionLookup::shortTitle($title);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function openRows(): array
+    {
+        return $this->openCache ??= $this->repo->listOpen();
+    }
+
+    private function forgetOpenRows(): void
+    {
+        $this->openCache = null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function rowsInGroup(int $id, bool $sameStatus): array
+    {
+        $row = $this->repo->find($id);
+        if ($row === null) {
+            return [];
+        }
+
+        $open = $this->openRows();
+        $found = false;
+        foreach ($open as $candidate) {
+            if ((int) ($candidate['id'] ?? 0) === $id) {
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $open[] = $row;
+        }
+
+        foreach (PeticionGroup::group($open, $sameStatus) as $members) {
+            foreach ($members as $member) {
+                if ((int) ($member['id'] ?? 0) === $id) {
+                    return $members;
+                }
+            }
+        }
+
+        return [$row];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     */
+    private function groupActionMessage(string $done, array $rows, bool $notified = true): string
+    {
+        $n = count($rows);
+        if ($n <= 1) {
+            return $done;
+        }
+        if (!$notified) {
+            return $done . ' (' . $n . ' solicitudes)';
+        }
+
+        return $done . ' (' . $n . ' solicitudes, avisados todos)';
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     */
+    private function notifyGroup(array $rows, string $title, string $message): void
+    {
+        $seen = [];
+        $notified = 0;
+        foreach ($rows as $row) {
+            $chatId = trim((string) ($row['idusuario'] ?? ''));
+            if ($chatId === '' || $chatId === '0' || isset($seen[$chatId])) {
+                continue;
+            }
+            $seen[$chatId] = true;
+            $this->notifyUser($row, $title, $message, false);
+            $notified++;
+        }
+        if ($notified === 0) {
+            Logger::warning('Petición agrupada sin idusuario (chat Telegram); no se notifica', [
+                'ids' => array_map(static fn (array $row): int => (int) ($row['id'] ?? 0), $rows),
+            ]);
+        }
+    }
+
     /** @param array<string, mixed> $row */
-    private function notifyUser(array $row, string $title, string $message): void
+    private function notifyUser(array $row, string $title, string $message, bool $warnMissing = true): void
     {
         $chatId = trim((string) ($row['idusuario'] ?? ''));
         if ($chatId === '' || $chatId === '0') {
-            Logger::warning('Petición sin idusuario (chat Telegram); no se notifica', [
-                'id' => $row['id'] ?? null,
-            ]);
+            if ($warnMissing) {
+                Logger::warning('Petición sin idusuario (chat Telegram); no se notifica', [
+                    'id' => $row['id'] ?? null,
+                ]);
+            }
 
             return;
         }

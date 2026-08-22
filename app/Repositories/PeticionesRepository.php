@@ -61,6 +61,21 @@ class PeticionesRepository
         ];
     }
 
+    /**
+     * Todas las peticiones abiertas (no subidas), para agrupar duplicados en PHP.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listOpen(int $limit = 2500): array
+    {
+        $limit = max(1, min(5000, $limit));
+        $rows = $this->db()->fetchAll(
+            "SELECT * FROM peticiones WHERE subido = '0' ORDER BY id DESC LIMIT {$limit}"
+        );
+
+        return $this->normalizeRows($rows, true);
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function list(string $filter, int $limit = 48, int $offset = 0): array
     {
