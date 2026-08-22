@@ -72,10 +72,11 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
         <div class="min-w-0">
             <strong class="d-block">Gancho para volver</strong>
             <p class="small text-muted mb-0">
-                En caducados: invita a retomar o ábreles <?= $trialDays ?> días de prueba.
-                El aviso guardado se repite cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
+                En caducados: 4 avisos en orden (Plex, enlace 1 año, <?= (int) ($reengageCfg['discount_percent'] ?? 15) ?>% al volver)
+                o ábreles <?= $trialDays ?> días de prueba.
+                Se repiten cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
                 <?= !empty($reengageCfg['enabled']) ? '' : ' (automático ahora apagado)' ?>.
-                <a href="/settings/notifications#reengage">Editar mensaje</a>
+                <a href="/settings/notifications#reengage">Editar mensajes</a>
             </p>
         </div>
         <div class="text-nowrap small">

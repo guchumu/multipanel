@@ -38,7 +38,7 @@ class NotificationSettingsController extends Controller
             'milestones' => $milestones,
             'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}',
             'reengage' => $this->reengage->getConfig($tenantId),
-            'reengagePlaceholders' => '{username}, {email}, {display_name}, {end_date}, {days}, {days_left}, {server_name}, {trial_days}, {portal_url}',
+            'reengagePlaceholders' => '{username}, {email}, {display_name}, {end_date}, {server_name}, {service_name}, {trial_days}, {discount_percent}, {link_years}, {portal_url}',
             'reengageStats' => $this->reengage->stats($tenantId),
         ]);
     }
@@ -109,8 +109,16 @@ class NotificationSettingsController extends Controller
             'max_sends' => $request->input('max_sends'),
             'min_expired_days' => $request->input('min_expired_days'),
             'trial_days' => $request->input('trial_days'),
-            'title' => $request->input('title'),
-            'body' => $request->input('body'),
+            'discount_percent' => $request->input('discount_percent'),
+            'link_ttl_days' => $request->input('link_ttl_days'),
+            'invite_title_1' => $request->input('invite_title_1'),
+            'invite_body_1' => $request->input('invite_body_1'),
+            'invite_title_2' => $request->input('invite_title_2'),
+            'invite_body_2' => $request->input('invite_body_2'),
+            'invite_title_3' => $request->input('invite_title_3'),
+            'invite_body_3' => $request->input('invite_body_3'),
+            'invite_title_4' => $request->input('invite_title_4'),
+            'invite_body_4' => $request->input('invite_body_4'),
             'trial_title' => $request->input('trial_title'),
             'trial_body' => $request->input('trial_body'),
         ]);
@@ -123,10 +131,10 @@ class NotificationSettingsController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $kind = (string) $request->input('kind', 'invite') === 'trial' ? 'trial' : 'invite';
+        $step = max(1, min(4, (int) $request->input('step', 1)));
         $cfg = $this->reengage->getConfig($tenantId);
-        $template = $kind === 'trial' ? $cfg['trial_body'] : $cfg['body'];
-        $title = $kind === 'trial' ? $cfg['trial_title'] : $cfg['title'];
-        if (trim($template) === '') {
+        $tpl = $this->reengage->templateFor($cfg, $kind, $step);
+        if ($tpl === null) {
             Session::getInstance()->flash('error', 'Guarda el texto antes de probar.');
             return $this->redirect('/settings/notifications#reengage');
         }
@@ -135,11 +143,12 @@ class NotificationSettingsController extends Controller
             'username' => 'demo',
             'display_name' => 'Ana',
             'email' => 'ana@ejemplo.com',
-            'expires_at' => date('Y-m-d', strtotime('-12 days')),
+            'expires_at' => date('Y-m-d', strtotime('+3 days')),
         ]);
-        $body = $this->reengage->render($template, $sample, $cfg, 'Server10');
-        $head = $this->reengage->render($title, $sample, $cfg, 'Server10');
-        $label = $kind === 'trial' ? 'prueba abierta' : 'invitar a volver';
+        $demoUrl = rtrim((string) config('app.url', ''), '/') . '/u/EjemploEnlace1AnoPlexDemo';
+        $body = $this->reengage->render($tpl['body'], $sample, $cfg, 'Server10', $demoUrl);
+        $head = $this->reengage->render($tpl['title'], $sample, $cfg, 'Server10', $demoUrl);
+        $label = $kind === 'trial' ? 'prueba abierta' : ('aviso ' . $tpl['step'] . '/4');
         $text = "*{$head}*\n\n{$body}\n\n_[PRUEBA reenganche · {$label}]_";
         $result = $this->sandboxSender->sendToSandbox($tenantId, $text, 'Markdown');
         Session::getInstance()->flash($result['ok'] ? 'success' : 'error', $result['message']);

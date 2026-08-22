@@ -73,10 +73,12 @@
 <?php
 $reengage = $reengage ?? [
     'enabled' => true, 'interval_days' => 14, 'max_sends' => 4, 'min_expired_days' => 3,
-    'trial_days' => 3, 'title' => '', 'body' => '', 'trial_title' => '', 'trial_body' => '',
+    'trial_days' => 3, 'discount_percent' => 15, 'link_ttl_days' => 365,
+    'invites' => [], 'trial_title' => '', 'trial_body' => '',
 ];
+$reengageInvites = is_array($reengage['invites'] ?? null) ? $reengage['invites'] : [];
 $reengageStats = $reengageStats ?? ['contacted' => 0, 'sends' => 0, 'came_back' => 0, 'rate' => 0];
-$reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {portal_url}';
+$reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {discount_percent}, {portal_url}';
 ?>
 <div class="card border-0 shadow-sm mt-4" id="reengage">
     <div class="card-body">
@@ -84,9 +86,10 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {por
             <div>
                 <h5 class="mb-1"><i class="bi bi-heart me-1 text-danger"></i>Reenganche de caducados</h5>
                 <p class="text-muted small mb-0">
-                    Mensaje para invitar a volver o abrir una prueba corta. Si no responden, el cron de las 09:00 lo
-                    vuelve a enviar cada <?= (int) $reengage['interval_days'] ?> días (tope <?= (int) $reengage['max_sends'] ?> avisos).
-                    Si vuelven (renuevan más allá de la prueba), se deja de escribir.
+                    Cuatro avisos en orden (1→4). Cada envío crea un enlace directo al portal sin contraseña
+                    (válido <?= (int) ($reengage['link_ttl_days'] ?? 365) ?> días) y cae en la tienda.
+                    Si no responden, el cron de las 09:00 manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
+                    El <?= (int) ($reengage['discount_percent'] ?? 15) ?>% de descuento va en el texto: aplícalo tú al renovar (aún no se descuenta solo en Stripe).
                 </p>
             </div>
             <span class="badge bg-light text-dark border">
@@ -105,45 +108,72 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {por
                 <label class="form-check-label" for="reengageEnabled">Enviar automáticamente (cron 09:00)</label>
             </div>
             <div class="row g-3 mb-3">
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
                     <label class="form-label small">Cada (días)</label>
                     <input type="number" min="1" max="90" name="interval_days" class="form-control form-control-sm" value="<?= (int) $reengage['interval_days'] ?>">
                 </div>
-                <div class="col-6 col-md-3">
-                    <label class="form-label small">Máximo de avisos</label>
-                    <input type="number" min="1" max="12" name="max_sends" class="form-control form-control-sm" value="<?= (int) $reengage['max_sends'] ?>">
+                <div class="col-6 col-md-2">
+                    <label class="form-label small">Máx. avisos</label>
+                    <input type="number" min="1" max="4" name="max_sends" class="form-control form-control-sm" value="<?= (int) $reengage['max_sends'] ?>">
                 </div>
-                <div class="col-6 col-md-3">
-                    <label class="form-label small">Días caducado mínimo</label>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small">Caducado mín.</label>
                     <input type="number" min="1" max="60" name="min_expired_days" class="form-control form-control-sm" value="<?= (int) $reengage['min_expired_days'] ?>">
                 </div>
-                <div class="col-6 col-md-3">
-                    <label class="form-label small">Días de prueba</label>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small">Días prueba</label>
                     <input type="number" min="1" max="15" name="trial_days" class="form-control form-control-sm" value="<?= (int) $reengage['trial_days'] ?>">
                 </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small">Descuento %</label>
+                    <input type="number" min="0" max="90" name="discount_percent" class="form-control form-control-sm" value="<?= (int) ($reengage['discount_percent'] ?? 15) ?>">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small">Enlace (días)</label>
+                    <input type="number" min="30" max="365" name="link_ttl_days" class="form-control form-control-sm" value="<?= (int) ($reengage['link_ttl_days'] ?? 365) ?>">
+                </div>
             </div>
-            <label class="form-label small">Título · invitar a volver</label>
-            <input type="text" name="title" class="form-control form-control-sm mb-2" maxlength="120" value="<?= e($reengage['title']) ?>">
-            <label class="form-label small">Texto · invitar a volver</label>
-            <textarea name="body" class="form-control font-monospace small mb-3" rows="8"><?= e($reengage['body']) ?></textarea>
-            <label class="form-label small">Título · prueba abierta</label>
-            <input type="text" name="trial_title" class="form-control form-control-sm mb-2" maxlength="120" value="<?= e($reengage['trial_title']) ?>">
-            <label class="form-label small">Texto · tras abrir la prueba</label>
-            <textarea name="trial_body" class="form-control font-monospace small" rows="7"><?= e($reengage['trial_body']) ?></textarea>
+
+            <?php for ($i = 0; $i < 4; $i++): ?>
+            <?php
+                $inv = $reengageInvites[$i] ?? ['label' => 'Aviso ' . ($i + 1), 'title' => '', 'body' => ''];
+                $n = $i + 1;
+            ?>
+            <div class="border rounded p-3 mb-3 bg-light-subtle">
+                <strong class="small d-block mb-2">Aviso <?= $n ?>/4 · <?= e((string) ($inv['label'] ?? '')) ?></strong>
+                <label class="form-label small">Título</label>
+                <input type="text" name="invite_title_<?= $n ?>" class="form-control form-control-sm mb-2" maxlength="120" value="<?= e((string) ($inv['title'] ?? '')) ?>">
+                <label class="form-label small">Texto</label>
+                <textarea name="invite_body_<?= $n ?>" class="form-control font-monospace small" rows="8"><?= e((string) ($inv['body'] ?? '')) ?></textarea>
+            </div>
+            <?php endfor; ?>
+
+            <div class="border rounded p-3 mb-3">
+                <strong class="small d-block mb-2">Tras abrir la prueba</strong>
+                <label class="form-label small">Título</label>
+                <input type="text" name="trial_title" class="form-control form-control-sm mb-2" maxlength="120" value="<?= e($reengage['trial_title']) ?>">
+                <label class="form-label small">Texto</label>
+                <textarea name="trial_body" class="form-control font-monospace small" rows="7"><?= e($reengage['trial_body']) ?></textarea>
+            </div>
+
             <div class="d-flex flex-wrap gap-2 mt-3">
                 <button type="submit" class="btn btn-primary">Guardar reenganche</button>
             </div>
         </form>
-        <div class="d-flex flex-wrap gap-2 mt-3">
+        <p class="small text-muted mt-3 mb-2">Envía al Sandbox Chat ID la plantilla <em>guardada</em> (guarda antes si editaste). El enlace del mensaje de prueba es de ejemplo.</p>
+        <div class="d-flex flex-wrap gap-2">
+            <?php for ($n = 1; $n <= 4; $n++): ?>
             <form method="POST" action="/settings/notifications/reengage/test">
                 <?= csrf_field() ?>
                 <input type="hidden" name="kind" value="invite">
-                <button type="submit" class="btn btn-outline-primary btn-sm">Probar invitación</button>
+                <input type="hidden" name="step" value="<?= $n ?>">
+                <button type="submit" class="btn btn-outline-primary btn-sm">Ver aviso <?= $n ?> en sandbox</button>
             </form>
+            <?php endfor; ?>
             <form method="POST" action="/settings/notifications/reengage/test">
                 <?= csrf_field() ?>
                 <input type="hidden" name="kind" value="trial">
-                <button type="submit" class="btn btn-outline-success btn-sm">Probar mensaje de prueba</button>
+                <button type="submit" class="btn btn-outline-success btn-sm">Ver prueba abierta en sandbox</button>
             </form>
         </div>
     </div>
