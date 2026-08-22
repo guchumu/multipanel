@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\BillingService;
+use App\Services\BillingSettingsService;
 use Core\Controller;
 use Core\Database;
 use Core\Request;
@@ -20,12 +21,16 @@ class BillingController extends Controller
     public function __construct(
         private AuthService $auth = new AuthService(),
         private BillingService $billing = new BillingService(),
+        private BillingSettingsService $billingSettings = new BillingSettingsService(),
     ) {
     }
 
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+
+        // Sustituye seeds viejos (4.99…) por los precios de Configuración → Facturación.
+        $this->billingSettings->syncSubscriptionPlansFromPresets($tenantId);
 
         $plans = Database::getInstance()->fetchAll(
             'SELECT * FROM subscription_plans WHERE tenant_id = ? AND is_active = 1 ORDER BY sort_order, price',

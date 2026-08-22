@@ -37,16 +37,26 @@
                 <li class="list-group-item text-muted text-center">Sin planes</li>
                 <?php else: ?>
                 <?php foreach ($plans as $plan): ?>
+                <?php
+                    $feat = json_decode((string) ($plan['features'] ?? ''), true);
+                    $days = is_array($feat) ? (int) ($feat['days'] ?? 0) : 0;
+                    $period = $days > 0
+                        ? ($days . ' días')
+                        : (string) ($plan['interval'] ?? '');
+                ?>
                 <li class="list-group-item d-flex justify-content-between">
                     <div>
                         <strong><?= e($plan['name']) ?></strong>
-                        <br><small class="text-muted"><?= e($plan['interval']) ?></small>
+                        <br><small class="text-muted"><?= e($period) ?></small>
                     </div>
                     <span class="badge bg-primary"><?= number_format((float) $plan['price'], 2) ?> <?= e($plan['currency']) ?></span>
                 </li>
                 <?php endforeach; ?>
                 <?php endif; ?>
             </ul>
+            <div class="card-footer bg-white small text-muted">
+                Precios de <a href="/settings#billing">Configuración → Facturación</a>. Se actualizan al abrir esta página o al guardar allí.
+            </div>
         </div>
     </div>
     <div class="col-lg-8">

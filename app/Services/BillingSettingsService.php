@@ -103,6 +103,109 @@ final class BillingSettingsService
         }, $presets)));
 
         $this->set($tenantId, 'renewal_presets', json_encode($clean, JSON_UNESCAPED_UNICODE), 'json');
+        $this->syncSubscriptionPlansFromPresets($tenantId, $clean);
+    }
+
+    /**
+     * Alinea la tabla subscription_plans con los presets de Configuración → Facturación
+     * (la página /billing y el portal de planes antiguos leían seeds 4.99/9.99/…).
+     *
+     * @param array<int, array{label: string, days: int, price: float}>|null $presets
+     */
+    public function syncSubscriptionPlansFromPresets(int $tenantId, ?array $presets = null): void
+    {
+        $presets ??= $this->getRenewalPresets($tenantId);
+        $db = Database::getInstance();
+
+        // Seeds de demo: Básico / Estándar / Premium / Anual Premium
+        try {
+            $db->query(
+                "UPDATE subscription_plans
+                 SET is_active = 0
+                 WHERE tenant_id = ?
+                   AND slug IN ('basic', 'standard', 'premium', 'premium-yearly')",
+                [$tenantId]
+            );
+        } catch (\Throwable) {
+        }
+
+        $keepSlugs = [];
+        $sort = 0;
+        foreach ($presets as $preset) {
+            $days = (int) ($preset['days'] ?? 0);
+            $price = round((float) ($preset['price'] ?? 0), 2);
+            $label = trim((string) ($preset['label'] ?? ''));
+            if ($days <= 0 || $price <= 0 || $label === '') {
+                continue;
+            }
+
+            $slug = 'renew-' . $days;
+            $keepSlugs[] = $slug;
+            $interval = $this->daysToPlanInterval($days);
+            $features = json_encode(['days' => $days, 'source' => 'renewal_presets'], JSON_UNESCAPED_UNICODE);
+            $description = $days . ' días · precio de Configuración → Facturación';
+
+            $existing = $db->fetchOne(
+                'SELECT id FROM subscription_plans WHERE tenant_id = ? AND slug = ? LIMIT 1',
+                [$tenantId, $slug]
+            );
+            if ($existing) {
+                $db->update('subscription_plans', [
+                    'name' => $label,
+                    'description' => $description,
+                    'price' => $price,
+                    'currency' => 'EUR',
+                    'interval' => $interval,
+                    'features' => $features,
+                    'is_active' => 1,
+                    'sort_order' => $sort,
+                ], 'id = ?', [$existing['id']]);
+            } else {
+                $db->insert('subscription_plans', [
+                    'tenant_id' => $tenantId,
+                    'name' => $label,
+                    'slug' => $slug,
+                    'description' => $description,
+                    'price' => $price,
+                    'currency' => 'EUR',
+                    'interval' => $interval,
+                    'trial_days' => 0,
+                    'max_streams' => 2,
+                    'max_devices' => 5,
+                    'features' => $features,
+                    'is_active' => 1,
+                    'sort_order' => $sort,
+                ]);
+            }
+            $sort++;
+        }
+
+        // Desactiva otros renew-* que ya no estén en presets
+        if ($keepSlugs !== []) {
+            $placeholders = implode(',', array_fill(0, count($keepSlugs), '?'));
+            try {
+                $db->query(
+                    "UPDATE subscription_plans
+                     SET is_active = 0
+                     WHERE tenant_id = ?
+                       AND slug LIKE 'renew-%'
+                       AND slug NOT IN ({$placeholders})",
+                    array_merge([$tenantId], $keepSlugs)
+                );
+            } catch (\Throwable) {
+            }
+        }
+    }
+
+    private function daysToPlanInterval(int $days): string
+    {
+        return match (true) {
+            $days >= 330 => 'yearly',
+            $days >= 75 => 'quarterly',
+            $days >= 14 => 'monthly',
+            $days >= 7 => 'weekly',
+            default => 'daily',
+        };
     }
 
     public function getExtraAccountPrice(int $tenantId): float
@@ -497,7 +600,7 @@ final class BillingSettingsService
             ['label' => '1 mes', 'days' => 30, 'price' => 15.0],
             ['label' => '3 meses', 'days' => 90, 'price' => 40.0],
             ['label' => '6 meses', 'days' => 180, 'price' => 70.0],
-            ['label' => '1 año', 'days' => 365, 'price' => 130.0],
+            ['label' => '1 año', 'days' => 365, 'price' => 70.0],
         ];
     }
 
