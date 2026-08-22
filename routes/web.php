@@ -160,6 +160,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
     $router->post('/media-users/expiring/bulk-renew', [MediaUserController::class, 'expiringBulkRenew'], 'media_users.expiring.bulk_renew', [CsrfMiddleware::class]);
     $router->post('/media-users/expiring/bulk-suspend', [MediaUserController::class, 'expiringBulkSuspend'], 'media_users.expiring.bulk_suspend', [CsrfMiddleware::class]);
+    $router->post('/media-users/expiring/bulk-reengage', [MediaUserController::class, 'expiringBulkReengage'], 'media_users.expiring.bulk_reengage', [CsrfMiddleware::class]);
     $router->get('/media-users/broadcast', [MediaUserController::class, 'broadcastForm'], 'media_users.broadcast');
     $router->post('/media-users/broadcast', [MediaUserController::class, 'broadcastSend'], 'media_users.broadcast.send', [CsrfMiddleware::class]);
     $router->get('/media-users/limpieza', [MediaUserController::class, 'cleanupHub'], 'media_users.limpieza');
@@ -182,6 +183,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/activate', [MediaUserController::class, 'activate'], 'media_users.activate', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/expires', [MediaUserController::class, 'updateExpires'], 'media_users.expires', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/add-days', [MediaUserController::class, 'addDays'], 'media_users.add_days', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/reengage', [MediaUserController::class, 'reengageInvite'], 'media_users.reengage', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/reengage-trial', [MediaUserController::class, 'reengageTrial'], 'media_users.reengage_trial', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/notes', [MediaUserController::class, 'updateNotes'], 'media_users.notes', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/profile', [MediaUserController::class, 'updateProfile'], 'media_users.profile', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/send-message', [MediaUserController::class, 'sendMessage'], 'media_users.send_message', [CsrfMiddleware::class]);
@@ -245,6 +248,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/settings/notifications', [NotificationSettingsController::class, 'index'], 'settings.notifications');
     $router->post('/settings/notifications', [NotificationSettingsController::class, 'update'], 'settings.notifications.update', [CsrfMiddleware::class]);
     $router->post('/settings/notifications/test', [NotificationSettingsController::class, 'test'], 'settings.notifications.test', [CsrfMiddleware::class]);
+    $router->post('/settings/notifications/reengage', [NotificationSettingsController::class, 'updateReengage'], 'settings.notifications.reengage', [CsrfMiddleware::class]);
+    $router->post('/settings/notifications/reengage/test', [NotificationSettingsController::class, 'testReengage'], 'settings.notifications.reengage_test', [CsrfMiddleware::class]);
     $router->get('/settings/stop-messages', [PlaybackStopMessageController::class, 'index'], 'settings.stop_messages');
     $router->post('/settings/stop-messages', [PlaybackStopMessageController::class, 'store'], 'settings.stop_messages.store', [CsrfMiddleware::class]);
     $router->put('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'update'], 'settings.stop_messages.update', [CsrfMiddleware::class]);

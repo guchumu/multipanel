@@ -45,7 +45,7 @@ final class CronService
             ],
             'expiry' => [
                 'title' => 'Avisos de caducidad',
-                'description' => 'Plantillas de caducidad a clientes por Telegram y/o WhatsApp si los tienen vinculados. Solo ~09:00 Europe/Madrid; fuera de hora no marca enviado. Puede desactivar caducados.',
+                'description' => 'Plantillas de caducidad y, a la misma hora, reenganche a caducados (invitar a volver / prueba) si la campaña está activa.',
                 'schedule' => 'Incluido en all; solo envía a las 09:00 Madrid',
             ],
             'digest' => [
@@ -226,6 +226,7 @@ final class CronService
                 $stats['errors'],
                 $stats['deactivated']
             ));
+            $this->runReengage($tenantId, $out);
             if ((int) ($stats['errors'] ?? 0) > 0) {
                 $this->logAlertResult(
                     $out,
@@ -244,6 +245,28 @@ final class CronService
                 'expiry',
                 (new AdminCriticalAlertService())->notifyCronFailure($tenantId, 'expiry', $e->getMessage())
             );
+        }
+    }
+
+    /** @param callable(string): void $out */
+    private function runReengage(int $tenantId, callable $out): void
+    {
+        $out('Sending reengage invites...');
+        try {
+            $stats = (new ReengageCampaignService())->run($tenantId);
+            if (!empty($stats['deferred'])) {
+                $out('  Reengage deferred (misma ventana horaria que caducidad).');
+                return;
+            }
+            $out(sprintf(
+                '  Reengage sent: %d, skipped: %d, came back: %d, errors: %d',
+                $stats['sent'],
+                $stats['skipped'],
+                $stats['converted'],
+                $stats['errors']
+            ));
+        } catch (\Throwable $e) {
+            $out('  Reengage failed: ' . $e->getMessage());
         }
     }
 

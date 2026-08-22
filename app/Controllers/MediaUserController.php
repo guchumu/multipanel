@@ -25,6 +25,7 @@ use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\PortalDefaultPasswordService;
 use App\Services\PortalLoginLinkService;
+use App\Services\ReengageCampaignService;
 use App\Services\ServerSyncService;
 use App\Services\StreamLimitSettingsService;
 use App\Services\SubscriptionPeriod;
@@ -62,6 +63,7 @@ class MediaUserController extends Controller
         private MonthlyRenewalEstimateService $monthlyEstimate = new MonthlyRenewalEstimateService(),
         private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
         private PortalLoginLinkService $portalLinks = new PortalLoginLinkService(),
+        private ReengageCampaignService $reengage = new ReengageCampaignService(),
     ) {
     }
 
@@ -148,6 +150,9 @@ class MediaUserController extends Controller
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
 
         $users = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
+        $this->reengage::ensureTable();
+        $reengageStats = $this->reengage->stats($tenantId);
+        $reengageCfg = $this->reengage->getConfig($tenantId);
 
         return $this->view('media_users.expiring', [
             'title' => 'Próximos vencimientos',
@@ -155,6 +160,8 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'currentDays' => $days,
             'currentServerId' => $serverId,
+            'reengageStats' => $reengageStats,
+            'reengageCfg' => $reengageCfg,
         ]);
     }
 
@@ -409,6 +416,64 @@ class MediaUserController extends Controller
             $ok,
             $fail,
             $missing > 0 ? ", {$missing} no encontrados" : ''
+        ));
+
+        return $this->redirect($back);
+    }
+
+    public function reengageInvite(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        return $this->json($this->reengage->invite($user, true));
+    }
+
+    public function reengageTrial(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        return $this->json($this->reengage->openTrial($user));
+    }
+
+    public function expiringBulkReengage(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $uuids = $request->input('uuids', []);
+        if (!is_array($uuids)) {
+            $uuids = [];
+        }
+        $redirectDays = max(1, (int) $request->input('filter_days', 30));
+        $redirectServer = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $back = '/media-users/expiring?days=' . $redirectDays
+            . ($redirectServer ? '&server_id=' . $redirectServer : '');
+
+        if ($uuids === []) {
+            Session::getInstance()->flash('error', 'Selecciona al menos un usuario.');
+            return $this->redirect($back);
+        }
+
+        $users = $this->mediaUsers->findByUuids($tenantId, $uuids);
+        $ok = 0;
+        $fail = 0;
+        foreach ($users as $user) {
+            $result = $this->reengage->invite($user, true);
+            if (!empty($result['sent'])) {
+                $ok++;
+            } else {
+                $fail++;
+            }
+        }
+
+        Session::getInstance()->flash('success', sprintf(
+            'Reenganche: %d enviados, %d sin canal o error.',
+            $ok,
+            $fail + max(0, count($uuids) - count($users))
         ));
 
         return $this->redirect($back);

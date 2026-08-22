@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\NotificationTemplateService;
+use App\Services\ReengageCampaignService;
 use App\Services\TelegramSandboxSender;
 use Core\Controller;
 use Core\Request;
@@ -20,6 +21,7 @@ class NotificationSettingsController extends Controller
     public function __construct(
         private AuthService $auth = new AuthService(),
         private NotificationTemplateService $templates = new NotificationTemplateService(),
+        private ReengageCampaignService $reengage = new ReengageCampaignService(),
         private TelegramSandboxSender $sandboxSender = new TelegramSandboxSender(),
     ) {
     }
@@ -35,6 +37,9 @@ class NotificationSettingsController extends Controller
             'messages' => $messages,
             'milestones' => $milestones,
             'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}',
+            'reengage' => $this->reengage->getConfig($tenantId),
+            'reengagePlaceholders' => '{username}, {email}, {display_name}, {end_date}, {days}, {days_left}, {server_name}, {trial_days}, {portal_url}',
+            'reengageStats' => $this->reengage->stats($tenantId),
         ]);
     }
 
@@ -93,5 +98,52 @@ class NotificationSettingsController extends Controller
         Session::getInstance()->flash($result['ok'] ? 'success' : 'error', $result['message']);
 
         return $this->redirect('/settings/notifications');
+    }
+
+    public function updateReengage(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $this->reengage->saveConfig($tenantId, [
+            'enabled' => $request->input('enabled') ? true : false,
+            'interval_days' => $request->input('interval_days'),
+            'max_sends' => $request->input('max_sends'),
+            'min_expired_days' => $request->input('min_expired_days'),
+            'trial_days' => $request->input('trial_days'),
+            'title' => $request->input('title'),
+            'body' => $request->input('body'),
+            'trial_title' => $request->input('trial_title'),
+            'trial_body' => $request->input('trial_body'),
+        ]);
+        Session::getInstance()->flash('success', 'Campaña de reenganche guardada.');
+
+        return $this->redirect('/settings/notifications#reengage');
+    }
+
+    public function testReengage(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $kind = (string) $request->input('kind', 'invite') === 'trial' ? 'trial' : 'invite';
+        $cfg = $this->reengage->getConfig($tenantId);
+        $template = $kind === 'trial' ? $cfg['trial_body'] : $cfg['body'];
+        $title = $kind === 'trial' ? $cfg['trial_title'] : $cfg['title'];
+        if (trim($template) === '') {
+            Session::getInstance()->flash('error', 'Guarda el texto antes de probar.');
+            return $this->redirect('/settings/notifications#reengage');
+        }
+
+        $sample = new \App\Models\MediaUser([
+            'username' => 'demo',
+            'display_name' => 'Ana',
+            'email' => 'ana@ejemplo.com',
+            'expires_at' => date('Y-m-d', strtotime('-12 days')),
+        ]);
+        $body = $this->reengage->render($template, $sample, $cfg, 'Server10');
+        $head = $this->reengage->render($title, $sample, $cfg, 'Server10');
+        $label = $kind === 'trial' ? 'prueba abierta' : 'invitar a volver';
+        $text = "*{$head}*\n\n{$body}\n\n_[PRUEBA reenganche · {$label}]_";
+        $result = $this->sandboxSender->sendToSandbox($tenantId, $text, 'Markdown');
+        Session::getInstance()->flash($result['ok'] ? 'success' : 'error', $result['message']);
+
+        return $this->redirect('/settings/notifications#reengage');
     }
 }

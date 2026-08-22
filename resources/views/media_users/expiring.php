@@ -62,6 +62,33 @@ ob_start();
     </div>
 </div>
 
+<?php
+$reengageStats = $reengageStats ?? ['contacted' => 0, 'came_back' => 0, 'rate' => 0];
+$reengageCfg = $reengageCfg ?? ['trial_days' => 3, 'interval_days' => 14, 'enabled' => true];
+$trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
+?>
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="min-w-0">
+            <strong class="d-block">Gancho para volver</strong>
+            <p class="small text-muted mb-0">
+                En caducados: invita a retomar o ábreles <?= $trialDays ?> días de prueba.
+                El aviso guardado se repite cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
+                <?= !empty($reengageCfg['enabled']) ? '' : ' (automático ahora apagado)' ?>.
+                <a href="/settings/notifications#reengage">Editar mensaje</a>
+            </p>
+        </div>
+        <div class="text-nowrap small">
+            <?php if ((int) $reengageStats['contacted'] > 0): ?>
+            <span class="badge bg-success-subtle text-success border"><?= (int) $reengageStats['came_back'] ?> volvieron</span>
+            <span class="text-muted">de <?= (int) $reengageStats['contacted'] ?> (<?= (int) $reengageStats['rate'] ?>%)</span>
+            <?php else: ?>
+            <span class="text-muted">Aún no hay envíos de reenganche</span>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
 <div class="row g-3 mb-3" id="urgencyCards">
     <?php foreach ($bucketMeta as $id => $meta): ?>
     <?php $count = count($buckets[$id]); ?>
@@ -97,6 +124,9 @@ ob_start();
                 </div>
                 <button type="button" class="btn btn-warning btn-sm" id="bulkSuspendBtn" title="Suspender selección">
                     <i class="bi bi-pause"></i><span class="d-none d-sm-inline ms-1">Suspender</span>
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="bulkReengageBtn" title="Invitar a volver">
+                    <i class="bi bi-heart"></i><span class="d-none d-sm-inline ms-1">Invitar a volver</span>
                 </button>
                 <button type="button" class="btn btn-link btn-sm p-0" id="bulkClearSelection">Limpiar</button>
             </div>
@@ -197,6 +227,19 @@ ob_start();
                                 <i class="bi bi-three-dots"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
+                                <?php if ($bucket === 'expired'): ?>
+                                <li>
+                                    <a class="dropdown-item btn-reengage-invite" href="#" data-uuid="<?= e($u->uuid) ?>">
+                                        <i class="bi bi-heart me-2"></i>Invitar a volver
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item btn-reengage-trial" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= $trialDays ?>">
+                                        <i class="bi bi-gift me-2"></i>Abrir prueba <?= $trialDays ?>d
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <?php endif; ?>
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>"><i class="bi bi-eye me-2"></i>Ver ficha</a></li>
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>#stripe"><i class="bi bi-credit-card me-2"></i>Enlace de pago</a></li>
                                 <li><hr class="dropdown-divider"></li>

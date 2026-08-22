@@ -44,6 +44,7 @@ final class Updater
         '019_media_user_endpoints.sql' => ['table' => 'media_user_endpoints'],
         '020_home_away_stream_limits.sql' => ['column' => ['media_users', 'max_home_streams']],
         '021_server_user_quota.sql' => ['column' => ['servers', 'user_quota']],
+        '022_media_user_reengage.sql' => ['table' => 'media_user_reengage'],
     ];
 
     public function __construct()

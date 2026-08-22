@@ -86,6 +86,7 @@
     const clearBtn = document.getElementById('bulkClearSelection');
     const renewBtn = document.getElementById('bulkRenewBtn');
     const suspendBtn = document.getElementById('bulkSuspendBtn');
+    const reengageBtn = document.getElementById('bulkReengageBtn');
     const renewDaysInput = document.getElementById('bulkRenewDays');
 
     function visibleRows() {
@@ -202,6 +203,59 @@
             postForm('/media-users/expiring/bulk-suspend', fields);
         });
     }
+
+    if (reengageBtn) {
+        reengageBtn.addEventListener('click', () => {
+            const uuids = selectedUuids();
+            if (!uuids.length) return;
+            if (!confirm(`¿Enviar el gancho de volver a ${uuids.length} usuario(s)? Se usará el texto guardado en Mensajes a usuarios.`)) return;
+            const fields = {
+                filter_days: filterDays,
+                'uuids[]': uuids,
+            };
+            if (serverId) fields.server_id = serverId;
+            postForm('/media-users/expiring/bulk-reengage', fields);
+        });
+    }
+
+    document.querySelectorAll('.btn-reengage-invite').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uuid = btn.dataset.uuid;
+            if (!uuid) return;
+            if (!confirm('¿Enviar la invitación a volver con el texto guardado?')) return;
+            btn.classList.add('disabled');
+            try {
+                const data = await post(`/media-users/${uuid}/reengage`);
+                alert(data.message || 'Enviado');
+                if (data.sent) location.reload();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btn.classList.remove('disabled');
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-reengage-trial').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uuid = btn.dataset.uuid;
+            const days = Number(btn.dataset.days || 3);
+            if (!uuid) return;
+            if (!confirm(`¿Abrir ${days} días de prueba y avisar al usuario? Se reactivará el acceso.`)) return;
+            btn.classList.add('disabled');
+            try {
+                const data = await post(`/media-users/${uuid}/reengage-trial`);
+                alert(data.message || 'Prueba abierta');
+                location.reload();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btn.classList.remove('disabled');
+            }
+        });
+    });
 
     syncBulkBar();
 })();
