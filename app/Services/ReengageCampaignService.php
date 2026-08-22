@@ -57,11 +57,17 @@ final class ReengageCampaignService
         $invites = $this->normalizeInvites($decoded, $defaults['invites']);
         $first = $invites[0];
 
+        // Default antiguo de la campaña era 3; el producto arranca reenganche a los 60 días.
+        $minExpired = max(1, (int) ($decoded['min_expired_days'] ?? $defaults['min_expired_days']));
+        if ($minExpired === 3) {
+            $minExpired = 60;
+        }
+
         return [
             'enabled' => array_key_exists('enabled', $decoded) ? (bool) $decoded['enabled'] : $defaults['enabled'],
             'interval_days' => max(1, (int) ($decoded['interval_days'] ?? $defaults['interval_days'])),
             'max_sends' => max(1, min(self::INVITE_SLOTS, (int) ($decoded['max_sends'] ?? $defaults['max_sends']))),
-            'min_expired_days' => max(1, (int) ($decoded['min_expired_days'] ?? $defaults['min_expired_days'])),
+            'min_expired_days' => $minExpired,
             'trial_days' => max(1, min(15, (int) ($decoded['trial_days'] ?? $defaults['trial_days']))),
             'discount_percent' => max(0, min(90, (int) ($decoded['discount_percent'] ?? $defaults['discount_percent']))),
             'link_ttl_days' => max(30, min(365, (int) ($decoded['link_ttl_days'] ?? $defaults['link_ttl_days']))),
@@ -397,7 +403,7 @@ final class ReengageCampaignService
             'enabled' => (bool) config('reengage.enabled', true),
             'interval_days' => max(1, (int) config('reengage.interval_days', 14)),
             'max_sends' => max(1, min(self::INVITE_SLOTS, (int) config('reengage.max_sends', 4))),
-            'min_expired_days' => max(1, (int) config('reengage.min_expired_days', 3)),
+            'min_expired_days' => max(1, (int) config('reengage.min_expired_days', 60)),
             'trial_days' => max(1, min(15, (int) config('reengage.trial_days', 3))),
             'discount_percent' => max(0, min(90, (int) config('reengage.discount_percent', 15))),
             'link_ttl_days' => max(30, min(365, (int) config('reengage.link_ttl_days', 365))),

@@ -12,7 +12,8 @@ return [
     'enabled' => env('REENGAGE_ENABLED', true),
     'interval_days' => (int) env('REENGAGE_INTERVAL_DAYS', 14),
     'max_sends' => (int) env('REENGAGE_MAX_SENDS', 4),
-    'min_expired_days' => (int) env('REENGAGE_MIN_EXPIRED_DAYS', 3),
+    // Solo tras ~2 meses caducado (antes: avisos de renovación a 15/30/45 días).
+    'min_expired_days' => (int) env('REENGAGE_MIN_EXPIRED_DAYS', 60),
     'trial_days' => (int) env('REENGAGE_TRIAL_DAYS', 3),
     'discount_percent' => (int) env('REENGAGE_DISCOUNT_PERCENT', 15),
     'link_ttl_days' => (int) env('REENGAGE_LINK_TTL_DAYS', 365),

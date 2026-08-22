@@ -63,6 +63,7 @@ final class ExpiryNotificationService
 
         $stats = ['sent' => 0, 'skipped' => 0, 'errors' => 0, 'checked' => 0, 'deactivated' => 0];
 
+        // Incluye caducados/suspendidos: hacen falta para milestones -15/-30/-45.
         $rows = Database::getInstance()->fetchAll(
             'SELECT mu.*, s.name AS server_name
              FROM media_users mu
@@ -70,7 +71,7 @@ final class ExpiryNotificationService
              WHERE mu.tenant_id = ?
                AND mu.deleted_at IS NULL
                AND mu.expires_at IS NOT NULL
-               AND mu.status IN (\'active\', \'invited\')',
+               AND mu.status IN (\'active\', \'invited\', \'expired\', \'suspended\')',
             [$tenantId]
         );
 
@@ -258,6 +259,11 @@ final class ExpiryNotificationService
             ? (new DateTimeImmutable($expiresDate))->format('d/m/Y')
             : '';
 
+        $yearPrice = (float) config('expiry_notifications.year_price', 70);
+        $yearPriceLabel = fmod($yearPrice, 1.0) < 0.001
+            ? (string) (int) $yearPrice
+            : number_format($yearPrice, 2, ',', '');
+
         $replace = [
             '{username}' => (string) $user->username,
             '{email}' => (string) ($user->email ?? ''),
@@ -268,6 +274,7 @@ final class ExpiryNotificationService
             '{days}' => (string) abs($daysLeft),
             '{days_left}' => (string) $daysLeft,
             '{server_name}' => $serverName !== '' ? $serverName : '—',
+            '{year_price}' => $yearPriceLabel,
         ];
 
         return str_replace(array_keys($replace), array_values($replace), $template);

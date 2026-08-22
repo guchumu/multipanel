@@ -6,22 +6,41 @@
     </div>
     <a href="/settings" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear me-1"></i>Volver a Configuración</a>
 </div>
-<p class="text-muted small mb-1">Personaliza los mensajes automáticos por días restantes. Placeholders: <code><?= e($placeholders) ?></code></p>
+<p class="text-muted small mb-1">Personaliza los mensajes automáticos por días restantes (positivos = antes de caducar; negativos = días tras caducar). Placeholders: <code><?= e($placeholders) ?></code></p>
+<p class="text-muted small">
+    Tras caducar: avisos a los <strong>15, 30 y 45 días</strong> para renovar a precio normal ({year_price} €/año, sin descuento).
+    El reenganche con descuento empieza a los <strong>60 días</strong>.
+</p>
 <p class="text-muted small">
     <strong>Probar</strong> envía la plantilla <em>guardada</em> al Sandbox Chat ID (siempre sandbox, aunque el modo sandbox esté desactivado),
     con datos de ejemplo (nombre, fecha, días…). Requiere Bot Token + Sandbox Chat ID en
     <a href="/settings#telegram">Configuración → Telegram</a>. Guarda antes si editaste el texto.
 </p>
 
+<?php
+$milestoneLabel = static function (int $milestone): string {
+    if ($milestone === -1) {
+        return 'Caducó ayer (−1)';
+    }
+    if ($milestone < 0) {
+        return 'Caducó hace ' . abs($milestone) . ' días (' . $milestone . ')';
+    }
+    if ($milestone === 0) {
+        return 'Caduca hoy (0)';
+    }
+
+    return "Faltan {$milestone} días";
+};
+?>
 <form method="POST" action="/settings/notifications">
     <?= csrf_field() ?>
     <div class="accordion" id="msgAccordion">
         <?php foreach ($milestones as $milestone): ?>
-        <?php $key = (string) $milestone; ?>
+        <?php $key = (string) $milestone; $milestone = (int) $milestone; ?>
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#m<?= e(str_replace('-', 'n', $key)) ?>">
-                    <?= $milestone === -1 ? 'Caducó ayer (-1)' : ($milestone === 0 ? 'Caduca hoy (0)' : "Faltan {$milestone} días") ?>
+                    <?= e($milestoneLabel($milestone)) ?>
                 </button>
             </h2>
             <div id="m<?= e(str_replace('-', 'n', $key)) ?>" class="accordion-collapse collapse" data-bs-parent="#msgAccordion">
@@ -48,10 +67,10 @@
                 </thead>
                 <tbody>
                     <?php foreach ($milestones as $milestone): ?>
-                    <?php $key = (string) $milestone; ?>
+                    <?php $key = (string) $milestone; $milestone = (int) $milestone; ?>
                     <tr>
                         <td>
-                            <?= $milestone === -1 ? 'Caducó ayer (-1)' : ($milestone === 0 ? 'Caduca hoy (0)' : "Faltan {$milestone} días") ?>
+                            <?= e($milestoneLabel($milestone)) ?>
                         </td>
                         <td class="text-end">
                             <form method="POST" action="/settings/notifications/test" class="d-inline">
@@ -72,7 +91,7 @@
 
 <?php
 $reengage = $reengage ?? [
-    'enabled' => true, 'interval_days' => 14, 'max_sends' => 4, 'min_expired_days' => 3,
+    'enabled' => true, 'interval_days' => 14, 'max_sends' => 4, 'min_expired_days' => 60,
     'trial_days' => 3, 'discount_percent' => 15, 'link_ttl_days' => 365,
     'invites' => [], 'trial_title' => '', 'trial_body' => '',
 ];
@@ -86,9 +105,10 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {dis
             <div>
                 <h5 class="mb-1"><i class="bi bi-heart me-1 text-danger"></i>Reenganche de caducados</h5>
                 <p class="text-muted small mb-0">
-                    Cuatro avisos en orden (1→4). Cada envío crea un enlace directo al portal sin contraseña
-                    (válido <?= (int) ($reengage['link_ttl_days'] ?? 365) ?> días) y cae en la tienda.
-                    Si no responden, el cron de las 09:00 manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
+                    Solo a partir de <strong><?= (int) ($reengage['min_expired_days'] ?? 60) ?> días</strong> caducado
+                    (antes: renovación a 15/30/45 días a precio normal).
+                    Cuatro avisos en orden (1→4) con descuento y enlace de 1 año al portal.
+                    El cron de las 09:00 manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
                     El <?= (int) ($reengage['discount_percent'] ?? 15) ?>% de descuento va en el texto: aplícalo tú al renovar (aún no se descuenta solo en Stripe).
                 </p>
             </div>
@@ -118,7 +138,7 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {dis
                 </div>
                 <div class="col-6 col-md-2">
                     <label class="form-label small">Caducado mín.</label>
-                    <input type="number" min="1" max="60" name="min_expired_days" class="form-control form-control-sm" value="<?= (int) $reengage['min_expired_days'] ?>">
+                    <input type="number" min="1" max="180" name="min_expired_days" class="form-control form-control-sm" value="<?= (int) $reengage['min_expired_days'] ?>" title="Días tras caducar antes del 1.er aviso de reenganche (60 ≈ 2 meses)">
                 </div>
                 <div class="col-6 col-md-2">
                     <label class="form-label small">Días prueba</label>

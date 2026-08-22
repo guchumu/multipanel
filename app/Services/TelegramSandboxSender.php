@@ -94,6 +94,7 @@ final class TelegramSandboxSender
             '{days}' => (string) abs($daysLeft),
             '{days_left}' => (string) $daysLeft,
             '{server_name}' => 'Servidor Demo',
+            '{year_price}' => (string) (int) config('expiry_notifications.year_price', 70),
         ];
     }
 

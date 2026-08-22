@@ -64,7 +64,7 @@ ob_start();
 
 <?php
 $reengageStats = $reengageStats ?? ['contacted' => 0, 'came_back' => 0, 'rate' => 0];
-$reengageCfg = $reengageCfg ?? ['trial_days' => 3, 'interval_days' => 14, 'enabled' => true];
+$reengageCfg = $reengageCfg ?? ['trial_days' => 3, 'interval_days' => 14, 'enabled' => true, 'min_expired_days' => 60, 'discount_percent' => 15];
 $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
 ?>
 <div class="card border-0 shadow-sm mb-3">
@@ -72,8 +72,9 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
         <div class="min-w-0">
             <strong class="d-block">Gancho para volver</strong>
             <p class="small text-muted mb-0">
-                En caducados: 4 avisos en orden (Plex, enlace 1 año, <?= (int) ($reengageCfg['discount_percent'] ?? 15) ?>% al volver)
-                o ábreles <?= $trialDays ?> días de prueba.
+                Antes: renovar a los 15/30/45 días (precio normal).
+                Reenganche (descuento / prueba) desde el día <?= (int) ($reengageCfg['min_expired_days'] ?? 60) ?> caducado:
+                4 avisos en orden o ábreles <?= $trialDays ?> días de prueba.
                 Se repiten cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
                 <?= !empty($reengageCfg['enabled']) ? '' : ' (automático ahora apagado)' ?>.
                 <a href="/settings/notifications#reengage">Editar mensajes</a>

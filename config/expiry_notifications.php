@@ -5,9 +5,11 @@ declare(strict_types=1);
 /**
  * Avisos de caducidad de usuarios media por Telegram.
  * Placeholders: {username}, {email}, {display_name}, {expires_at}, {expires_date},
- *               {end_date}, {days}, {days_left}, {server_name}
+ *               {end_date}, {days}, {days_left}, {server_name}, {year_price}
  *
- * milestones: días restantes hasta caducar (0 = hoy, -1 = ayer caducó).
+ * milestones: días restantes (positivo = antes; 0 = hoy; negativo = días tras caducar).
+ * Tras caducar: -15 / -30 / -45 = renovar a precio normal.
+ * El reenganche con descuento empieza a los 60 días (config reengage.min_expired_days).
  */
 return [
     'enabled' => env('EXPIRY_NOTIFICATIONS_ENABLED', true),
@@ -23,7 +25,10 @@ return [
     // Si el cron cae más tarde dentro de la misma hora, también se permite (dedup por milestone).
     'notify_window_minutes' => (int) env('EXPIRY_NOTIFY_WINDOW_MINUTES', 15),
 
-    'milestones' => [10, 7, 5, 4, 3, 2, 1, 0, -1],
+    // Precio año en avisos post-caducidad (sin descuento de reenganche).
+    'year_price' => (float) env('EXPIRY_YEAR_PRICE', 70),
+
+    'milestones' => [10, 7, 5, 4, 3, 2, 1, 0, -1, -15, -30, -45],
 
     'messages' => [
         10 => <<<'TXT'
@@ -105,6 +110,33 @@ Hola {display_name},
 Tu acceso *caducó ayer* ({end_date}) y el servicio ya no está activo.
 
 Si deseas reactivarlo, contacta con nosotros para renovar.
+
+Usuario: {username}
+TXT,
+        -15 => <<<'TXT'
+Hola {display_name},
+
+Hace *15 días* que caducó tu acceso a *Plex* ({end_date}).
+
+Si quieres volver, la renovación es *{year_price} € al año* (precio normal, sin descuento). Responde a este mensaje o escríbenos y te reactivamos.
+
+Usuario: {username}
+TXT,
+        -30 => <<<'TXT'
+Hola {display_name},
+
+Llevas *30 días* sin acceso a *Plex* (caducó el {end_date}).
+
+Renovar: *{year_price} € / año*. Sin descuentos en esta etapa: es el precio habitual. Si te encaja, responde y lo dejamos listo.
+
+Usuario: {username}
+TXT,
+        -45 => <<<'TXT'
+Hola {display_name},
+
+Han pasado *45 días* desde que caducó tu plaza en *Plex* ({end_date}).
+
+Último recordatorio a precio normal: *{year_price} € al año*. Si quieres renovar, responde a este mensaje.
 
 Usuario: {username}
 TXT,

@@ -36,7 +36,7 @@ class NotificationSettingsController extends Controller
             'title' => 'Mensajes a los usuarios',
             'messages' => $messages,
             'milestones' => $milestones,
-            'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}',
+            'placeholders' => '{username}, {email}, {display_name}, {expires_at}, {end_date}, {days_left}, {server_name}, {year_price}',
             'reengage' => $this->reengage->getConfig($tenantId),
             'reengagePlaceholders' => '{username}, {email}, {display_name}, {end_date}, {server_name}, {service_name}, {trial_days}, {discount_percent}, {link_years}, {portal_url}',
             'reengageStats' => $this->reengage->stats($tenantId),
@@ -90,7 +90,9 @@ class NotificationSettingsController extends Controller
         $body = TelegramSandboxSender::renderWithSamples($template, $daysLeft);
         $label = $daysLeft === -1
             ? 'caducó ayer (-1)'
-            : ($daysLeft === 0 ? 'caduca hoy (0)' : "faltan {$daysLeft} días");
+            : ($daysLeft < 0
+                ? ('caducó hace ' . abs($daysLeft) . ' días')
+                : ($daysLeft === 0 ? 'caduca hoy (0)' : "faltan {$daysLeft} días"));
 
         $text = "*{$title}*\n\n{$body}\n\n_[PRUEBA plantilla · {$label}]_";
         $result = $this->sandboxSender->sendToSandbox($tenantId, $text, 'Markdown');
