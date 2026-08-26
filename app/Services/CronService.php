@@ -319,20 +319,24 @@ final class CronService
         $out('Syncing servers...');
         $sync = new ServerSyncService();
         $repo = new ServerRepository();
-        $failedNames = [];
+        $failures = [];
 
         foreach ($repo->allByTenant($tenantId) as $server) {
             $label = $server->displayLabel();
             $result = $sync->sync($server);
             $out('  Server ' . $label . ': ' . ($result ? 'OK' : 'FAIL'));
             if (!$result) {
-                $failedNames[] = $label;
+                $fresh = $repo->find((int) $server->id) ?? $server;
+                $error = trim((string) ($fresh->last_error ?? $server->last_error ?? ''));
+                $out('    error: ' . ($error !== '' ? $error : '(vacío)'));
+                $failures[] = ['name' => $label, 'error' => $error];
             }
         }
 
-        if ($failedNames !== []) {
-            $alert = (new AdminCriticalAlertService())->notifySyncFailures($tenantId, $failedNames);
-            $this->logAlertResult($out, 'sync FAIL (' . implode(', ', $failedNames) . ')', $alert);
+        if ($failures !== []) {
+            $alert = (new AdminCriticalAlertService())->notifySyncFailures($tenantId, $failures);
+            $names = array_column($failures, 'name');
+            $this->logAlertResult($out, 'sync FAIL (' . implode(', ', $names) . ')', $alert);
         }
     }
 

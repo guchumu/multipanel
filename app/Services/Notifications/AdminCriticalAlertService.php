@@ -121,28 +121,55 @@ final class AdminCriticalAlertService
     }
 
     /**
-     * @param array<int, string> $serverNames
+     * @param array<int, string>|array<int, array{name: string, error?: string}> $failures
      * @return array{ok: bool, skipped: bool, reason: string, channels: array<int, string>}
      */
-    public function notifySyncFailures(int $tenantId, array $serverNames): array
+    public function notifySyncFailures(int $tenantId, array $failures): array
     {
-        $names = array_values(array_filter(array_map('strval', $serverNames)));
-        if ($names === []) {
+        $rows = [];
+        foreach ($failures as $item) {
+            if (is_array($item)) {
+                $name = trim((string) ($item['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+                $rows[] = [
+                    'name' => $name,
+                    'error' => trim((string) ($item['error'] ?? '')),
+                ];
+                continue;
+            }
+            $name = trim((string) $item);
+            if ($name !== '') {
+                $rows[] = ['name' => $name, 'error' => ''];
+            }
+        }
+        if ($rows === []) {
             return ['ok' => false, 'skipped' => true, 'reason' => 'no failures', 'channels' => []];
         }
 
-        sort($names);
-        $count = count($names);
+        usort($rows, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+        $names = array_column($rows, 'name');
+        $count = count($rows);
         $list = implode(', ', $names);
         $fp = 'sync_fail:' . md5(implode('|', $names));
+
+        $detailLines = [];
+        foreach ($rows as $row) {
+            $err = $row['error'] !== '' ? $row['error'] : 'sin detalle (revisa Servidores → last_error)';
+            $detailLines[] = "• {$row['name']}: {$err}";
+        }
+        $details = implode("\n", $detailLines);
+
+        $body = $count === 1
+            ? "El sync del servidor \"{$list}\" ha fallado.\n\nMotivo:\n{$details}\n\nNota: si hay gente viendo, Plex puede seguir activo en la red local; el panel no alcanzó la API de administración (URL / token / timeout)."
+            : "Han fallado {$count} servidores en el sync:\n{$details}\n\nNota: el sync del panel no es lo mismo que el visionado de los clientes.";
 
         return $this->notify(
             $tenantId,
             $fp,
             $count === 1 ? "SYNC FAIL: {$list}" : "SYNC FAIL: {$count} servidores",
-            $count === 1
-                ? "El sync del servidor \"{$list}\" ha fallado. Revisar conexión / token / URL."
-                : "Han fallado {$count} servidores en el sync (nombre + tipo):\n{$list}",
+            $body,
             ['debounce_minutes' => 30]
         );
     }
