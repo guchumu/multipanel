@@ -40,6 +40,7 @@ use App\Controllers\SecurityController;
 use App\Controllers\CronController;
 use App\Controllers\PaymentLinkController;
 use App\Controllers\PortalLoginLinkController;
+use App\Controllers\SessionKillLinkController;
 use App\Controllers\PeticionesController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
@@ -68,6 +69,7 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 // Short payment links (public redirect to Stripe checkout)
 $router->get('/p/{code}', [PaymentLinkController::class, 'show'], 'payment_link.show');
 $router->get('/u/{code}', [PortalLoginLinkController::class, 'enter'], 'portal.magic');
+$router->get('/k/{code}', [SessionKillLinkController::class, 'kill'], 'session_kill.link');
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);

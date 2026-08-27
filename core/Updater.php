@@ -46,6 +46,7 @@ final class Updater
         '021_server_user_quota.sql' => ['column' => ['servers', 'user_quota']],
         '022_media_user_reengage.sql' => ['table' => 'media_user_reengage'],
         '023_reengage_discount_used.sql' => ['column' => ['media_user_reengage', 'discount_used_at']],
+        '024_session_kill_links.sql' => ['table' => 'session_kill_links'],
     ];
 
     public function __construct()

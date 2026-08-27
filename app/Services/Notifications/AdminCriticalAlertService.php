@@ -249,6 +249,8 @@ final class AdminCriticalAlertService
 
         $cutLines = [];
         $otherLines = [];
+        $killLinks = new \App\Services\SessionKillLinkService();
+        $streamSettings = new \App\Services\StreamLimitSettingsService();
         foreach ($sessions as $s) {
             if (!is_array($s)) {
                 continue;
@@ -269,6 +271,21 @@ final class AdminCriticalAlertService
             $bit = "{$zone}: {$titleS} · {$ip} · {$player}";
             if ($why !== '') {
                 $bit .= " → {$why}";
+            }
+            if ($isCut && empty($s['killed'])) {
+                $serverId = (int) ($s['server_id'] ?? 0);
+                $sessionId = trim((string) ($s['session_id'] ?? ''));
+                if ($serverId > 0 && $sessionId !== '') {
+                    $killMessage = match ($reason) {
+                        'away' => $streamSettings->getKillMessageAway($tenantId),
+                        'home' => $streamSettings->getKillMessageHome($tenantId),
+                        default => $streamSettings->getKillMessage($tenantId),
+                    };
+                    $link = $killLinks->create($tenantId, $serverId, $sessionId, $killMessage, $reason);
+                    if (!empty($link['short_url'])) {
+                        $bit .= "\n  Cortar: " . $link['short_url'];
+                    }
+                }
             }
             if ($isCut) {
                 $cutLines[] = $bit;

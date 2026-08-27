@@ -37,7 +37,7 @@ ob_start();
                                <?= !empty($settings['sandbox_alerts']) ? 'checked' : '' ?>>
                         <label class="form-check-label" for="sandbox_alerts">
                             <strong>Avisarme en sandbox</strong>
-                            <div class="small text-muted">WhatsApp/Telegram cuando alguien se pasa: hora, usuario, Casa/Fuera y qué se habría cortado.</div>
+                            <div class="small text-muted">WhatsApp/Telegram cuando alguien se pasa: hora, usuario, Casa/Fuera, qué se habría cortado y un enlace para cortar al abrirlo (mensaje de límite de reproducciones).</div>
                         </label>
                     </div>
 

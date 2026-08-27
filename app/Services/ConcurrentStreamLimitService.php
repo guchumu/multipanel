@@ -535,6 +535,7 @@ final class ConcurrentStreamLimitService
             'state' => (string) ($session['state'] ?? ''),
             'server' => (string) ($session['server_name'] ?? ''),
             'session_id' => (string) ($session['session_id'] ?? ''),
+            'server_id' => (int) ($session['server_id'] ?? 0),
             'ip' => (string) ($session['client_ip'] ?? ''),
             'progress' => (int) ($session['progress'] ?? 0),
             'play_method' => (string) ($session['play_method'] ?? ''),
