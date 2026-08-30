@@ -90,7 +90,7 @@
     const renewDaysInput = document.getElementById('bulkRenewDays');
 
     function visibleRows() {
-        return Array.from(document.querySelectorAll('.expiring-row')).filter((row) => !row.classList.contains('d-none'));
+        return Array.from(document.querySelectorAll('.expiring-row'));
     }
 
     function selectedBoxes() {
@@ -98,39 +98,6 @@
             .map((row) => row.querySelector('.expiring-select'))
             .filter((el) => el && el.checked);
     }
-
-    function setBucket(bucket) {
-        document.querySelectorAll('.urgency-card').forEach((card) => {
-            card.classList.toggle('is-active', card.dataset.bucket === bucket);
-        });
-        document.querySelectorAll('.expiring-row').forEach((row) => {
-            row.classList.toggle('d-none', row.dataset.bucket !== bucket);
-            const box = row.querySelector('.expiring-select');
-            if (box && row.dataset.bucket !== bucket) box.checked = false;
-        });
-        document.querySelectorAll('.expiring-col-last-msg').forEach((col) => {
-            col.classList.toggle('d-none', bucket !== 'd180');
-            col.classList.toggle('d-lg-table-cell', bucket === 'd180');
-        });
-        const title = document.getElementById('expiringListTitle');
-        const titles = window.EXPIRING_BUCKET_TITLES || {};
-        if (title && titles[bucket]) title.textContent = titles[bucket];
-        syncBulkBar();
-    }
-
-    const initialBucket = window.EXPIRING_INITIAL_BUCKET;
-    if (initialBucket) {
-        setBucket(initialBucket);
-    }
-
-    document.getElementById('urgencyCards')?.addEventListener('click', (e) => {
-        const card = e.target.closest('.urgency-card');
-        if (!card) return;
-        setBucket(card.dataset.bucket);
-        const url = new URL(window.location.href);
-        url.searchParams.set('bucket', card.dataset.bucket || '');
-        window.history.replaceState({}, '', url);
-    });
 
     function selectedUuids() {
         return selectedBoxes().map((el) => el.value).filter(Boolean);

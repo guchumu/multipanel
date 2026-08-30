@@ -1101,8 +1101,10 @@ button.session-household-badge:disabled {
 }
 
 .urgency-card {
+    display: block;
     width: 100%;
     text-align: left;
+    color: inherit;
     border: 1px solid var(--bs-border-color, #dee2e6);
     border-radius: 0.75rem;
     padding: 0.9rem 1rem;

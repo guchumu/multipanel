@@ -400,6 +400,172 @@ class MediaUserRepository
         return array_map(fn ($row) => new MediaUser($row), $rows);
     }
 
+    /** @return array<string, int> */
+    public function countExpiringBuckets(int $tenantId, ?int $serverId = null, int $longExpiredDays = 180): array
+    {
+        $counts = [];
+        foreach (['d180', 'expired', 'd3', 'd7', 'd30'] as $bucket) {
+            $counts[$bucket] = $this->countExpiringBucket($tenantId, $bucket, $serverId, $longExpiredDays);
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @return array{users: array<int, MediaUser>, total: int, page: int, per_page: int, total_pages: int}
+     */
+    public function findExpiringBucketPage(
+        int $tenantId,
+        string $bucket,
+        ?int $serverId = null,
+        int $page = 1,
+        int $perPage = 50,
+        int $longExpiredDays = 180,
+    ): array {
+        if (!in_array($bucket, ['d180', 'expired', 'd3', 'd7', 'd30'], true)) {
+            return ['users' => [], 'total' => 0, 'page' => 1, 'per_page' => $perPage, 'total_pages' => 0];
+        }
+
+        $page = max(1, $page);
+        $perPage = max(10, min(100, $perPage));
+        $offset = ($page - 1) * $perPage;
+
+        $withReengage = in_array($bucket, ['d180', 'expired'], true);
+        $baseParams = [];
+        $from = $this->expiringFromClause($tenantId, $serverId, $baseParams, $withReengage);
+        $bucketParams = [];
+        $condition = $this->expiringBucketCondition($bucket, $longExpiredDays, $bucketParams);
+        $params = array_merge($baseParams, $bucketParams);
+
+        $db = Database::getInstance();
+        $countRow = $db->fetchOne("SELECT COUNT(*) AS total {$from}{$condition}", $params);
+        $total = (int) ($countRow['total'] ?? 0);
+        $totalPages = $total > 0 ? (int) ceil($total / $perPage) : 0;
+
+        if ($total === 0) {
+            return [
+                'users' => [],
+                'total' => 0,
+                'page' => $page,
+                'per_page' => $perPage,
+                'total_pages' => 0,
+            ];
+        }
+
+        $select = $this->expiringSelectClause($withReengage);
+        $rows = $db->fetchAll(
+            "{$select} {$from}{$condition} ORDER BY mu.`expires_at` ASC, mu.`id` ASC LIMIT {$perPage} OFFSET {$offset}",
+            $params
+        ) ?: [];
+
+        foreach ($rows as $i => $row) {
+            $days = days_left($row['expires_at'] ?? null);
+            $rows[$i]['days_left'] = $days;
+            if ($bucket === 'd180') {
+                $rows[$i]['days_expired'] = $days !== null && $days < 0 ? abs($days) : null;
+            }
+        }
+
+        $users = array_map(static fn ($row) => new MediaUser($row), $rows);
+        if (in_array($bucket, ['d180', 'expired'], true)) {
+            \App\Services\MediaUserMessageService::ensureMediaUserMessagesTable();
+            $this->attachLastMessagesToUsers($users);
+        }
+
+        return [
+            'users' => $users,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total_pages' => $totalPages,
+        ];
+    }
+
+    private function expiringFromClause(int $tenantId, ?int $serverId, array &$params, bool $withReengage = false): string
+    {
+        $params = [$tenantId];
+        $sql = 'FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL';
+        if ($withReengage) {
+            \App\Services\ReengageCampaignService::ensureTable();
+            $sql .= ' LEFT JOIN `media_user_reengage` r ON r.media_user_id = mu.id';
+        }
+        $sql .= ' WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        return $sql;
+    }
+
+    private function expiringSelectClause(bool $withReengage): string
+    {
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type,
+                       DATEDIFF(mu.expires_at, CURDATE()) AS days_left';
+        if ($withReengage) {
+            $sql .= ',
+                       r.send_count AS reengage_send_count,
+                       r.last_sent_at AS reengage_last_sent_at,
+                       r.last_kind AS reengage_last_kind,
+                       r.converted_at AS reengage_converted_at';
+        }
+
+        return $sql;
+    }
+
+    /** @param array<int, scalar|null> $params */
+    private function expiringBucketCondition(string $bucket, int $longExpiredDays, array &$params): string
+    {
+        $validDate = 'mu.`expires_at` IS NOT NULL AND TRIM(mu.`expires_at`) != \'\' AND mu.`expires_at` NOT LIKE \'0000-%\'';
+        $activeStatuses = 'mu.`status` IN (\'active\', \'invited\', \'suspended\')';
+
+        if ($bucket === 'd180') {
+            $params[] = -$longExpiredDays;
+
+            return ' AND (
+                (mu.`status` = \'expired\' AND (mu.`expires_at` IS NULL OR TRIM(mu.`expires_at`) = \'\' OR mu.`expires_at` LIKE \'0000-%\'))
+                OR (' . $validDate . ' AND DATEDIFF(mu.`expires_at`, CURDATE()) <= ?)
+            )';
+        }
+
+        if ($bucket === 'expired') {
+            $params[] = -($longExpiredDays - 1);
+            $params[] = -1;
+
+            return ' AND ' . $validDate . ' AND DATEDIFF(mu.`expires_at`, CURDATE()) BETWEEN ? AND ?';
+        }
+
+        return match ($bucket) {
+            'd3' => ' AND ' . $validDate . ' AND ' . $activeStatuses . ' AND DATEDIFF(mu.`expires_at`, CURDATE()) BETWEEN 0 AND 3',
+            'd7' => ' AND ' . $validDate . ' AND ' . $activeStatuses . ' AND DATEDIFF(mu.`expires_at`, CURDATE()) BETWEEN 4 AND 7',
+            'd30' => ' AND ' . $validDate . ' AND ' . $activeStatuses . ' AND DATEDIFF(mu.`expires_at`, CURDATE()) BETWEEN 8 AND 30',
+            default => ' AND 1 = 0',
+        };
+    }
+
+    private function countExpiringBucket(int $tenantId, string $bucket, ?int $serverId, int $longExpiredDays): int
+    {
+        if (!in_array($bucket, ['d180', 'expired', 'd3', 'd7', 'd30'], true)) {
+            return 0;
+        }
+
+        $withReengage = in_array($bucket, ['d180', 'expired'], true);
+        $baseParams = [];
+        $from = $this->expiringFromClause($tenantId, $serverId, $baseParams, $withReengage);
+        $bucketParams = [];
+        $condition = $this->expiringBucketCondition($bucket, $longExpiredDays, $bucketParams);
+        $params = array_merge($baseParams, $bucketParams);
+
+        try {
+            $row = Database::getInstance()->fetchOne("SELECT COUNT(*) AS total {$from}{$condition}", $params);
+
+            return (int) ($row['total'] ?? 0);
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
     /** @return array<int, MediaUser> */
     public function listForBroadcast(int $tenantId, ?string $status = null, ?int $serverId = null, bool $withTelegramOnly = false): array
     {
@@ -802,60 +968,18 @@ class MediaUserRepository
         ?int $serverId = null,
         int $limit = 500,
     ): array {
-        \App\Services\MediaUserMessageService::ensureMediaUserMessagesTable();
-        \App\Services\ReengageCampaignService::ensureTable();
-
         $limit = max(1, min(500, $limit));
-        $params = [$tenantId];
-        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type,
-                       r.send_count AS reengage_send_count,
-                       r.last_sent_at AS reengage_last_sent_at,
-                       r.last_kind AS reengage_last_kind,
-                       r.converted_at AS reengage_converted_at
-                FROM `media_users` mu
-                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
-                LEFT JOIN `media_user_reengage` r ON r.media_user_id = mu.id
-                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
-                  AND (
-                    mu.`status` = \'expired\'
-                    OR (
-                        mu.`expires_at` IS NOT NULL
-                        AND TRIM(mu.`expires_at`) != \'\'
-                        AND mu.`expires_at` NOT LIKE \'0000-%\'
-                    )
-                  )';
-
-        if ($serverId !== null) {
-            $sql .= ' AND mu.`server_id` = ?';
-            $params[] = $serverId;
-        }
-
-        $sql .= ' ORDER BY mu.`expires_at` ASC, mu.`id` ASC LIMIT 2500';
-
-        $rows = Database::getInstance()->fetchAll($sql, $params);
-        $filtered = [];
-        foreach ($rows as $row) {
-            if (!$this->isLongExpiredRow($row, $minDays)) {
-                continue;
-            }
-            $days = days_left($row['expires_at'] ?? null);
-            $row['days_expired'] = $days !== null && $days < 0 ? abs($days) : null;
-            $filtered[] = $row;
-        }
-
-        $total = count($filtered);
-        $page = array_slice($filtered, 0, $limit);
-        $users = array_map(static fn ($row) => new MediaUser($row), $page);
-        $this->attachLastMessagesToUsers($users);
+        $result = $this->findExpiringBucketPage($tenantId, 'd180', $serverId, 1, $limit, $minDays);
 
         return [
-            'users' => $users,
-            'total' => $total,
+            'users' => $result['users'],
+            'total' => $result['total'],
         ];
     }
 
     /**
      * @param array<string, mixed> $row
+     * @deprecated Logic moved to expiringBucketCondition(); kept for tests.
      */
     private function isLongExpiredRow(array $row, int $minDays): bool
     {

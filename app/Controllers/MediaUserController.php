@@ -146,60 +146,55 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $this->dedupe->mergeDuplicatesForTenant($tenantId);
-        $days = max(1, (int) $request->input('days', 30));
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $longExpiredDays = 180;
+        $page = max(1, (int) $request->input('page', 1));
+        $perPage = max(10, min(100, (int) $request->input('per_page', 50)));
 
-        $usersSoon = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
-        $longResult = $this->mediaUsers->findLongExpired($tenantId, $longExpiredDays, $serverId);
-        $longExpired = $longResult['users'];
-        $longExpiredTotal = (int) $longResult['total'];
-
-        $seenIds = [];
-        $users = [];
-        foreach ($usersSoon as $user) {
-            $id = (int) $user->id;
-            $seenIds[$id] = true;
-            $users[] = $user;
-        }
-        foreach ($longExpired as $user) {
-            $id = (int) $user->id;
-            if (isset($seenIds[$id])) {
-                foreach ($users as $i => $existing) {
-                    if ((int) $existing->id !== $id) {
-                        continue;
-                    }
-                    $user->days_left = isset($existing->days_left)
-                        ? (int) $existing->days_left
-                        : -max(0, (int) ($user->days_expired ?? 0));
-                    $users[$i] = $user;
-                    break;
-                }
-                continue;
-            }
-            $user->days_left = -max(0, (int) ($user->days_expired ?? 0));
-            $users[] = $user;
-        }
-
-        $this->reengage::ensureTable();
-        $reengageStats = $this->reengage->stats($tenantId);
-        $reengageCfg = $this->reengage->getConfig($tenantId);
+        $bucketCounts = $this->mediaUsers->countExpiringBuckets($tenantId, $serverId, $longExpiredDays);
 
         $bucket = trim((string) $request->input('bucket', ''));
         if (!in_array($bucket, ['expired', 'd3', 'd7', 'd30', 'd180'], true)) {
             $bucket = '';
         }
+        if ($bucket === '') {
+            foreach (['d180', 'expired', 'd3', 'd7', 'd30'] as $key) {
+                if (($bucketCounts[$key] ?? 0) > 0) {
+                    $bucket = $key;
+                    break;
+                }
+            }
+        }
+        if ($bucket === '') {
+            $bucket = 'd30';
+        }
+
+        $bucketResult = $this->mediaUsers->findExpiringBucketPage(
+            $tenantId,
+            $bucket,
+            $serverId,
+            $page,
+            $perPage,
+            $longExpiredDays
+        );
+
+        $this->reengage::ensureTable();
+        $reengageStats = $this->reengage->stats($tenantId);
+        $reengageCfg = $this->reengage->getConfig($tenantId);
 
         return $this->view('media_users.expiring', [
             'title' => 'Próximos vencimientos',
-            'users' => $users,
+            'users' => $bucketResult['users'],
             'servers' => $this->servers->allByTenant($tenantId),
-            'currentDays' => $days,
             'currentServerId' => $serverId,
             'currentBucket' => $bucket,
+            'bucketCounts' => $bucketCounts,
             'longExpiredDays' => $longExpiredDays,
-            'longExpiredTotal' => $longExpiredTotal,
-            'longExpiredCount' => count($longExpired),
+            'longExpiredTotal' => (int) ($bucketCounts['d180'] ?? 0),
+            'page' => $bucketResult['page'],
+            'perPage' => $bucketResult['per_page'],
+            'totalInBucket' => $bucketResult['total'],
+            'totalPages' => $bucketResult['total_pages'],
             'reengageStats' => $reengageStats,
             'reengageCfg' => $reengageCfg,
         ]);

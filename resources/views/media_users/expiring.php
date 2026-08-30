@@ -1,53 +1,15 @@
 <?php
 /** @var int $longExpiredDays */
 /** @var int $longExpiredTotal */
+/** @var array<string, int> $bucketCounts */
 $longExpiredDays = (int) ($longExpiredDays ?? 180);
 $longExpiredTotal = (int) ($longExpiredTotal ?? 0);
+$bucketCounts = is_array($bucketCounts ?? null) ? $bucketCounts : [];
 $currentBucket = (string) ($currentBucket ?? '');
-
-$buckets = [
-    'd180' => [],
-    'expired' => [],
-    'd3' => [],
-    'd7' => [],
-    'd30' => [],
-];
-
-$bucketForUser = static function ($u) use ($longExpiredDays): string {
-    $days = isset($u->days_left) ? (int) $u->days_left : days_left($u->expires_at ?? null);
-    if ($days === null && isset($u->days_left)) {
-        $days = (int) $u->days_left;
-    }
-    $daysExpired = isset($u->days_expired) && $u->days_expired !== null
-        ? (int) $u->days_expired
-        : ($days !== null && $days < 0 ? abs($days) : null);
-    $status = strtolower(trim((string) ($u->status ?? '')));
-
-    if ($daysExpired !== null && $daysExpired >= $longExpiredDays) {
-        return 'd180';
-    }
-    if ($days !== null && $days <= -$longExpiredDays) {
-        return 'd180';
-    }
-    if ($status === 'expired' && $days === null) {
-        return 'd180';
-    }
-    if ($days !== null && $days < 0) {
-        return 'expired';
-    }
-    if ($days !== null && $days <= 3) {
-        return 'd3';
-    }
-    if ($days !== null && $days <= 7) {
-        return 'd7';
-    }
-
-    return 'd30';
-};
-
-foreach ($users as $u) {
-    $buckets[$bucketForUser($u)][] = $u;
-}
+$page = max(1, (int) ($page ?? 1));
+$perPage = max(10, (int) ($perPage ?? 50));
+$totalInBucket = (int) ($totalInBucket ?? count($users ?? []));
+$totalPages = max(0, (int) ($totalPages ?? 0));
 
 $bucketMeta = [
     'd180' => ['title' => '180+ días', 'hint' => 'Caducados hace ≥180d', 'icon' => 'bi-archive', 'class' => 'urgency-card--archived'],
@@ -57,18 +19,35 @@ $bucketMeta = [
     'd30' => ['title' => '30 días', 'hint' => '8 a 30 días', 'icon' => 'bi-calendar3', 'class' => 'urgency-card--month'],
 ];
 
-$activeBucket = in_array($currentBucket, array_keys($bucketMeta), true) ? $currentBucket : '';
-if ($activeBucket === '') {
-    foreach (['d180', 'expired', 'd3', 'd7', 'd30'] as $key) {
-        if ($buckets[$key] !== []) {
-            $activeBucket = $key;
-            break;
+$activeBucket = in_array($currentBucket, array_keys($bucketMeta), true) ? $currentBucket : 'd30';
+
+$expiringUrl = static function (array $overrides = []) use ($activeBucket, $currentServerId, $page, $perPage): string {
+    $params = array_filter([
+        'bucket' => $activeBucket,
+        'server_id' => $currentServerId ? (int) $currentServerId : null,
+        'page' => $page > 1 ? $page : null,
+        'per_page' => $perPage !== 50 ? $perPage : null,
+    ], static fn ($v) => $v !== null && $v !== '');
+
+    foreach ($overrides as $key => $value) {
+        if ($value === null || $value === '') {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
         }
     }
-}
-if ($activeBucket === '') {
-    $activeBucket = 'd30';
-}
+
+    if (isset($params['page']) && (int) $params['page'] <= 1) {
+        unset($params['page']);
+    }
+
+    $query = http_build_query($params);
+
+    return '/media-users/expiring' . ($query !== '' ? '?' . $query : '');
+};
+
+$rangeStart = $totalInBucket > 0 ? (($page - 1) * $perPage) + 1 : 0;
+$rangeEnd = min($totalInBucket, $page * $perPage);
 
 ob_start();
 ?>
@@ -91,14 +70,13 @@ ob_start();
                 <option value="<?= (int) $server->id ?>" <?= $currentServerId === (int) $server->id ? 'selected' : '' ?>><?= e($server->name) ?></option>
                 <?php endforeach; ?>
             </select>
-            <input type="hidden" name="days" value="30">
-            <?php if ($activeBucket !== ''): ?>
             <input type="hidden" name="bucket" value="<?= e($activeBucket) ?>">
-            <?php endif; ?>
+            <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
             <span class="small text-muted ms-md-auto">
-                Total: <strong><?= count($users) ?></strong>
-                <?php if ($longExpiredTotal > 0): ?>
-                · <strong><?= $longExpiredTotal ?></strong> con ≥<?= $longExpiredDays ?>d
+                <?= e($bucketMeta[$activeBucket]['title']) ?>:
+                <strong><?= $totalInBucket ?></strong>
+                <?php if ($totalInBucket > 0): ?>
+                · mostrando <?= $rangeStart ?>–<?= $rangeEnd ?>
                 <?php endif; ?>
             </span>
         </form>
@@ -134,14 +112,12 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
 
 <div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-3" id="urgencyCards">
     <?php foreach ($bucketMeta as $id => $meta): ?>
-    <?php
-    $count = $id === 'd180' ? max($longExpiredTotal, count($buckets['d180'])) : count($buckets[$id]);
-    ?>
+    <?php $count = (int) ($bucketCounts[$id] ?? 0); ?>
     <div class="col">
-        <button type="button"
-                class="urgency-card <?= e($meta['class']) ?> <?= $activeBucket === $id ? 'is-active' : '' ?>"
-                data-bucket="<?= e($id) ?>"
-                aria-pressed="<?= $activeBucket === $id ? 'true' : 'false' ?>">
+        <a href="<?= e($expiringUrl(['bucket' => $id, 'page' => null])) ?>"
+           class="urgency-card text-decoration-none <?= e($meta['class']) ?> <?= $activeBucket === $id ? 'is-active' : '' ?>"
+           data-bucket="<?= e($id) ?>"
+           aria-current="<?= $activeBucket === $id ? 'page' : 'false' ?>">
             <div class="d-flex justify-content-between align-items-start gap-2">
                 <div>
                     <div class="urgency-card-title"><?= e($meta['title']) ?></div>
@@ -150,7 +126,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                 <i class="bi <?= e($meta['icon']) ?> opacity-75"></i>
             </div>
             <div class="urgency-card-count"><?= $count ?></div>
-        </button>
+        </a>
     </div>
     <?php endforeach; ?>
 </div>
@@ -204,7 +180,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
 <?php if (empty($users)): ?>
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center text-muted py-5">
-        No hay vencimientos en los próximos 30 días ni caducados antiguos
+        No hay usuarios en <?= e(strtolower($bucketMeta[$activeBucket]['title'])) ?>
     </div>
 </div>
 <?php else: ?>
@@ -213,7 +189,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
         <span id="expiringListTitle"><?= e($bucketMeta[$activeBucket]['title']) ?></span>
         <label class="mb-0 d-inline-flex align-items-center gap-1">
             <input type="checkbox" class="form-check-input m-0 expiring-select-all" data-section="active">
-            <span>Seleccionar visibles</span>
+            <span>Seleccionar página</span>
         </label>
     </div>
     <div class="table-responsive expiring-table-wrap">
@@ -224,20 +200,19 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                     <th>Usuario</th>
                     <th>Servidor</th>
                     <th>Días</th>
-                    <th class="d-none d-lg-table-cell expiring-col-last-msg">Último aviso</th>
+                    <th class="<?= $activeBucket === 'd180' ? '' : 'd-none' ?> d-lg-table-cell expiring-col-last-msg">Último aviso</th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($users as $u): ?>
                 <?php
-                $bucket = $bucketForUser($u);
+                $bucket = $activeBucket;
                 $days = isset($u->days_left) ? (int) $u->days_left : days_left($u->expires_at ?? null);
                 $daysExpired = isset($u->days_expired) && $u->days_expired !== null
                     ? (int) $u->days_expired
                     : ($days !== null && $days < 0 ? abs($days) : null);
                 $dl = days_left_badge($u->expires_at);
-                $hidden = $bucket !== $activeBucket ? ' d-none' : '';
                 $lastAt = $u->last_message_at ?? null;
                 $lastType = (string) ($u->last_message_type ?? '');
                 $lastTitle = (string) ($u->last_message_title ?? '');
@@ -247,7 +222,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                 $fullPreview = trim($lastTitle . ($lastTitle !== '' && $lastBody !== '' ? "\n\n" : '') . $lastBody);
                 $showReengage = in_array($bucket, ['expired', 'd180'], true);
                 ?>
-                <tr class="expiring-row<?= $hidden ?>" data-bucket="<?= e($bucket) ?>">
+                <tr class="expiring-row" data-bucket="<?= e($bucket) ?>">
                     <td>
                         <input type="checkbox" class="form-check-input expiring-select"
                                value="<?= e($u->uuid) ?>"
@@ -281,7 +256,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                         <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
                         <?php endif; ?>
                     </td>
-                    <td class="small d-none d-lg-table-cell expiring-col-last-msg" style="max-width: 14rem;">
+                    <td class="small <?= $activeBucket === 'd180' ? '' : 'd-none' ?> d-lg-table-cell expiring-col-last-msg" style="max-width: 14rem;">
                         <?php if ($lastAt): ?>
                         <div class="text-nowrap"><?= e(substr((string) $lastAt, 0, 16)) ?>
                             <?php if ($lastChannel === 'telegram'): ?><i class="bi bi-telegram text-info" title="Telegram"></i>
@@ -337,6 +312,38 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
             </tbody>
         </table>
     </div>
+    <?php if ($totalPages > 1): ?>
+    <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+        <span class="small text-muted">Página <?= $page ?> de <?= $totalPages ?></span>
+        <nav aria-label="Paginación vencimientos">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                    <a class="page-link" href="<?= e($expiringUrl(['page' => max(1, $page - 1)])) ?>">Anterior</a>
+                </li>
+                <?php
+                $window = 2;
+                $start = max(1, $page - $window);
+                $end = min($totalPages, $page + $window);
+                if ($start > 1): ?>
+                <li class="page-item"><a class="page-link" href="<?= e($expiringUrl(['page' => 1])) ?>">1</a></li>
+                <?php if ($start > 2): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif; ?>
+                <?php endif; ?>
+                <?php for ($p = $start; $p <= $end; $p++): ?>
+                <li class="page-item <?= $p === $page ? 'active' : '' ?>">
+                    <a class="page-link" href="<?= e($expiringUrl(['page' => $p])) ?>"><?= $p ?></a>
+                </li>
+                <?php endfor; ?>
+                <?php if ($end < $totalPages): ?>
+                <?php if ($end < $totalPages - 1): ?><li class="page-item disabled"><span class="page-link">…</span></li><?php endif; ?>
+                <li class="page-item"><a class="page-link" href="<?= e($expiringUrl(['page' => $totalPages])) ?>"><?= $totalPages ?></a></li>
+                <?php endif; ?>
+                <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                    <a class="page-link" href="<?= e($expiringUrl(['page' => min($totalPages, $page + 1)])) ?>">Siguiente</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 <?php
