@@ -90,6 +90,7 @@ $householdTitle = match ((string) ($session['household_source'] ?? '')) {
     'device_mobile' => 'Móvil / tablet',
     'lan' => 'Misma red que el servidor',
     'home_ip' => 'IP marcada como hogar',
+    'away_ip' => 'IP marcada como fuera',
     'manual' => 'Marcado manualmente',
     default => $household === 'home' ? 'Casa' : 'Fuera',
 };

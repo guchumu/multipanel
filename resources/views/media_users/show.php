@@ -356,7 +356,7 @@ ob_start();
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white">
                 <strong>IPs y dispositivos</strong>
-                <div class="small text-muted fw-normal">Se guarda al reproducir. Marca hogar o fuera para el corte.</div>
+                <div class="small text-muted fw-normal">Al marcar hogar o fuera se aplica a toda la IP: un iPhone en la misma IP que la tele también cuenta como hogar.</div>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm mb-0 align-middle">

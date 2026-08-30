@@ -150,6 +150,7 @@
         else if (src === 'device_mobile') title = 'Móvil / tablet';
         else if (src === 'lan') title = 'Misma red que el servidor';
         else if (src === 'home_ip') title = 'IP marcada como hogar';
+        else if (src === 'away_ip') title = 'IP marcada como fuera';
         else if (src === 'manual') title = 'Marcado manualmente';
         const canToggle = Number(s.media_user_id || 0) > 0 && String(s.session_id || '') !== '';
         if (!canToggle) {

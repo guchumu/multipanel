@@ -100,10 +100,16 @@ final class ConcurrentStreamLimitService
         }
         $homeIps = $endpoints->homeIpsByUserIds(array_values($matchedIds));
         $homeIps = $endpoints->mergeSessionHomeIps($sessions, $homeIps);
+        $awayIps = $endpoints->awayIpsByUserIds(array_values($matchedIds));
 
         foreach ($sessions as $i => $session) {
             $uid = (int) ($session['media_user_id'] ?? 0);
-            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? [], $uid > 0 ? $uid : null);
+            $meta = $endpoints->classifyPlaybackMeta(
+                $session,
+                $homeIps[$uid] ?? [],
+                $uid > 0 ? $uid : null,
+                $awayIps[$uid] ?? []
+            );
             $sessions[$i]['household'] = $meta['kind'];
             $sessions[$i]['household_source'] = $meta['source'];
             $sessions[$i]['device_class'] = $meta['device_class'];
@@ -394,10 +400,16 @@ final class ConcurrentStreamLimitService
 
         $homeIps = $endpoints->homeIpsByUserIds(array_values($matchedIds));
         $homeIps = $endpoints->mergeSessionHomeIps($sessions, $homeIps);
+        $awayIps = $endpoints->awayIpsByUserIds(array_values($matchedIds));
 
         foreach ($sessions as $i => $session) {
             $uid = (int) ($session['media_user_id'] ?? 0);
-            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? [], $uid > 0 ? $uid : null);
+            $meta = $endpoints->classifyPlaybackMeta(
+                $session,
+                $homeIps[$uid] ?? [],
+                $uid > 0 ? $uid : null,
+                $awayIps[$uid] ?? []
+            );
             $sessions[$i]['household'] = $meta['kind'];
             $sessions[$i]['household_source'] = $meta['source'];
             $sessions[$i]['device_class'] = $meta['device_class'];

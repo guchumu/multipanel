@@ -223,6 +223,14 @@ final class MediaUserEndpointService
                 ]);
             }
 
+            $this->applyKindToIpAddresses(
+                $tenantId,
+                $mediaUserId,
+                [$identity['ip'], $identity['lan_ip']],
+                $kind,
+                1
+            );
+
             return [
                 'success' => true,
                 'kind' => $kind,
@@ -316,21 +324,61 @@ final class MediaUserEndpointService
         $locked = $kind === self::KIND_UNKNOWN ? 0 : 1;
         $db = Database::getInstance();
         $row = $db->fetchOne(
-            'SELECT id FROM media_user_endpoints WHERE id = ? AND media_user_id = ? AND tenant_id = ? LIMIT 1',
+            'SELECT id, ip, lan_ip FROM media_user_endpoints WHERE id = ? AND media_user_id = ? AND tenant_id = ? LIMIT 1',
             [$endpointId, $mediaUserId, $tenantId]
         );
         if (!$row) {
             return false;
         }
-        $db->query(
-            'UPDATE media_user_endpoints SET kind = ?, kind_locked = ?
-             WHERE id = ? AND media_user_id = ? AND tenant_id = ?',
-            [$kind, $locked, $endpointId, $mediaUserId, $tenantId]
+
+        $this->applyKindToIpAddresses(
+            $tenantId,
+            $mediaUserId,
+            [(string) ($row['ip'] ?? ''), (string) ($row['lan_ip'] ?? '')],
+            $kind,
+            $locked
         );
 
         Cache::forget('activity_snapshot_' . $tenantId);
 
         return true;
+    }
+
+    /**
+     * Marca casa/fuera en todos los dispositivos que comparten la misma IP (pública o LAN).
+     *
+     * @param list<string> $ips
+     */
+    private function applyKindToIpAddresses(
+        int $tenantId,
+        int $mediaUserId,
+        array $ips,
+        string $kind,
+        int $locked,
+    ): void {
+        $ips = array_values(array_unique(array_filter(array_map(
+            static fn (string $ip): string => SessionClientIp::normalize($ip),
+            $ips
+        ), static fn (string $ip): bool => $ip !== '' && $ip !== 'unknown')));
+
+        if ($ips === []) {
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ips), '?'));
+        $params = array_merge([$kind, $locked, $mediaUserId, $tenantId], $ips, $ips);
+
+        try {
+            Database::getInstance()->query(
+                "UPDATE media_user_endpoints
+                 SET kind = ?, kind_locked = ?
+                 WHERE media_user_id = ? AND tenant_id = ?
+                   AND (ip IN ({$placeholders}) OR lan_ip IN ({$placeholders}))",
+                $params
+            );
+        } catch (\Throwable $e) {
+            Logger::warning('applyKindToIpAddresses failed', ['error' => $e->getMessage()]);
+        }
     }
 
     public static function deviceKey(string $ip, string $machineId, string $deviceName, string $product, string $platform): string
@@ -419,11 +467,17 @@ final class MediaUserEndpointService
 
     private function ipIsKnownHome(int $mediaUserId, string $ip): bool
     {
+        if ($ip === '' || $ip === 'unknown') {
+            return false;
+        }
+
         try {
             $home = Database::getInstance()->fetchOne(
                 'SELECT id FROM media_user_endpoints
-                 WHERE media_user_id = ? AND ip = ? AND kind = ? LIMIT 1',
-                [$mediaUserId, $ip, self::KIND_HOME]
+                 WHERE media_user_id = ? AND kind = ?
+                   AND (ip = ? OR lan_ip = ?)
+                 LIMIT 1',
+                [$mediaUserId, self::KIND_HOME, $ip, $ip]
             );
 
             return $home !== null;
@@ -481,8 +535,8 @@ final class MediaUserEndpointService
         $placeholders = implode(',', array_fill(0, count($userIds), '?'));
         try {
             $rows = Database::getInstance()->fetchAll(
-                "SELECT media_user_id, ip FROM media_user_endpoints
-                 WHERE kind = ? AND media_user_id IN ({$placeholders}) AND ip != ''",
+                "SELECT media_user_id, ip, lan_ip FROM media_user_endpoints
+                 WHERE kind = ? AND media_user_id IN ({$placeholders})",
                 array_merge([self::KIND_HOME], $userIds)
             ) ?: [];
         } catch (\Throwable) {
@@ -491,11 +545,52 @@ final class MediaUserEndpointService
         $out = [];
         foreach ($rows as $row) {
             $uid = (int) $row['media_user_id'];
-            $ip = SessionClientIp::normalize((string) ($row['ip'] ?? ''));
-            if ($ip === '') {
-                continue;
+            foreach ([(string) ($row['ip'] ?? ''), (string) ($row['lan_ip'] ?? '')] as $ipRaw) {
+                $ip = SessionClientIp::normalize($ipRaw);
+                if ($ip === '' || $ip === 'unknown') {
+                    continue;
+                }
+                $out[$uid][] = $ip;
             }
-            $out[$uid][] = $ip;
+        }
+        foreach ($out as $uid => $ips) {
+            $out[$uid] = array_values(array_unique($ips));
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<int> $userIds
+     * @return array<int, list<string>>
+     */
+    public function awayIpsByUserIds(array $userIds): array
+    {
+        $this->ensureTable();
+        $userIds = array_values(array_filter(array_map('intval', $userIds), static fn (int $id): bool => $id > 0));
+        if ($userIds === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        try {
+            $rows = Database::getInstance()->fetchAll(
+                "SELECT media_user_id, ip, lan_ip FROM media_user_endpoints
+                 WHERE kind = ? AND kind_locked = 1 AND media_user_id IN ({$placeholders})",
+                array_merge([self::KIND_AWAY], $userIds)
+            ) ?: [];
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $uid = (int) $row['media_user_id'];
+            foreach ([(string) ($row['ip'] ?? ''), (string) ($row['lan_ip'] ?? '')] as $ipRaw) {
+                $ip = SessionClientIp::normalize($ipRaw);
+                if ($ip === '' || $ip === 'unknown') {
+                    continue;
+                }
+                $out[$uid][] = $ip;
+            }
         }
         foreach ($out as $uid => $ips) {
             $out[$uid] = array_values(array_unique($ips));
@@ -590,12 +685,27 @@ final class MediaUserEndpointService
     /**
      * @param array<string, mixed> $session
      * @param list<string> $homeIps
+     * @param list<string> $awayIps
      * @return array{kind: string, source: string, device_class: string, endpoint_id: ?int}
      */
-    public function classifyPlaybackMeta(array $session, array $homeIps = [], ?int $mediaUserId = null): array
-    {
+    public function classifyPlaybackMeta(
+        array $session,
+        array $homeIps = [],
+        ?int $mediaUserId = null,
+        array $awayIps = [],
+    ): array {
         $mediaUserId ??= (int) ($session['media_user_id'] ?? 0);
         $endpointId = null;
+        $deviceClass = self::classifyDeviceClass($session);
+
+        // La IP marcada como hogar manda: iPhone, PC, etc. en la misma IP cuentan como casa.
+        if (self::sessionHasHomeIp($session, $homeIps)) {
+            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
+        }
+
+        if (self::sessionHasAwayIp($session, $awayIps)) {
+            return ['kind' => self::KIND_AWAY, 'source' => 'away_ip', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
+        }
 
         if ($mediaUserId > 0) {
             $endpoint = $this->findEndpointForSession($mediaUserId, $session);
@@ -607,7 +717,7 @@ final class MediaUserEndpointService
                         return [
                             'kind' => $kind,
                             'source' => 'manual',
-                            'device_class' => self::classifyDeviceClass($session),
+                            'device_class' => $deviceClass,
                             'endpoint_id' => $endpointId,
                         ];
                     }
@@ -615,13 +725,8 @@ final class MediaUserEndpointService
             }
         }
 
-        $deviceClass = self::classifyDeviceClass($session);
         if ($deviceClass === 'tv') {
             return ['kind' => self::KIND_HOME, 'source' => 'device_tv', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
-        }
-
-        if (self::sessionHasHomeIp($session, $homeIps)) {
-            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
         }
 
         $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
@@ -658,6 +763,24 @@ final class MediaUserEndpointService
         }
         foreach (self::sessionIps($session) as $ip) {
             if (in_array($ip, $homeIps, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @param list<string> $awayIps
+     */
+    public static function sessionHasAwayIp(array $session, array $awayIps): bool
+    {
+        if ($awayIps === []) {
+            return false;
+        }
+        foreach (self::sessionIps($session) as $ip) {
+            if (in_array($ip, $awayIps, true)) {
                 return true;
             }
         }

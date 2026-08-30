@@ -157,4 +157,23 @@ final class MediaUserEndpointServiceTest extends TestCase
         ];
         $this->assertSame('home', $svc->classifyPlayback($phoneOnLan, $homeIps[7]));
     }
+
+    public function testHomeIpOverridesMobileAwayDeviceClass(): void
+    {
+        $svc = new MediaUserEndpointService();
+        $phone = [
+            'media_user_id' => 9,
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone',
+            'public_ip' => '203.0.113.55',
+            'client_ip' => '203.0.113.55',
+            'location' => 'wan',
+        ];
+        $homeIps = ['203.0.113.55'];
+        $meta = $svc->classifyPlaybackMeta($phone, $homeIps, 9, []);
+        $this->assertSame('home', $meta['kind']);
+        $this->assertSame('home_ip', $meta['source']);
+        $this->assertSame('mobile', $meta['device_class']);
+    }
 }
