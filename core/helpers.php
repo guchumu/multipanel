@@ -154,6 +154,26 @@ if (!function_exists('now')) {
     }
 }
 
+if (!function_exists('expires_date_input')) {
+    /** Valor para `<input type="date">` desde expires_at de BD. */
+    function expires_date_input(mixed $expires): string
+    {
+        return \App\Services\SubscriptionPeriod::formatForInput(
+            is_scalar($expires) ? (string) $expires : null
+        );
+    }
+}
+
+if (!function_exists('expires_date_display')) {
+    /** Fecha corta para listados (— si no hay). */
+    function expires_date_display(mixed $expires): string
+    {
+        return \App\Services\SubscriptionPeriod::formatForDisplay(
+            is_scalar($expires) ? (string) $expires : null
+        );
+    }
+}
+
 if (!function_exists('e')) {
     function e(mixed $value): string
     {

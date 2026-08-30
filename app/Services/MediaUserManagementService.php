@@ -9,6 +9,7 @@ use App\Models\Server;
 use App\Repositories\MediaUserRepository;
 use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
+use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
 use App\Services\Notifications\ClientWhatsAppChannel;
 use App\Services\Notifications\NotificationService;
@@ -89,15 +90,268 @@ final class MediaUserManagementService
     /** @return array{success: bool, message: string, expires_at: ?string} */
     public function updateExpires(MediaUser $user, ?string $expiresAt): array
     {
+        $normalized = $expiresAt !== null && trim($expiresAt) !== ''
+            ? SubscriptionPeriod::normalizeStorage($expiresAt)
+            : null;
+        if ($expiresAt !== null && trim($expiresAt) !== '' && $normalized === null) {
+            return ['success' => false, 'message' => 'Fecha de expiración no válida.', 'expires_at' => $user->expires_at];
+        }
+
         $old = ['expires_at' => $user->expires_at];
-        $user->expires_at = $expiresAt;
+        $user->expires_at = $normalized;
         $user->save();
-        AuditService::log('media_user.expires_updated', 'media_user', (int) $user->id, $old, ['expires_at' => $expiresAt]);
+        AuditService::log('media_user.expires_updated', 'media_user', (int) $user->id, $old, ['expires_at' => $normalized]);
 
         return [
             'success' => true,
             'message' => 'Fecha actualizada.',
             'expires_at' => $user->expires_at,
+            'expires_date' => SubscriptionPeriod::formatForInput($user->expires_at),
+        ];
+    }
+
+    /** @return array{success: bool, message: string, server_id: ?int} */
+    public function updateServerId(MediaUser $user, ?int $serverId, int $tenantId): array
+    {
+        if ($serverId !== null && $serverId > 0) {
+            $server = Server::find($serverId);
+            if ($server === null || (int) ($server->tenant_id ?? 0) !== $tenantId) {
+                return ['success' => false, 'message' => 'Servidor no válido.', 'server_id' => (int) ($user->server_id ?? 0) ?: null];
+            }
+        } else {
+            $serverId = null;
+        }
+
+        $old = ['server_id' => $user->server_id];
+        $user->server_id = $serverId;
+        $user->save();
+        AuditService::log('media_user.server_updated', 'media_user', (int) $user->id, $old, ['server_id' => $serverId]);
+
+        return [
+            'success' => true,
+            'message' => $serverId ? 'Servidor asignado.' : 'Servidor quitado del panel (no borra en Plex/Jellyfin).',
+            'server_id' => $serverId,
+        ];
+    }
+
+    /** @return array{success: bool, message: string, status: string} */
+    public function updateStatus(MediaUser $user, string $status): array
+    {
+        $allowed = ['active', 'suspended', 'expired', 'pending', 'invited'];
+        $status = strtolower(trim($status));
+        if (!in_array($status, $allowed, true)) {
+            return ['success' => false, 'message' => 'Estado no válido.', 'status' => (string) $user->status];
+        }
+
+        if ($status === 'active') {
+            return $this->activate($user);
+        }
+        if ($status === 'suspended') {
+            return $this->suspend($user);
+        }
+
+        $old = ['status' => $user->status];
+        $user->status = $status;
+        $user->save();
+        AuditService::log('media_user.status_updated', 'media_user', (int) $user->id, $old, ['status' => $status]);
+
+        return ['success' => true, 'message' => 'Estado actualizado.', 'status' => $status];
+    }
+
+    /**
+     * Busca email/usuario en Plex/Jellyfin, registros previos del panel o clientes.
+     *
+     * @return array{
+     *   success: bool,
+     *   message: string,
+     *   email?: ?string,
+     *   username?: ?string,
+     *   external_id?: ?string,
+     *   telegram_chat_id?: ?string,
+     *   expires_at?: ?string,
+     *   applied?: bool,
+     *   sources?: array<int, string>
+     * }
+     */
+    public function discoverIdentity(MediaUser $user, bool $apply = false): array
+    {
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $hints = [
+            'email' => null,
+            'username' => null,
+            'external_id' => null,
+            'telegram_chat_id' => null,
+            'expires_at' => null,
+        ];
+        $sources = [];
+
+        $needles = array_values(array_unique(array_filter(array_map(
+            static fn (?string $v): string => mb_strtolower(trim((string) $v)),
+            [
+                (string) ($user->username ?? ''),
+                (string) ($user->display_name ?? ''),
+                (string) ($user->email ?? ''),
+            ]
+        ))));
+
+        // Registros previos del panel (soft-deleted, otro external_id…)
+        $twin = $this->users->findIdentityTwin(
+            $tenantId,
+            (int) ($user->server_id ?? 0),
+            (string) ($user->username ?? ''),
+            (string) ($user->email ?? ''),
+            (string) ($user->external_id ?? ''),
+            (int) $user->id
+        );
+        if ($twin !== null) {
+            $sources[] = 'panel previo';
+            if ($hints['email'] === null && !empty($twin['email'])) {
+                $hints['email'] = trim((string) $twin['email']);
+            }
+            if ($hints['telegram_chat_id'] === null && !empty($twin['telegram_chat_id'])) {
+                $hints['telegram_chat_id'] = trim((string) $twin['telegram_chat_id']);
+            }
+            if ($hints['expires_at'] === null && !empty($twin['expires_at'])) {
+                $hints['expires_at'] = trim((string) $twin['expires_at']);
+            }
+        }
+
+        // Clientes (customers)
+        if ($needles !== []) {
+            foreach ($needles as $needle) {
+                if ($needle === '' || str_contains($needle, '@')) {
+                    continue;
+                }
+                $customer = \Core\Database::getInstance()->fetchOne(
+                    'SELECT email, first_name, last_name FROM customers
+                     WHERE tenant_id = ?
+                       AND (LOWER(CONCAT(COALESCE(first_name,\'\'), \' \', COALESCE(last_name,\'\'))) = ?
+                            OR LOWER(email) LIKE ?)
+                     LIMIT 1',
+                    [$tenantId, $needle, '%' . $needle . '%']
+                );
+                if ($customer !== null) {
+                    $sources[] = 'cliente';
+                    if ($hints['email'] === null && trim((string) ($customer['email'] ?? '')) !== '') {
+                        $hints['email'] = trim((string) $customer['email']);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Lista del servidor Plex/Jellyfin
+        if ((int) ($user->server_id ?? 0) > 0) {
+            $server = Server::find((int) $user->server_id);
+            if ($server !== null) {
+                try {
+                    $media = MediaServerFactory::make($server, true);
+                    foreach ($media->getUsers() as $remote) {
+                        $remoteUser = mb_strtolower(trim((string) ($remote['username'] ?? '')));
+                        $remoteEmail = mb_strtolower(trim((string) ($remote['email'] ?? '')));
+                        $match = false;
+                        foreach ($needles as $needle) {
+                            if ($needle === '') {
+                                continue;
+                            }
+                            if ($remoteUser !== '' && ($remoteUser === $needle || str_contains($remoteUser, $needle) || str_contains($needle, $remoteUser))) {
+                                $match = true;
+                                break;
+                            }
+                            if (str_contains($needle, '@') && $remoteEmail !== '' && $remoteEmail === $needle) {
+                                $match = true;
+                                break;
+                            }
+                        }
+                        if (!$match) {
+                            continue;
+                        }
+                        $sources[] = 'servidor ' . $server->type;
+                        if ($hints['username'] === null && trim((string) ($remote['username'] ?? '')) !== '') {
+                            $hints['username'] = trim((string) $remote['username']);
+                        }
+                        if ($hints['email'] === null && trim((string) ($remote['email'] ?? '')) !== '') {
+                            $hints['email'] = trim((string) $remote['email']);
+                        }
+                        if ($hints['external_id'] === null && trim((string) ($remote['external_id'] ?? '')) !== '') {
+                            $hints['external_id'] = trim((string) $remote['external_id']);
+                        }
+                        break;
+                    }
+                } catch (\Throwable) {
+                }
+            }
+        }
+
+        $foundAnything = false;
+        foreach ($hints as $v) {
+            if ($v !== null && trim((string) $v) !== '') {
+                $foundAnything = true;
+                break;
+            }
+        }
+
+        if (!$foundAnything) {
+            return [
+                'success' => false,
+                'message' => 'No se encontró email ni usuario coincidente en el servidor, clientes ni registros previos.',
+                'sources' => $sources,
+            ];
+        }
+
+        $applied = false;
+        if ($apply) {
+            $changed = false;
+            if ($hints['email'] !== null && trim((string) ($user->email ?? '')) === '') {
+                $user->email = $hints['email'];
+                $changed = true;
+            }
+            if ($hints['username'] !== null && trim((string) ($user->username ?? '')) === '') {
+                $user->username = $hints['username'];
+                $changed = true;
+            }
+            if ($hints['external_id'] !== null && trim((string) ($user->external_id ?? '')) === '') {
+                $user->external_id = $hints['external_id'];
+                $changed = true;
+            }
+            if ($hints['telegram_chat_id'] !== null && trim((string) ($user->telegram_chat_id ?? '')) === '') {
+                $user->telegram_chat_id = $hints['telegram_chat_id'];
+                $changed = true;
+            }
+            if ($hints['expires_at'] !== null && ($user->expires_at === null || trim((string) $user->expires_at) === '')) {
+                $user->expires_at = SubscriptionPeriod::normalizeStorage((string) $hints['expires_at']);
+                $changed = true;
+            }
+            if ($changed) {
+                $user->save();
+                $applied = true;
+                AuditService::log('media_user.identity_discovered', 'media_user', (int) $user->id, null, $hints);
+            }
+        }
+
+        $parts = [];
+        if ($hints['email'] !== null) {
+            $parts[] = 'email: ' . $hints['email'];
+        }
+        if ($hints['username'] !== null) {
+            $parts[] = 'usuario: ' . $hints['username'];
+        }
+        if ($hints['external_id'] !== null) {
+            $parts[] = 'ID servidor: ' . $hints['external_id'];
+        }
+
+        return [
+            'success' => true,
+            'message' => ($applied ? 'Datos aplicados. ' : 'Encontrado: ')
+                . implode(' · ', $parts)
+                . ($sources !== [] ? ' (' . implode(', ', array_unique($sources)) . ')' : ''),
+            'email' => $hints['email'],
+            'username' => $hints['username'],
+            'external_id' => $hints['external_id'],
+            'telegram_chat_id' => $hints['telegram_chat_id'],
+            'expires_at' => $hints['expires_at'],
+            'applied' => $applied,
+            'sources' => array_values(array_unique($sources)),
         ];
     }
 
@@ -142,8 +396,9 @@ final class MediaUserManagementService
 
         return [
             'success' => true,
-            'message' => sprintf('+%d días aplicados. Nueva fecha: %s', $days, substr($newDate, 0, 10)),
+            'message' => sprintf('+%d días aplicados. Nueva fecha: %s', $days, SubscriptionPeriod::formatForDisplay($newDate)),
             'expires_at' => $newDate,
+            'expires_date' => SubscriptionPeriod::formatForInput($newDate),
         ];
     }
 

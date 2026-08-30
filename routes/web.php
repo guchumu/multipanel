@@ -184,6 +184,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/suspend', [MediaUserController::class, 'suspend'], 'media_users.suspend', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/activate', [MediaUserController::class, 'activate'], 'media_users.activate', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/expires', [MediaUserController::class, 'updateExpires'], 'media_users.expires', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/discover-identity', [MediaUserController::class, 'discoverIdentity'], 'media_users.discover_identity', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/add-days', [MediaUserController::class, 'addDays'], 'media_users.add_days', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/reengage', [MediaUserController::class, 'reengageInvite'], 'media_users.reengage', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/reengage-trial', [MediaUserController::class, 'reengageTrial'], 'media_users.reengage_trial', [CsrfMiddleware::class]);

@@ -16,10 +16,14 @@ final class SubscriptionPeriodTest extends TestCase
         $this->assertSame($expected, $expires);
     }
 
-    public function testDaysToExpiresAtMinimumOne(): void
+    public function testParseLegacyTwoDigitYear(): void
     {
-        $expires = SubscriptionPeriod::daysToExpiresAt(0);
-        $expected = (new DateTimeImmutable('today'))->modify('+1 days')->format('Y-m-d 23:59:59');
-        $this->assertSame($expected, $expires);
+        $this->assertSame('2027-01-09', SubscriptionPeriod::parseDate('0027-01-09'));
+        $this->assertSame('2027-01-09', SubscriptionPeriod::parseDate('27-01-09 23:59:59'));
+    }
+
+    public function testFormatForInputFixesBadYear(): void
+    {
+        $this->assertSame('2027-01-09', SubscriptionPeriod::formatForInput('0027-01-09 23:59:59'));
     }
 }

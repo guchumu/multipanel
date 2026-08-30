@@ -52,9 +52,10 @@ final class SubscriptionPeriod
     public static function addDaysToExpires(?string $currentExpires, int $days): string
     {
         $today = new \DateTimeImmutable('today');
-        if ($currentExpires !== null && trim($currentExpires) !== '') {
-            $base = new \DateTimeImmutable(substr($currentExpires, 0, 10));
-            if ($base < $today) {
+        $parsed = self::parseDate($currentExpires);
+        if ($parsed !== null) {
+            $base = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed);
+            if ($base !== false && $base < $today) {
                 $base = $today;
             }
         } else {
@@ -62,5 +63,99 @@ final class SubscriptionPeriod
         }
 
         return $base->modify('+' . $days . ' days')->format('Y-m-d 23:59:59');
+    }
+
+    /** Normaliza entrada HTML date (Y-m-d) o valor DB a fin de día almacenable. */
+    public static function normalizeStorage(?string $input): ?string
+    {
+        if ($input === null || trim($input) === '') {
+            return null;
+        }
+        $parsed = self::parseDate($input);
+        if ($parsed === null) {
+            return null;
+        }
+
+        return $parsed . ' 23:59:59';
+    }
+
+    /** Valor seguro para `<input type="date">` (corrige años 0027 → 2027, etc.). */
+    public static function formatForInput(?string $expires): string
+    {
+        return self::parseDate($expires) ?? '';
+    }
+
+    /** Etiqueta legible YYYY-MM-DD para listados. */
+    public static function formatForDisplay(?string $expires): string
+    {
+        $parsed = self::parseDate($expires);
+
+        return $parsed ?? '—';
+    }
+
+    /**
+     * Parsea fechas de expiración tolerando basura legacy (0027, 27-01-09, etc.).
+     */
+    public static function parseDate(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $raw = trim($value);
+        if ($raw === '' || str_starts_with($raw, '0000-00-00')) {
+            return null;
+        }
+
+        if (preg_match('/^(\d{1,4})-(\d{1,2})-(\d{1,2})/', $raw, $m)) {
+            $y = self::normalizeYear((int) $m[1]);
+            $mo = (int) $m[2];
+            $d = (int) $m[3];
+            if (self::isValidYmd($y, $mo, $d)) {
+                return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        }
+
+        if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/', $raw, $m)) {
+            $y = self::normalizeYear((int) $m[3]);
+            $mo = (int) $m[2];
+            $d = (int) $m[1];
+            if (self::isValidYmd($y, $mo, $d)) {
+                return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        }
+
+        try {
+            $dt = new \DateTimeImmutable(substr($raw, 0, 19));
+            $y = self::normalizeYear((int) $dt->format('Y'));
+            $mo = (int) $dt->format('n');
+            $d = (int) $dt->format('j');
+            if (self::isValidYmd($y, $mo, $d)) {
+                return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        } catch (\Throwable) {
+        }
+
+        return null;
+    }
+
+    private static function normalizeYear(int $year): int
+    {
+        if ($year >= 100 && $year < 1900) {
+            return 2000 + ($year % 100);
+        }
+        if ($year >= 0 && $year < 100) {
+            return 2000 + $year;
+        }
+
+        return $year;
+    }
+
+    private static function isValidYmd(int $year, int $month, int $day): bool
+    {
+        if ($year < 2000 || $year > 2099 || $month < 1 || $month > 12 || $day < 1 || $day > 31) {
+            return false;
+        }
+
+        return checkdate($month, $day, $year);
     }
 }

@@ -855,6 +855,18 @@ class MediaUserController extends Controller
         return $this->json($this->management->updateExpires($user, $expiresAt !== '' ? $expiresAt : null));
     }
 
+    public function discoverIdentity(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $apply = $request->input('apply') !== '0' && $request->input('apply') !== 'false';
+
+        return $this->json($this->management->discoverIdentity($user, $apply));
+    }
+
     public function addDays(Request $request, string $uuid): Response
     {
         $user = $this->mediaUsers->findByUuid($uuid);
@@ -1422,9 +1434,15 @@ class MediaUserController extends Controller
             return $this->redirect('/media-users/revisar?' . http_build_query($params));
         }
 
-        if ($action === 'save_contact' && $user !== null) {
+        if (($action === 'save_contact' || $action === 'save_all') && $user !== null) {
             $emailRaw = trim((string) ($request->input('email') ?? ''));
             $tgRaw = trim((string) ($request->input('telegram_chat_id') ?? ''));
+            $waRaw = trim((string) ($request->input('whatsapp_phone') ?? ''));
+            $expiresRaw = trim((string) ($request->input('expires_at') ?? ''));
+            $notesRaw = trim((string) ($request->input('notes') ?? ''));
+            $statusRaw = trim((string) ($request->input('status') ?? ''));
+            $serverRaw = $request->input('user_server_id');
+            $serverIdInput = ($serverRaw === '' || $serverRaw === null) ? null : (int) $serverRaw;
 
             $emailResult = $this->management->updateEmail($user, $emailRaw !== '' ? $emailRaw : null);
             if (empty($emailResult['success'])) {
@@ -1437,7 +1455,36 @@ class MediaUserController extends Controller
             }
 
             $this->management->updateTelegram($user, $tgRaw !== '' ? $tgRaw : null);
-            Session::getInstance()->flash('success', 'Email y Telegram guardados.');
+            $user->metaSet('whatsapp_phone', preg_replace('/\D+/', '', $waRaw) ?: null);
+            $this->management->updateNotes($user, $notesRaw);
+
+            $expResult = $this->management->updateExpires($user, $expiresRaw !== '' ? $expiresRaw : null);
+            if (empty($expResult['success'])) {
+                Session::getInstance()->flash('error', (string) ($expResult['message'] ?? 'Fecha no válida'));
+            }
+
+            if ($serverIdInput !== ($user->server_id !== null ? (int) $user->server_id : null)) {
+                $this->management->updateServerId($user, $serverIdInput, $tenantId);
+            }
+
+            if ($statusRaw !== '' && $statusRaw !== (string) $user->status) {
+                $this->management->updateStatus($user, $statusRaw);
+            }
+
+            Session::getInstance()->flash('success', 'Datos guardados.');
+            $params = [];
+            parse_str($query, $params);
+            $params['uuid'] = $user->uuid;
+
+            return $this->redirect('/media-users/revisar?' . http_build_query($params));
+        }
+
+        if ($action === 'lookup' && $user !== null) {
+            $result = $this->management->discoverIdentity($user, apply: true);
+            Session::getInstance()->flash(
+                !empty($result['success']) ? 'success' : 'warning',
+                (string) ($result['message'] ?? 'Búsqueda completada')
+            );
             $params = [];
             parse_str($query, $params);
             $params['uuid'] = $user->uuid;

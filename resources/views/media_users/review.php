@@ -121,7 +121,8 @@ ob_start();
                     · <?= e($mediaUser->email ?: 'sin email') ?>
                     · <?= e($mediaUser->server_name ?? 'Sin servidor') ?>
                     · Telegram: <?= e($mediaUser->telegram_chat_id ?: '—') ?>
-                    · Expira: <?= e($mediaUser->expires_at ? substr((string) $mediaUser->expires_at, 0, 10) : '—') ?>
+                    · Expira: <?= e(expires_date_display($mediaUser->expires_at)) ?>
+                    · Estado: <?= e($mediaUser->status) ?>
                 </p>
             </div>
             <div class="text-end">
@@ -139,6 +140,9 @@ ob_start();
         <?php
             $tgValue = normalize_telegram_chat_id($mediaUser->telegram_chat_id ?? null);
             $emailValue = trim((string) ($mediaUser->email ?? ''));
+            $waValue = trim((string) ($mediaUser->metaGet('whatsapp_phone') ?? ''));
+            $expiresValue = expires_date_input($mediaUser->expires_at);
+            $statusValue = (string) ($mediaUser->status ?? 'pending');
         ?>
         <form method="POST" action="/media-users/revisar" class="mb-3">
             <?= csrf_field() ?>
@@ -153,25 +157,75 @@ ob_start();
             <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
             <?php endif; ?>
 
-            <div class="row g-2 align-items-end mb-2">
-                <div class="col-md-5">
-                    <label class="form-label small mb-1" for="review-email">Email</label>
-                    <input type="email" class="form-control" id="review-email" name="email"
-                           value="<?= e($emailValue) ?>" placeholder="cliente@email.com" autocomplete="off">
+            <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-server">Servidor</label>
+                    <select class="form-select form-select-sm" id="review-server" name="user_server_id">
+                        <option value="">Sin servidor</option>
+                        <?php foreach ($servers as $server): ?>
+                        <option value="<?= (int) $server->id ?>" <?= (int) ($mediaUser->server_id ?? 0) === (int) $server->id ? 'selected' : '' ?>>
+                            <?= e($server->name) ?> (<?= e($server->type) ?>)
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <div class="col-md-5">
-                    <label class="form-label small mb-1" for="review-telegram">Telegram Chat ID</label>
-                    <input type="text" class="form-control" id="review-telegram" name="telegram_chat_id"
-                           value="<?= e($tgValue) ?>" placeholder="Ej. 123456789" autocomplete="off"
-                           inputmode="numeric">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-status">Estado</label>
+                    <select class="form-select form-select-sm" id="review-status" name="status">
+                        <?php foreach (['active' => 'Activo', 'suspended' => 'Suspendido', 'expired' => 'Caducado', 'pending' => 'Pendiente', 'invited' => 'Invitado'] as $st => $label): ?>
+                        <option value="<?= e($st) ?>" <?= $statusValue === $st ? 'selected' : '' ?>><?= e($label) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <button type="submit" name="action" value="save_contact" class="btn btn-outline-primary w-100">
-                        <i class="bi bi-save me-1"></i>Guardar
-                    </button>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-expires">Fecha expiración</label>
+                    <input type="date" class="form-control form-control-sm" id="review-expires" name="expires_at"
+                           value="<?= e($expiresValue) ?>">
                 </div>
             </div>
-            <p class="small text-muted mb-3 mb-md-2">Rellena los huecos y pulsa Guardar antes de pasar al siguiente.</p>
+            <div class="d-flex flex-wrap gap-1 mb-3">
+                <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
+                <button type="button" class="btn btn-sm btn-outline-primary review-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
+                <?php endforeach; ?>
+            </div>
+
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-email">Email</label>
+                    <input type="email" class="form-control form-control-sm" id="review-email" name="email"
+                           value="<?= e($emailValue) ?>" placeholder="cliente@email.com" autocomplete="off">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-telegram">Telegram Chat ID</label>
+                    <input type="text" class="form-control form-control-sm" id="review-telegram" name="telegram_chat_id"
+                           value="<?= e($tgValue) ?>" placeholder="Ej. 123456789" autocomplete="off" inputmode="numeric">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="review-whatsapp">WhatsApp</label>
+                    <input type="text" class="form-control form-control-sm" id="review-whatsapp" name="whatsapp_phone"
+                           value="<?= e($waValue) ?>" placeholder="346xxxxxxxx" autocomplete="off">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small mb-1" for="review-notes">Notas privadas</label>
+                <textarea class="form-control form-control-sm" id="review-notes" name="notes" rows="2"
+                          placeholder="Identificación, incidencias…"><?= e($mediaUser->notes ?? '') ?></textarea>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="submit" name="action" value="save_all" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Guardar cambios
+                </button>
+                <button type="submit" name="action" value="lookup" class="btn btn-outline-info"
+                        title="Busca email/usuario en Plex/Jellyfin, clientes o registros previos del panel">
+                    <i class="bi bi-search me-1"></i>Buscar email / usuario
+                </button>
+            </div>
+            <p class="small text-muted mb-3">Usuario Plex/Jellyfin: <strong><?= e($mediaUser->username ?: '—') ?></strong>
+                <?php if (trim((string) ($mediaUser->external_id ?? '')) !== ''): ?>
+                · ID servidor: <?= e($mediaUser->external_id) ?>
+                <?php endif; ?>
+            </p>
 
             <div class="d-flex flex-wrap gap-2">
                 <button type="submit" name="action" value="sync" class="btn btn-primary">
@@ -190,6 +244,25 @@ ob_start();
                 </button>
             </div>
         </form>
+        <script>
+        document.querySelectorAll('.review-add-days').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById('review-expires');
+                if (!input) return;
+                const days = Number(btn.dataset.days || 0);
+                if (!days) return;
+                const baseStr = input.value || new Date().toISOString().slice(0, 10);
+                const parts = baseStr.split('-').map(Number);
+                const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+                dt.setDate(dt.getDate() + days);
+                input.value = [
+                    dt.getFullYear(),
+                    String(dt.getMonth() + 1).padStart(2, '0'),
+                    String(dt.getDate()).padStart(2, '0'),
+                ].join('-');
+            });
+        });
+        </script>
     </div>
 </div>
 <?php endif; ?>

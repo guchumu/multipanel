@@ -74,6 +74,9 @@
     document.getElementById('expiresAt')?.addEventListener('change', async (e) => {
         try {
             const data = await post(`/media-users/${uuid}/expires`, { expires_at: e.target.value });
+            if (data.success && data.expires_date) {
+                e.target.value = data.expires_date;
+            }
             if (data.success === false) throw new Error(data.message || 'Error');
             toast('Fecha guardada');
         } catch (err) {
@@ -96,8 +99,8 @@
             try {
                 const data = await post(`/media-users/${uuid}/add-days`, { days: Number(btn.dataset.days) });
                 if (data.success === false) throw new Error(data.message || 'Error');
-                if (data.expires_at) {
-                    document.getElementById('expiresAt').value = data.expires_at.substring(0, 10);
+                if (data.expires_at || data.expires_date) {
+                    document.getElementById('expiresAt').value = data.expires_date || data.expires_at.substring(0, 10);
                 }
                 toast(data.message || 'Días añadidos');
                 setTimeout(() => location.reload(), 600);
@@ -122,6 +125,17 @@
             });
             if (data.success === false) throw new Error(data.message || 'Error');
             toast(data.message || 'Datos guardados');
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
+    document.getElementById('btnDiscoverIdentity')?.addEventListener('click', async () => {
+        try {
+            const data = await post(`/media-users/${uuid}/discover-identity`, { apply: '1' });
+            if (data.success === false) throw new Error(data.message || 'No encontrado');
+            toast(data.message || 'Datos encontrados');
+            setTimeout(() => location.reload(), 700);
         } catch (err) {
             toast(err.message);
         }

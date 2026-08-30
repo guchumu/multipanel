@@ -632,6 +632,85 @@ class MediaUserRepository
     }
 
     /**
+     * Datos previos del panel (soft-deleted u otro registro) para recuperar identidad.
+     *
+     * @return array{email?: ?string, telegram_chat_id?: ?string, expires_at?: ?string, notes?: ?string}|null
+     */
+    public function findIdentityTwin(
+        int $tenantId,
+        int $serverId,
+        string $username,
+        string $email,
+        string $externalId,
+        int $excludeId = 0,
+    ): ?array {
+        $db = Database::getInstance();
+        $candidates = [];
+        $excludeSql = $excludeId > 0 ? ' AND id <> ?' : '';
+        $excludeParams = $excludeId > 0 ? [$excludeId] : [];
+
+        if ($externalId !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND external_id = ?' . $excludeSql . '
+                 ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                array_merge([$tenantId, $externalId], $excludeParams)
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($email !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND LOWER(email) = LOWER(?)' . $excludeSql . '
+                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                array_merge([$tenantId, $email, $serverId], $excludeParams)
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($username !== '') {
+            $row = $db->fetchOne(
+                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                 WHERE tenant_id = ? AND (LOWER(username) = LOWER(?) OR LOWER(display_name) = LOWER(?))'
+                 . $excludeSql . '
+                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                array_merge([$tenantId, $username, $username, $serverId], $excludeParams)
+            );
+            if ($row) {
+                $candidates[] = $row;
+            }
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        $merged = ['email' => null, 'telegram_chat_id' => null, 'expires_at' => null, 'notes' => null];
+        foreach ($candidates as $row) {
+            foreach (array_keys($merged) as $field) {
+                $val = $row[$field] ?? null;
+                if (($merged[$field] === null || trim((string) $merged[$field]) === '')
+                    && $val !== null && trim((string) $val) !== '') {
+                    $merged[$field] = $val;
+                }
+            }
+        }
+
+        foreach ($merged as $value) {
+            if ($value !== null && trim((string) $value) !== '') {
+                return $merged;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Siguiente usuario para revisión one-by-one (campos vacíos / fuera del servidor).
      *
      * @param list<string> $emptyFilters

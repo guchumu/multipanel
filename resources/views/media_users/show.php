@@ -158,7 +158,7 @@ ob_start();
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Fecha expiración</label>
-                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e($mediaUser->expires_at ? substr((string) $mediaUser->expires_at, 0, 10) : '') ?>">
+                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e(expires_date_input($mediaUser->expires_at)) ?>">
                 </div>
                 <div class="mb-3 d-flex flex-wrap gap-2">
                     <span class="small text-muted w-100">Sumar días:</span>
@@ -173,6 +173,9 @@ ob_start();
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $mediaUser->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
                     <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
+                    <button type="button" class="btn btn-outline-info btn-sm" id="btnDiscoverIdentity" title="Buscar email/usuario en servidor, clientes o registros previos">
+                        <i class="bi bi-search me-1"></i>Buscar email / usuario
+                    </button>
                     <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncMembershipControl" title="Comprobar si sigue en la biblioteca del servidor"><i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca</button>
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
                     <form method="POST" action="/media-users/<?= e($mediaUser->uuid) ?>" class="d-inline"
