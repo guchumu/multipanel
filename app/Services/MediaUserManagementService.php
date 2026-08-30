@@ -843,6 +843,9 @@ final class MediaUserManagementService
             'message' => $serverNote . ' Eliminado del panel.',
         ];
     }
+
+    /**
+     * Aplica un pago confirmado (Stripe, etc.) a un usuario media: suma los días
      * pagados, reactiva el acceso si estaba suspendido/caducado y avisa por Telegram.
      *
      * @return array{success: bool, message: string, expires_at: string}
