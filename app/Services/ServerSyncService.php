@@ -21,6 +21,10 @@ use Ramsey\Uuid\Uuid;
  */
 final class ServerSyncService
 {
+    private const HEALTH_FAIL_CACHE_TTL = 900;
+
+    private const HEALTH_FAIL_THRESHOLD = 3;
+
     /** @var array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string} */
     private array $lastUserSyncStats = [
         'imported' => 0,
@@ -56,7 +60,7 @@ final class ServerSyncService
                     ? ($media->getLastError() ?? 'Conexión fallida')
                     : 'Conexión fallida';
 
-                return $this->failSync($server, $error);
+                return $this->failSync($server, $error, false);
             }
 
             $info = $media->getServerInfo();
@@ -68,10 +72,8 @@ final class ServerSyncService
 
             $sessions = $media->getActiveSessions();
             $server->active_sessions = count($sessions);
-            $server->status = 'online';
+            $this->markOnline($server);
             $server->last_sync_at = now()->format('Y-m-d H:i:s');
-            $server->last_check_at = now()->format('Y-m-d H:i:s');
-            $server->last_error = null;
             $server->save();
 
             $this->syncLibraries($server, $media->getLibraries());
@@ -85,22 +87,22 @@ final class ServerSyncService
             Logger::info('Server synced', ['server_id' => $server->id, 'users' => $userStats]);
             return true;
         } catch (\Throwable $e) {
-            return $this->failSync($server, $e->getMessage());
+            return $this->failSync($server, $e->getMessage(), false);
         }
     }
 
     /** Conexión + info + sesiones activas, sin importar bibliotecas/usuarios (rápido). */
-    public function syncConnectionOnly(Server $server): bool
+    public function syncConnectionOnly(Server $server, bool $quick = false): bool
     {
         try {
-            $media = MediaServerFactory::make($server);
+            $media = MediaServerFactory::make($server, $quick);
 
             if (!$media->testConnection()) {
                 $error = $media instanceof PlexService
                     ? ($media->getLastError() ?? 'Conexión fallida')
                     : 'Conexión fallida';
 
-                return $this->failSync($server, $error);
+                return $this->failSync($server, $error, true);
             }
 
             $info = $media->getServerInfo();
@@ -112,9 +114,7 @@ final class ServerSyncService
 
             $sessions = $media->getActiveSessions();
             $server->active_sessions = count($sessions);
-            $server->status = 'online';
-            $server->last_check_at = now()->format('Y-m-d H:i:s');
-            $server->last_error = null;
+            $this->markOnline($server);
             if ($server->last_sync_at === null) {
                 $server->last_sync_at = $server->last_check_at;
             }
@@ -125,28 +125,80 @@ final class ServerSyncService
 
             return true;
         } catch (\Throwable $e) {
-            return $this->failSync($server, $e->getMessage());
+            return $this->failSync($server, $e->getMessage(), true);
         }
     }
 
     /**
-     * Marca el servidor offline tras sync fallido (siempre offline, no "error").
-     * Así ServerDownAlertService / cron pueden notificar la caída.
+     * Chequeo ligero de todos los servidores (dashboard / estadísticas).
+     * No importa usuarios ni bibliotecas.
      */
-    private function failSync(Server $server, string $error): bool
+    public function syncAllLight(int $tenantId): int
     {
-        $server->status = 'offline';
+        $synced = 0;
+        foreach ($this->servers->allByTenant($tenantId) as $server) {
+            if ($this->syncConnectionOnly($server, true)) {
+                $synced++;
+            }
+        }
+
+        if ($synced > 0) {
+            $this->forgetSoftSyncCache($tenantId);
+        }
+
+        return $synced;
+    }
+
+    private function markOnline(Server $server): void
+    {
+        $this->clearHealthFailures((int) $server->id);
+        $server->status = 'online';
+        $server->last_check_at = now()->format('Y-m-d H:i:s');
+        $server->last_error = null;
+    }
+
+    private function healthFailKey(int $serverId): string
+    {
+        return 'server_health_fail_' . $serverId;
+    }
+
+    private function clearHealthFailures(int $serverId): void
+    {
+        Cache::forget($this->healthFailKey($serverId));
+    }
+
+    /**
+     * Marca offline solo tras varios fallos seguidos (evita falsos positivos por timeout).
+     */
+    private function failSync(Server $server, string $error, bool $lightweight): bool
+    {
+        $serverId = (int) $server->id;
+        $key = $this->healthFailKey($serverId);
+        $fails = (int) Cache::get($key) + 1;
+        Cache::set($key, $fails, self::HEALTH_FAIL_CACHE_TTL);
+
         $server->last_error = $error;
         $server->last_check_at = now()->format('Y-m-d H:i:s');
+
+        if ($fails >= self::HEALTH_FAIL_THRESHOLD) {
+            $server->status = 'offline';
+        } elseif ($server->status !== 'online') {
+            $server->status = 'offline';
+        }
+
         $this->refreshDbCounts($server);
         $this->persistDebugLight($server, false, $error);
         $server->save();
 
-        Logger::error('Server sync failed', [
-            'server_id' => $server->id,
+        Logger::warning('Server sync failed', [
+            'server_id' => $serverId,
             'error' => $error,
             'status' => $server->status,
+            'fail_streak' => $fails,
+            'lightweight' => $lightweight,
+            'marked_offline' => $fails >= self::HEALTH_FAIL_THRESHOLD,
         ]);
+
         return false;
     }
 
@@ -215,6 +267,7 @@ final class ServerSyncService
 
     public function touchOnline(Server $server, int $activeSessions = 0): void
     {
+        $this->clearHealthFailures((int) $server->id);
         $server->status = 'online';
         $server->active_sessions = $activeSessions;
         $server->last_check_at = now()->format('Y-m-d H:i:s');

@@ -39,8 +39,11 @@ class DashboardController extends Controller
         $tenantId = (int) ($user->tenant_id ?? 1);
 
         $this->mediaUsers->backfillMissingServerIds($tenantId);
+
+        Session::getInstance()->close();
         $this->maybeRecordSnapshot($tenantId);
 
+        $serverList = $this->servers->allByTenant($tenantId);
         $stats = [
             'users_active' => $this->mediaUsers->countByStatus($tenantId, 'active'),
             'users_suspended' => $this->mediaUsers->countByStatus($tenantId, 'suspended'),
@@ -50,10 +53,9 @@ class DashboardController extends Controller
             'users_total' => $this->mediaUsers->countTotal($tenantId),
             'servers_online' => $this->servers->countByStatus($tenantId, 'online'),
             'servers_offline' => $this->servers->countByStatus($tenantId, 'offline'),
-            'servers_total' => count($this->servers->allByTenant($tenantId)),
+            'servers_total' => count($serverList),
         ];
 
-        $serverList = $this->servers->allByTenant($tenantId);
         $preferred = $this->servers->preferredDefaultForForms($tenantId);
         $plex = $this->servers->findDefaultByTenant($tenantId, 'plex');
         $jelly = $this->servers->findDefaultByTenant($tenantId, 'jellyfin');
@@ -120,6 +122,7 @@ class DashboardController extends Controller
      * de más de un día aunque no haya un cron (`cron/run.php sync`) corriendo
      * en el hosting: cada vez que se visita el dashboard (o Estadísticas) se
      * sincroniza como mucho una vez cada 5 minutos por tenant.
+     * Solo chequeo ligero; el sync completo queda para el cron.
      */
     private function maybeRecordSnapshot(int $tenantId): void
     {
@@ -131,7 +134,7 @@ class DashboardController extends Controller
         Cache::set($cacheKey, true, 300);
 
         try {
-            $this->sync->syncAll($tenantId);
+            $this->sync->syncAllLight($tenantId);
         } catch (\Throwable) {
         }
     }

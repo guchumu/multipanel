@@ -22,7 +22,7 @@ final class StreamingActivityService
      * segundos para que el polling de "En directo", el listado de servidores
      * y las fichas de usuario no repitan ese coste en cada petición.
      */
-    private const SNAPSHOT_CACHE_TTL = 15;
+    private const SNAPSHOT_CACHE_TTL = 30;
 
     public function __construct(
         private ServerRepository $servers = new ServerRepository(),
@@ -171,7 +171,7 @@ final class StreamingActivityService
     private function fetchServerSessions(Server $server): array
     {
         try {
-            $media = MediaServerFactory::make($server);
+            $media = MediaServerFactory::make($server, true);
             $raw = $media->getActiveSessions();
 
             $reachable = !($media instanceof PlexService && $media->getLastError() !== null);

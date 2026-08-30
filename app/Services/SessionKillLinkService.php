@@ -131,7 +131,12 @@ final class SessionKillLinkService
         $killed = $this->terminateSession($server, $sessionId, $message);
 
         try {
-            $db->update('session_kill_links', ['used_at' => now()->format('Y-m-d H:i:s')], ['id' => (int) $row['id']]);
+            $db->update(
+                'session_kill_links',
+                ['used_at' => now()->format('Y-m-d H:i:s')],
+                'id = ?',
+                [(int) $row['id']]
+            );
         } catch (\Throwable) {
         }
 

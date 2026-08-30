@@ -20,11 +20,12 @@ final class JellyfinService
 
     public function __construct(
         private Server $server,
+        private bool $quick = false,
     ) {
         $this->client = new Client([
             'base_uri' => $this->server->fullUrl(),
-            'timeout' => 30,
-            'connect_timeout' => 10,
+            'timeout' => $this->quick ? 8 : 30,
+            'connect_timeout' => $this->quick ? 4 : 10,
             'verify' => false,
             'headers' => [
                 'Accept' => 'application/json',

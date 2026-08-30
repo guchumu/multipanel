@@ -27,6 +27,7 @@ final class PlexService
 
     public function __construct(
         private Server $server,
+        private bool $quick = false,
     ) {
         $resolver = new PlexConnectionResolver();
         $endpoint = ServerEndpoint::normalize(
@@ -35,7 +36,7 @@ final class PlexService
             (bool) $server->ssl
         );
 
-        $resolved = $resolver->resolve($server);
+        $resolved = $resolver->resolve($server, $this->quick);
         if ($resolved['error'] !== null && $resolved['tried'] !== []) {
             // Todos los endpoints sondeados fallaron: marcamos el error ya para
             // que los métodos de la API (sesiones, bibliotecas, etc.) devuelvan
@@ -66,8 +67,8 @@ final class PlexService
         $this->baseUrl = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}";
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
-            'timeout' => 30,
-            'connect_timeout' => 15,
+            'timeout' => $this->quick ? 10 : 30,
+            'connect_timeout' => $this->quick ? 5 : 15,
             'verify' => false,
             'headers' => array_merge([
                 'Accept' => 'application/xml',

@@ -12,6 +12,7 @@ use Core\Cache;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
+use Core\Session;
 
 /**
  * Statistics and analytics controller.
@@ -28,6 +29,7 @@ class StatsController extends Controller
     public function index(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        Session::getInstance()->close();
         $this->maybeRecordSnapshot($tenantId);
 
         $period = $this->stats->resolvePeriod(
@@ -107,7 +109,7 @@ class StatsController extends Controller
         Cache::set($cacheKey, true, 300);
 
         try {
-            $this->sync->syncAll($tenantId);
+            $this->sync->syncAllLight($tenantId);
         } catch (\Throwable) {
             // No bloqueamos la vista de estadísticas si un servidor falla al sincronizar.
         }

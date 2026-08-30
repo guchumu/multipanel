@@ -13,11 +13,11 @@ use App\Services\Media\JellyfinService;
  */
 final class MediaServerFactory
 {
-    public static function make(Server $server): PlexService|JellyfinService
+    public static function make(Server $server, bool $quick = false): PlexService|JellyfinService
     {
         return match ($server->type) {
-            'plex' => new PlexService($server),
-            'jellyfin' => new JellyfinService($server),
+            'plex' => new PlexService($server, $quick),
+            'jellyfin' => new JellyfinService($server, $quick),
             default => throw new \InvalidArgumentException("Unsupported server type: {$server->type}"),
         };
     }

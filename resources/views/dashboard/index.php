@@ -425,7 +425,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Tarjeta / modal de actividad en directo (reutiliza /activity/api + summary)
     (function initLiveActivityCard() {
-        const REFRESH_MS = 20000;
+        const REFRESH_MS = 30000;
         let timer = null;
         let lastPayload = null;
 
