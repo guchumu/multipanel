@@ -23,7 +23,7 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#general">General</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">Email / SMTP</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#telegram">Telegram</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#whatsapp">WhatsApp / Alertas admin</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#whatsapp">Alertas admin</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#peticiones">Peticiones / BD remota</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#billing">Facturación</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#cron">Cron / Tareas</button></li>
@@ -163,7 +163,8 @@
             <div class="card-body">
                 <h6 class="mb-2"><i class="bi bi-whatsapp me-1"></i>Alertas WhatsApp (admin)</h6>
                 <p class="small text-muted mb-3">
-                    CallMeBot para el admin. Por defecto WhatsApp recibe: <strong>resumen diario</strong>,
+                    CallMeBot para el admin. También puedes usar <strong>ntfy</strong> (push) en la sección de abajo.
+                    Por defecto WhatsApp recibe: <strong>resumen diario</strong>,
                     <strong>servidor caído</strong> y <strong>altas</strong>; las renovaciones van por Telegram
                     (salvo que actives WhatsApp abajo). Puedes cambiarlo en los toggles.
                     Si acabas de pedir el apikey a CallMeBot, la espera de ~24&nbsp;h es normal.
@@ -203,8 +204,43 @@
 
                     <div class="col-12"><hr class="my-1"></div>
                     <div class="col-12">
+                        <h6 class="mb-2"><i class="bi bi-bell me-1"></i>ntfy (push)</h6>
+                        <p class="small text-muted mb-2">
+                            Notificaciones push vía <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy.sh</a>
+                            o tu servidor propio. Mismos toggles de abajo que Telegram/WhatsApp.
+                        </p>
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="ntfy_enabled" value="1" id="ntfyAlerts"
+                                   <?= $alertOn('ntfy_enabled', false) ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="ntfyAlerts">Activar canal ntfy</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="ntfy_server">Servidor</label>
+                        <input type="url" name="ntfy_server" id="ntfy_server" class="form-control"
+                               value="<?= e($settings['ntfy_server'] ?? (string) config('alerts.ntfy_server', 'https://ntfy.sh')) ?>"
+                               placeholder="https://ntfy.sh">
+                        <div class="form-text">.env: <code>NTFY_SERVER</code></div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="ntfy_topic">Topic</label>
+                        <input type="text" name="ntfy_topic" id="ntfy_topic" class="form-control" autocomplete="off"
+                               value="<?= e($settings['ntfy_topic'] ?? '') ?>" placeholder="multipanel-alertas">
+                        <div class="form-text">Nombre único y difícil de adivinar. .env: <code>NTFY_TOPIC</code></div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="ntfy_token">Token (opcional)</label>
+                        <input type="password" name="ntfy_token" id="ntfy_token" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($settings['ntfy_token']) ? '••••••••••' : 'Bearer token si el topic es privado' ?>">
+                        <div class="form-text">Déjalo en blanco para no cambiar. .env: <code>NTFY_TOKEN</code></div>
+                    </div>
+
+                    <div class="col-12"><hr class="my-1"></div>
+                    <div class="col-12">
                         <h6 class="mb-1">Qué avisos enviar</h6>
-                        <p class="small text-muted mb-2">WhatsApp: digest + caídas + altas; renovaciones por Telegram salvo que actives el toggle.</p>
+                        <p class="small text-muted mb-2">Activa cada canal (Telegram, WhatsApp, ntfy, email) por tipo de aviso.</p>
                     </div>
 
                     <div class="col-md-6">
@@ -215,10 +251,15 @@
                                        <?= $alertOn('telegram_notify_digest', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="tgDigest">Telegram</label>
                             </div>
-                            <div class="form-check form-switch mb-0">
+                            <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="whatsapp_notify_digest" value="1" id="waDigest"
                                        <?= $alertOn('whatsapp_notify_digest', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="waDigest">WhatsApp</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="ntfy_notify_digest" value="1" id="ntfyDigest"
+                                       <?= $alertOn('ntfy_notify_digest', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="ntfyDigest">ntfy</label>
                             </div>
                         </div>
                     </div>
@@ -235,10 +276,15 @@
                                        <?= $alertOn('whatsapp_notify_server_down', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="waDown">WhatsApp</label>
                             </div>
-                            <div class="form-check form-switch mb-0">
+                            <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="email_notify_server_down" value="1" id="emDown"
                                        <?= $alertOn('email_notify_server_down', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="emDown">Email</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="ntfy_notify_server_down" value="1" id="ntfyDown"
+                                       <?= $alertOn('ntfy_notify_server_down', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="ntfyDown">ntfy</label>
                             </div>
                         </div>
                     </div>
@@ -256,10 +302,15 @@
                                        <?= $alertOn('whatsapp_notify_critical', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="waCrit">WhatsApp</label>
                             </div>
-                            <div class="form-check form-switch mb-0">
+                            <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="email_notify_critical" value="1" id="emCrit"
                                        <?= $alertOn('email_notify_critical', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="emCrit">Email</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="ntfy_notify_critical" value="1" id="ntfyCrit"
+                                       <?= $alertOn('ntfy_notify_critical', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="ntfyCrit">ntfy</label>
                             </div>
                         </div>
                     </div>
@@ -271,10 +322,15 @@
                                        <?= $alertOn('telegram_notify_alta', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="tgAlta">Telegram</label>
                             </div>
-                            <div class="form-check form-switch mb-0">
+                            <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="whatsapp_notify_alta" value="1" id="waAlta"
                                        <?= $alertOn('whatsapp_notify_alta', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="waAlta">WhatsApp <span class="text-muted">(on por defecto)</span></label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="ntfy_notify_alta" value="1" id="ntfyAlta"
+                                       <?= $alertOn('ntfy_notify_alta', true) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="ntfyAlta">ntfy</label>
                             </div>
                         </div>
                     </div>
@@ -286,10 +342,15 @@
                                        <?= $alertOn('telegram_notify_renew', true) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="tgRenew">Telegram</label>
                             </div>
-                            <div class="form-check form-switch mb-0">
+                            <div class="form-check form-switch mb-2">
                                 <input class="form-check-input" type="checkbox" name="whatsapp_notify_renew" value="1" id="waRenew"
                                        <?= $alertOn('whatsapp_notify_renew', false) ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="waRenew">WhatsApp <span class="text-muted">(off por defecto)</span></label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" name="ntfy_notify_renew" value="1" id="ntfyRenew"
+                                       <?= $alertOn('ntfy_notify_renew', false) ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="ntfyRenew">ntfy</label>
                             </div>
                         </div>
                     </div>
@@ -342,9 +403,12 @@
                     </div>
 
                     <div class="col-12 d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-primary">Guardar WhatsApp / Alertas</button>
+                        <button type="submit" class="btn btn-primary">Guardar alertas admin</button>
                         <button type="submit" class="btn btn-outline-success" formaction="/settings/whatsapp/test">
                             <i class="bi bi-whatsapp me-1"></i>Probar WhatsApp
+                        </button>
+                        <button type="submit" class="btn btn-outline-secondary" formaction="/settings/ntfy/test">
+                            <i class="bi bi-bell me-1"></i>Probar ntfy
                         </button>
                     </div>
                 </form>
@@ -356,7 +420,7 @@
                 <ul class="small text-muted mb-0">
                     <li>El <strong>resumen diario</strong> corre con el cron <code>digest</code> (incluido en <code>all</code>), en la misma hora que caducidades (pestaña Cron).</li>
                     <li>Email de servidor caído: destinatario en pestaña Cron. Requiere SMTP.</li>
-                    <li>Pruebas Telegram / sandbox: pestaña Telegram.</li>
+                    <li>Pruebas Telegram / sandbox: pestaña Telegram. ntfy: botón «Probar ntfy» (guarda antes).</li>
                     <li>WhatsApp a clientes ≠ CallMeBot admin. Cloud API es opcional; sin ella el portal igual guarda el número.</li>
                 </ul>
             </div>

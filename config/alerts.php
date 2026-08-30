@@ -42,6 +42,17 @@ return [
     'whatsapp_notify_critical' => true,
     'email_notify_critical' => true,
 
+    // ntfy (https://ntfy.sh o servidor propio). DB settings.group=alerts tiene prioridad.
+    'ntfy_enabled' => env('NTFY_ENABLED', false),
+    'ntfy_server' => env('NTFY_SERVER', 'https://ntfy.sh'),
+    'ntfy_topic' => env('NTFY_TOPIC', ''),
+    'ntfy_token' => env('NTFY_TOKEN', ''),
+    'ntfy_notify_alta' => true,
+    'ntfy_notify_renew' => false,
+    'ntfy_notify_server_down' => true,
+    'ntfy_notify_digest' => true,
+    'ntfy_notify_critical' => true,
+
     // Escalado servidor caído (minutos desde la primera detección). Tras el último, no se reenvía.
     'server_down_escalation_minutes' => [0, 5, 15, 30],
 ];

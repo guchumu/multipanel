@@ -240,6 +240,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/settings', [SettingsController::class, 'index'], 'settings.index');
     $router->post('/settings', [SettingsController::class, 'update'], 'settings.update', [CsrfMiddleware::class]);
     $router->post('/settings/telegram/test', [SettingsController::class, 'testTelegram'], 'settings.telegram.test', [CsrfMiddleware::class]);
+    $router->post('/settings/ntfy/test', [SettingsController::class, 'testNtfy'], 'settings.ntfy.test', [CsrfMiddleware::class]);
     $router->post('/settings/telegram/webhook', [SettingsController::class, 'activateTelegramWebhook'], 'settings.telegram.webhook', [CsrfMiddleware::class]);
     $router->post('/settings/whatsapp/test', [SettingsController::class, 'testWhatsApp'], 'settings.whatsapp.test', [CsrfMiddleware::class]);
     $router->post('/settings/peticiones/test', [SettingsController::class, 'testPeticionesDb'], 'settings.peticiones.test', [CsrfMiddleware::class]);

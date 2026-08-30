@@ -355,6 +355,11 @@ final class AdminCriticalAlertService
         } elseif (!$this->alerts->whatsappNotifyCritical($tenantId)) {
             $bits[] = 'whatsapp off';
         }
+        if ($this->alerts->ntfyNotifyCritical($tenantId) && !$this->alerts->ntfyConfigured($tenantId)) {
+            $bits[] = 'ntfy no configurado';
+        } elseif (!$this->alerts->ntfyNotifyCritical($tenantId)) {
+            $bits[] = 'ntfy off';
+        }
 
         return $bits !== [] ? implode('; ', $bits) : 'no channels enabled';
     }

@@ -256,6 +256,79 @@ final class AlertSettingsService
         return $this->alertFlag('email_notify_critical', true, $tenantId);
     }
 
+    public function ntfyEnabled(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_enabled', false, $tenantId);
+    }
+
+    public function ntfyServer(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $server = trim((string) ($alerts['ntfy_server'] ?? ''));
+        if ($server === '') {
+            $server = trim((string) config('alerts.ntfy_server', env('NTFY_SERVER', 'https://ntfy.sh')));
+        }
+
+        return rtrim($server, '/');
+    }
+
+    public function ntfyTopic(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $topic = trim((string) ($alerts['ntfy_topic'] ?? ''));
+        if ($topic === '') {
+            $topic = trim((string) config('alerts.ntfy_topic', env('NTFY_TOPIC', '')));
+        }
+
+        return $topic;
+    }
+
+    public function ntfyToken(?int $tenantId = null): string
+    {
+        $tenantId ??= $this->tenantId();
+        $alerts = $this->loadGroup($tenantId, 'alerts');
+        $token = trim((string) ($alerts['ntfy_token'] ?? ''));
+        if ($token === '') {
+            $token = trim((string) config('alerts.ntfy_token', env('NTFY_TOKEN', '')));
+        }
+
+        return $token;
+    }
+
+    public function ntfyConfigured(?int $tenantId = null): bool
+    {
+        return $this->ntfyEnabled($tenantId)
+            && $this->ntfyTopic($tenantId) !== ''
+            && preg_match('#^https?://#i', $this->ntfyServer($tenantId)) === 1;
+    }
+
+    public function ntfyNotifyAlta(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_notify_alta', true, $tenantId);
+    }
+
+    public function ntfyNotifyRenew(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_notify_renew', false, $tenantId);
+    }
+
+    public function ntfyNotifyServerDown(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_notify_server_down', true, $tenantId);
+    }
+
+    public function ntfyNotifyDigest(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_notify_digest', true, $tenantId);
+    }
+
+    public function ntfyNotifyCritical(?int $tenantId = null): bool
+    {
+        return $this->alertFlag('ntfy_notify_critical', true, $tenantId);
+    }
+
     /**
      * Debounce de alertas críticas (fingerprint → last_sent_at UTC).
      *

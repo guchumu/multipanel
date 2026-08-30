@@ -11,7 +11,7 @@ use App\Services\CronService;
 use App\Services\Payments\StripeGateway;
 use App\Services\Peticiones\PeticionesConfig;
 use App\Services\Peticiones\PeticionesDatabase;
-use App\Services\PortalMessagingLinkService;
+use App\Services\Notifications\NtfyChannel;
 use App\Services\PortalShopService;
 use App\Services\TelegramConfig;
 use App\Services\TelegramSandboxSender;
@@ -170,6 +170,39 @@ class SettingsController extends Controller
         }
 
         return $this->redirect('/settings#telegram');
+    }
+
+    public function testNtfy(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $alerts = new AlertSettingsService();
+
+        if (!$alerts->ntfyConfigured($tenantId)) {
+            Session::getInstance()->flash(
+                'error',
+                'Activa ntfy, indica el topic y guarda antes de enviar la prueba.'
+            );
+
+            return $this->redirect('/settings#whatsapp');
+        }
+
+        $topic = $alerts->ntfyTopic($tenantId);
+        $sent = (new NtfyChannel($alerts))->send(
+            'MultiPanel — prueba',
+            'Mensaje de prueba desde Configuración.' . "\n"
+            . 'Topic: ' . $topic . "\n"
+            . 'Hora: ' . date('Y-m-d H:i:s'),
+            ['tenant_id' => $tenantId, 'level' => 'warning', 'event' => 'test']
+        );
+
+        Session::getInstance()->flash(
+            $sent ? 'success' : 'error',
+            $sent
+                ? 'Mensaje de prueba enviado a ntfy (topic: ' . $topic . ').'
+                : 'No se pudo enviar a ntfy. Revisa servidor, topic y token.'
+        );
+
+        return $this->redirect('/settings#whatsapp');
     }
 
     public function activateTelegramWebhook(Request $request): Response
@@ -389,11 +422,20 @@ class SettingsController extends Controller
                 'whatsapp_enabled',
                 'whatsapp_phone',
                 'whatsapp_apikey',
+                'ntfy_enabled',
+                'ntfy_server',
+                'ntfy_topic',
+                'ntfy_token',
                 'whatsapp_notify_alta',
                 'whatsapp_notify_renew',
                 'whatsapp_notify_server_down',
                 'whatsapp_notify_digest',
                 'whatsapp_notify_critical',
+                'ntfy_notify_alta',
+                'ntfy_notify_renew',
+                'ntfy_notify_server_down',
+                'ntfy_notify_digest',
+                'ntfy_notify_critical',
                 'whatsapp_cloud_token',
                 'whatsapp_cloud_phone_id',
                 'whatsapp_cloud_display_phone',
@@ -445,11 +487,17 @@ class SettingsController extends Controller
         if ($group === 'whatsapp') {
             $checkboxKeys = [
                 'whatsapp_enabled',
+                'ntfy_enabled',
                 'whatsapp_notify_alta',
                 'whatsapp_notify_renew',
                 'whatsapp_notify_server_down',
                 'whatsapp_notify_digest',
                 'whatsapp_notify_critical',
+                'ntfy_notify_alta',
+                'ntfy_notify_renew',
+                'ntfy_notify_server_down',
+                'ntfy_notify_digest',
+                'ntfy_notify_critical',
                 'telegram_notify_alta',
                 'telegram_notify_renew',
                 'telegram_notify_server_down',
@@ -473,11 +521,17 @@ class SettingsController extends Controller
 
         $whatsappCheckboxes = [
             'whatsapp_enabled',
+            'ntfy_enabled',
             'whatsapp_notify_alta',
             'whatsapp_notify_renew',
             'whatsapp_notify_server_down',
             'whatsapp_notify_digest',
             'whatsapp_notify_critical',
+            'ntfy_notify_alta',
+            'ntfy_notify_renew',
+            'ntfy_notify_server_down',
+            'ntfy_notify_digest',
+            'ntfy_notify_critical',
             'telegram_notify_alta',
             'telegram_notify_renew',
             'telegram_notify_server_down',
@@ -497,7 +551,7 @@ class SettingsController extends Controller
                 continue;
             }
             // cron_token / secrets: vacío = no cambiar
-            if (in_array($field, ['cron_token', 'whatsapp_apikey', 'whatsapp_cloud_token', 'whatsapp_cloud_verify_token'], true)
+            if (in_array($field, ['cron_token', 'whatsapp_apikey', 'whatsapp_cloud_token', 'whatsapp_cloud_verify_token', 'ntfy_token'], true)
                 && ($request->input($field) === null || $request->input($field) === '')) {
                 continue;
             }

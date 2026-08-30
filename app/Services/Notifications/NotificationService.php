@@ -26,6 +26,7 @@ final class NotificationService
             'discord' => new DiscordChannel(),
             'webhook' => new WebhookChannel(),
             'whatsapp' => new WhatsAppChannel($this->alerts),
+            'ntfy' => new NtfyChannel($this->alerts),
         ];
     }
 
@@ -94,12 +95,18 @@ final class NotificationService
         $wantWhatsApp = $event === 'renewed'
             ? $this->alerts->whatsappNotifyRenew($tenantId)
             : $this->alerts->whatsappNotifyAlta($tenantId);
+        $wantNtfy = $event === 'renewed'
+            ? $this->alerts->ntfyNotifyRenew($tenantId)
+            : $this->alerts->ntfyNotifyAlta($tenantId);
 
         if ($wantTelegram) {
             $channels[] = 'telegram';
         }
         if ($wantWhatsApp && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
+        }
+        if ($wantNtfy && $this->alerts->ntfyConfigured($tenantId)) {
+            $channels[] = 'ntfy';
         }
 
         return $channels;
@@ -118,6 +125,9 @@ final class NotificationService
         }
         if ($this->alerts->whatsappNotifyDigest($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
+        }
+        if ($this->alerts->ntfyNotifyDigest($tenantId) && $this->alerts->ntfyConfigured($tenantId)) {
+            $channels[] = 'ntfy';
         }
 
         return $channels;
@@ -141,6 +151,9 @@ final class NotificationService
         if ($this->alerts->whatsappNotifyServerDown($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
         }
+        if ($this->alerts->ntfyNotifyServerDown($tenantId) && $this->alerts->ntfyConfigured($tenantId)) {
+            $channels[] = 'ntfy';
+        }
 
         return $channels;
     }
@@ -161,6 +174,9 @@ final class NotificationService
         }
         if ($this->alerts->whatsappNotifyCritical($tenantId) && $this->alerts->whatsappConfigured($tenantId)) {
             $channels[] = 'whatsapp';
+        }
+        if ($this->alerts->ntfyNotifyCritical($tenantId) && $this->alerts->ntfyConfigured($tenantId)) {
+            $channels[] = 'ntfy';
         }
 
         // Fallback: si no hay toggles críticos explícitos útiles, reutilizar server-down.
