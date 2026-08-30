@@ -90,6 +90,7 @@ $householdTitle = match ((string) ($session['household_source'] ?? '')) {
     'device_mobile' => 'Móvil / tablet',
     'lan' => 'Misma red que el servidor',
     'home_ip' => 'IP marcada como hogar',
+    'manual' => 'Marcado manualmente',
     default => $household === 'home' ? 'Casa' : 'Fuera',
 };
 $locationLine = $location !== '' ? $location : strtoupper((string) ($session['server_type'] ?? ''));
@@ -223,7 +224,21 @@ $infoRowsFoot = [
                 <span class="session-subtitle text-truncate"><?= e((string) ($session['server_name'] ?? '')) ?></span>
                 <?php endif; ?>
                 <span class="session-meta-user">
+                    <?php
+                    $canToggleHousehold = (int) ($session['media_user_id'] ?? 0) > 0 && $sessionKey !== '';
+                    $nextKind = $household === 'home' ? 'away' : 'home';
+                    ?>
+                    <?php if ($canToggleHousehold): ?>
+                    <button type="button"
+                            class="badge session-household-badge <?= e($householdClass) ?>"
+                            data-toggle-kind="1"
+                            data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
+                            data-session-id="<?= e($sessionKey) ?>"
+                            data-kind="<?= e($nextKind) ?>"
+                            title="<?= e($householdTitle . ' — clic para cambiar') ?>"><?= e($householdLabel) ?></button>
+                    <?php else: ?>
                     <span class="badge session-household-badge <?= e($householdClass) ?>" title="<?= e($householdTitle) ?>"><?= e($householdLabel) ?></span>
+                    <?php endif; ?>
                     <?php if ($mediaUserUuid !== ''): ?>
                     <a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($userName) ?></a>
                     <?php else: ?>

@@ -91,8 +91,8 @@ final class MediaUserManagementService
         ];
     }
 
-    /** @return array{success: bool, message: string, expires_at: ?string} */
-    public function updateExpires(MediaUser $user, ?string $expiresAt): array
+    /** @return array{success: bool, message: string, expires_at: ?string, expires_date?: string, status?: string, reactivated?: bool} */
+    public function updateExpires(MediaUser $user, ?string $expiresAt, bool $reactivate = false): array
     {
         $normalized = $expiresAt !== null && trim($expiresAt) !== ''
             ? SubscriptionPeriod::normalizeStorage($expiresAt)
@@ -105,14 +105,17 @@ final class MediaUserManagementService
         $user->expires_at = $normalized;
         $wasInactive = in_array($user->status, ['suspended', 'expired'], true);
         $shouldReactivate = false;
-        if ($wasInactive && $normalized !== null) {
-            $parsed = SubscriptionPeriod::parseDate($normalized);
-            if ($parsed !== null) {
-                $today = new \DateTimeImmutable('today');
-                $exp = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed);
-                if ($exp !== false && $exp >= $today) {
-                    $user->status = 'active';
-                    $shouldReactivate = true;
+        if ($reactivate && $wasInactive) {
+            if ($normalized === null) {
+                $shouldReactivate = true;
+            } else {
+                $parsed = SubscriptionPeriod::parseDate($normalized);
+                if ($parsed !== null) {
+                    $today = new \DateTimeImmutable('today');
+                    $exp = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed);
+                    if ($exp !== false && $exp >= $today) {
+                        $shouldReactivate = true;
+                    }
                 }
             }
         }
@@ -120,17 +123,29 @@ final class MediaUserManagementService
         AuditService::log('media_user.expires_updated', 'media_user', (int) $user->id, $old, [
             'expires_at' => $normalized,
             'reactivated' => $shouldReactivate,
+            'reactivate_requested' => $reactivate,
         ]);
 
         if ($shouldReactivate) {
             $this->syncServerAccess($user, disable: false);
             $user->metaSet('access_revoked_at', null);
+            if ($user->status !== 'active') {
+                $user->status = 'active';
+            }
             $user->save();
+        }
+
+        $message = 'Fecha actualizada.';
+        if ($normalized === null) {
+            $message = 'Sin fecha de caducidad (acceso indefinido en el panel).';
+        }
+        if ($shouldReactivate) {
+            $message = ($normalized === null ? 'Sin caducidad guardada' : 'Fecha actualizada') . ' y acceso reactivado.';
         }
 
         return [
             'success' => true,
-            'message' => $shouldReactivate ? 'Fecha actualizada y acceso reactivado.' : 'Fecha actualizada.',
+            'message' => $message,
             'expires_at' => $user->expires_at,
             'expires_date' => SubscriptionPeriod::formatForInput($user->expires_at),
             'status' => (string) $user->status,

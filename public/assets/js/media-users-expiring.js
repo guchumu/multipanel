@@ -108,16 +108,28 @@
             const box = row.querySelector('.expiring-select');
             if (box && row.dataset.bucket !== bucket) box.checked = false;
         });
+        document.querySelectorAll('.expiring-col-last-msg').forEach((col) => {
+            col.classList.toggle('d-none', bucket !== 'd180');
+            col.classList.toggle('d-lg-table-cell', bucket === 'd180');
+        });
         const title = document.getElementById('expiringListTitle');
         const titles = window.EXPIRING_BUCKET_TITLES || {};
         if (title && titles[bucket]) title.textContent = titles[bucket];
         syncBulkBar();
     }
 
+    const initialBucket = window.EXPIRING_INITIAL_BUCKET;
+    if (initialBucket) {
+        setBucket(initialBucket);
+    }
+
     document.getElementById('urgencyCards')?.addEventListener('click', (e) => {
         const card = e.target.closest('.urgency-card');
-        if (!card || card.disabled) return;
+        if (!card) return;
         setBucket(card.dataset.bucket);
+        const url = new URL(window.location.href);
+        url.searchParams.set('bucket', card.dataset.bucket || '');
+        window.history.replaceState({}, '', url);
     });
 
     function selectedUuids() {

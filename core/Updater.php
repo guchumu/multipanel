@@ -47,6 +47,8 @@ final class Updater
         '022_media_user_reengage.sql' => ['table' => 'media_user_reengage'],
         '023_reengage_discount_used.sql' => ['column' => ['media_user_reengage', 'discount_used_at']],
         '024_session_kill_links.sql' => ['table' => 'session_kill_links'],
+        '025_session_kill_links_batch.sql' => ['column' => ['session_kill_links', 'batch_sessions']],
+        '026_playback_sessions_subtitle.sql' => ['column' => ['playback_sessions', 'subtitle']],
     ];
 
     public function __construct()

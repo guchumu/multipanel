@@ -790,4 +790,263 @@ class MediaUserRepository
 
         return (int) $stmt->rowCount();
     }
+
+    /**
+     * Caducados hace ≥ N días (incluye status=expired sin fecha y fechas legacy).
+     *
+     * @return array{users: array<int, MediaUser>, total: int}
+     */
+    public function findLongExpired(
+        int $tenantId,
+        int $minDays = 180,
+        ?int $serverId = null,
+        int $limit = 500,
+    ): array {
+        \App\Services\MediaUserMessageService::ensureMediaUserMessagesTable();
+        \App\Services\ReengageCampaignService::ensureTable();
+
+        $limit = max(1, min(500, $limit));
+        $params = [$tenantId];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type,
+                       r.send_count AS reengage_send_count,
+                       r.last_sent_at AS reengage_last_sent_at,
+                       r.last_kind AS reengage_last_kind,
+                       r.converted_at AS reengage_converted_at
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                LEFT JOIN `media_user_reengage` r ON r.media_user_id = mu.id
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+                  AND (
+                    mu.`status` = \'expired\'
+                    OR (
+                        mu.`expires_at` IS NOT NULL
+                        AND TRIM(mu.`expires_at`) != \'\'
+                        AND mu.`expires_at` NOT LIKE \'0000-%\'
+                    )
+                  )';
+
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $sql .= ' ORDER BY mu.`expires_at` ASC, mu.`id` ASC LIMIT 2500';
+
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+        $filtered = [];
+        foreach ($rows as $row) {
+            if (!$this->isLongExpiredRow($row, $minDays)) {
+                continue;
+            }
+            $days = days_left($row['expires_at'] ?? null);
+            $row['days_expired'] = $days !== null && $days < 0 ? abs($days) : null;
+            $filtered[] = $row;
+        }
+
+        $total = count($filtered);
+        $page = array_slice($filtered, 0, $limit);
+        $users = array_map(static fn ($row) => new MediaUser($row), $page);
+        $this->attachLastMessagesToUsers($users);
+
+        return [
+            'users' => $users,
+            'total' => $total,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function isLongExpiredRow(array $row, int $minDays): bool
+    {
+        $days = days_left($row['expires_at'] ?? null);
+        if ($days !== null && $days <= -$minDays) {
+            return true;
+        }
+
+        return strtolower(trim((string) ($row['status'] ?? ''))) === 'expired' && $days === null;
+    }
+
+    /** @param array<int, MediaUser> $users */
+    private function attachLastMessagesToUsers(array $users): void
+    {
+        if ($users === []) {
+            return;
+        }
+
+        $ids = array_values(array_filter(array_map(
+            static fn (MediaUser $u): int => (int) ($u->id ?? 0),
+            $users
+        )));
+        if ($ids === []) {
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        try {
+            $rows = Database::getInstance()->fetchAll(
+                "SELECT m.*
+                 FROM `media_user_messages` m
+                 INNER JOIN (
+                     SELECT `media_user_id`, MAX(`id`) AS max_id
+                     FROM `media_user_messages`
+                     WHERE `media_user_id` IN ({$placeholders})
+                     GROUP BY `media_user_id`
+                 ) latest ON latest.max_id = m.id",
+                $ids
+            );
+        } catch (\Throwable) {
+            return;
+        }
+
+        $byUser = [];
+        foreach ($rows as $row) {
+            $byUser[(int) ($row['media_user_id'] ?? 0)] = $row;
+        }
+
+        foreach ($users as $user) {
+            $msg = $byUser[(int) ($user->id ?? 0)] ?? null;
+            if ($msg === null) {
+                continue;
+            }
+            $user->last_message_at = $msg['sent_at'] ?? null;
+            $user->last_message_title = $msg['title'] ?? null;
+            $user->last_message_body = $msg['body'] ?? null;
+            $user->last_message_channel = $msg['channel'] ?? null;
+            $user->last_message_type = $msg['message_type'] ?? null;
+            $user->last_message_status = $msg['status'] ?? null;
+        }
+    }
+
+    /**
+     * Usuarios caducados hace tiempo, con último aviso y estado de reenganche.
+     *
+     * @return array{users: array<int, MediaUser>, total: int}
+     */
+    public function findExpiredOutreach(
+        int $tenantId,
+        int $minDays = 60,
+        ?int $maxDays = null,
+        ?int $serverId = null,
+        ?string $contactFilter = null,
+        string $sort = 'expired_oldest',
+        int $limit = 300,
+    ): array {
+        \App\Services\MediaUserMessageService::ensureMediaUserMessagesTable();
+        \App\Services\ReengageCampaignService::ensureTable();
+
+        $limit = max(1, min(500, $limit));
+        $params = [$tenantId, $minDays];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type,
+                       DATEDIFF(CURDATE(), DATE(mu.expires_at)) AS days_expired,
+                       r.send_count AS reengage_send_count,
+                       r.last_sent_at AS reengage_last_sent_at,
+                       r.last_kind AS reengage_last_kind,
+                       r.converted_at AS reengage_converted_at,
+                       lmsg.sent_at AS last_message_at,
+                       lmsg.title AS last_message_title,
+                       lmsg.body AS last_message_body,
+                       lmsg.channel AS last_message_channel,
+                       lmsg.message_type AS last_message_type,
+                       lmsg.status AS last_message_status
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                LEFT JOIN `media_user_reengage` r ON r.media_user_id = mu.id
+                LEFT JOIN `media_user_messages` lmsg ON lmsg.id = (
+                    SELECT m.id FROM `media_user_messages` m
+                    WHERE m.media_user_id = mu.id
+                    ORDER BY m.sent_at DESC, m.id DESC
+                    LIMIT 1
+                )
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+                  AND mu.`expires_at` IS NOT NULL
+                  AND DATE(mu.`expires_at`) < CURDATE()
+                  AND DATEDIFF(CURDATE(), DATE(mu.`expires_at`)) >= ?';
+
+        if ($maxDays !== null && $maxDays > 0) {
+            $sql .= ' AND DATEDIFF(CURDATE(), DATE(mu.`expires_at`)) <= ?';
+            $params[] = $maxDays;
+        }
+
+        if ($serverId !== null) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+
+        $contactFilter = $contactFilter !== null ? trim($contactFilter) : '';
+        if ($contactFilter === 'never_messaged') {
+            $sql .= ' AND lmsg.id IS NULL';
+        } elseif ($contactFilter === 'has_channel') {
+            $sql .= ' AND (
+                (mu.telegram_chat_id IS NOT NULL AND TRIM(mu.telegram_chat_id) != \'\' AND LOWER(TRIM(mu.telegram_chat_id)) != \'null\')
+                OR (JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\')) IS NOT NULL
+                    AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\'))) != \'\')
+            )';
+        } elseif ($contactFilter === 'no_channel') {
+            $sql .= ' AND (
+                mu.telegram_chat_id IS NULL OR TRIM(mu.telegram_chat_id) = \'\' OR LOWER(TRIM(mu.telegram_chat_id)) = \'null\'
+            ) AND (
+                JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\')) IS NULL
+                OR TRIM(JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\'))) = \'\'
+            )';
+        }
+
+        $order = match ($sort) {
+            'expired_newest' => 'mu.`expires_at` DESC',
+            'last_message_asc' => 'lmsg.`sent_at` IS NULL DESC, lmsg.`sent_at` ASC',
+            'last_message_desc' => 'lmsg.`sent_at` DESC',
+            'name' => 'COALESCE(NULLIF(TRIM(mu.`display_name`), \'\'), mu.`username`) ASC',
+            default => 'mu.`expires_at` ASC',
+        };
+        $sql .= " ORDER BY {$order} LIMIT {$limit}";
+
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+        $users = array_map(static fn ($row) => new MediaUser($row), $rows);
+
+        $countParams = [$tenantId, $minDays];
+        $countSql = 'SELECT COUNT(*) AS total
+                     FROM `media_users` mu
+                     LEFT JOIN `media_user_messages` lmsg ON lmsg.id = (
+                         SELECT m.id FROM `media_user_messages` m
+                         WHERE m.media_user_id = mu.id
+                         ORDER BY m.sent_at DESC, m.id DESC
+                         LIMIT 1
+                     )
+                     WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL
+                       AND mu.`expires_at` IS NOT NULL
+                       AND DATE(mu.`expires_at`) < CURDATE()
+                       AND DATEDIFF(CURDATE(), DATE(mu.`expires_at`)) >= ?';
+
+        if ($maxDays !== null && $maxDays > 0) {
+            $countSql .= ' AND DATEDIFF(CURDATE(), DATE(mu.`expires_at`)) <= ?';
+            $countParams[] = $maxDays;
+        }
+        if ($serverId !== null) {
+            $countSql .= ' AND mu.`server_id` = ?';
+            $countParams[] = $serverId;
+        }
+        if ($contactFilter === 'never_messaged') {
+            $countSql .= ' AND lmsg.id IS NULL';
+        } elseif ($contactFilter === 'has_channel') {
+            $countSql .= ' AND (
+                (mu.telegram_chat_id IS NOT NULL AND TRIM(mu.telegram_chat_id) != \'\' AND LOWER(TRIM(mu.telegram_chat_id)) != \'null\')
+                OR (JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\')) IS NOT NULL
+                    AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\'))) != \'\')
+            )';
+        } elseif ($contactFilter === 'no_channel') {
+            $countSql .= ' AND (
+                mu.telegram_chat_id IS NULL OR TRIM(mu.telegram_chat_id) = \'\' OR LOWER(TRIM(mu.telegram_chat_id)) = \'null\'
+            ) AND (
+                JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\')) IS NULL
+                OR TRIM(JSON_UNQUOTE(JSON_EXTRACT(mu.metadata, \'$.whatsapp_phone\'))) = \'\'
+            )';
+        }
+
+        $totalRow = Database::getInstance()->fetchOne($countSql, $countParams);
+
+        return [
+            'users' => $users,
+            'total' => (int) ($totalRow['total'] ?? count($users)),
+        ];
+    }
 }

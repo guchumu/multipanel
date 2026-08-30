@@ -148,11 +148,47 @@ class MediaUserController extends Controller
         $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $days = max(1, (int) $request->input('days', 30));
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $longExpiredDays = 180;
 
-        $users = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
+        $usersSoon = $this->mediaUsers->findExpiringSoon($tenantId, $days, $serverId);
+        $longResult = $this->mediaUsers->findLongExpired($tenantId, $longExpiredDays, $serverId);
+        $longExpired = $longResult['users'];
+        $longExpiredTotal = (int) $longResult['total'];
+
+        $seenIds = [];
+        $users = [];
+        foreach ($usersSoon as $user) {
+            $id = (int) $user->id;
+            $seenIds[$id] = true;
+            $users[] = $user;
+        }
+        foreach ($longExpired as $user) {
+            $id = (int) $user->id;
+            if (isset($seenIds[$id])) {
+                foreach ($users as $i => $existing) {
+                    if ((int) $existing->id !== $id) {
+                        continue;
+                    }
+                    $user->days_left = isset($existing->days_left)
+                        ? (int) $existing->days_left
+                        : -max(0, (int) ($user->days_expired ?? 0));
+                    $users[$i] = $user;
+                    break;
+                }
+                continue;
+            }
+            $user->days_left = -max(0, (int) ($user->days_expired ?? 0));
+            $users[] = $user;
+        }
+
         $this->reengage::ensureTable();
         $reengageStats = $this->reengage->stats($tenantId);
         $reengageCfg = $this->reengage->getConfig($tenantId);
+
+        $bucket = trim((string) $request->input('bucket', ''));
+        if (!in_array($bucket, ['expired', 'd3', 'd7', 'd30', 'd180'], true)) {
+            $bucket = '';
+        }
 
         return $this->view('media_users.expiring', [
             'title' => 'Próximos vencimientos',
@@ -160,6 +196,10 @@ class MediaUserController extends Controller
             'servers' => $this->servers->allByTenant($tenantId),
             'currentDays' => $days,
             'currentServerId' => $serverId,
+            'currentBucket' => $bucket,
+            'longExpiredDays' => $longExpiredDays,
+            'longExpiredTotal' => $longExpiredTotal,
+            'longExpiredCount' => count($longExpired),
             'reengageStats' => $reengageStats,
             'reengageCfg' => $reengageCfg,
         ]);
@@ -210,9 +250,18 @@ class MediaUserController extends Controller
                 (string) $user->username,
                 $user->display_name ?? null
             );
+            if ($nowPlaying !== []) {
+                foreach ($nowPlaying as $i => $session) {
+                    $nowPlaying[$i]['media_user_id'] = (int) $user->id;
+                    $nowPlaying[$i]['media_user_uuid'] = (string) $user->uuid;
+                }
+                $nowPlaying = (new \App\Services\ConcurrentStreamLimitService())->annotateHousehold($nowPlaying);
+            }
         }
 
         $endpoints = (new \App\Services\MediaUserEndpointService())->listForUser((int) $user->id);
+        $playbackHistory = (new \App\Services\PlaybackHistoryService())->listForUser((int) $user->id, 40);
+        $playbackHistoryTotal = (new \App\Services\PlaybackHistoryService())->countForUser((int) $user->id);
 
         $jellyfinPassword = null;
         $credentialsText = null;
@@ -249,7 +298,31 @@ class MediaUserController extends Controller
             'defaultMaxAwayStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxAwayStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
             'endpoints' => $endpoints,
+            'playbackHistory' => $playbackHistory,
+            'playbackHistoryTotal' => $playbackHistoryTotal,
             'portalLink' => $this->portalLinks->activeInfo((int) $user->id),
+        ]);
+    }
+
+    public function playbackHistory(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $page = max(1, (int) $request->input('page', 1));
+        $limit = max(1, min(100, (int) $request->input('limit', 40)));
+        $offset = ($page - 1) * $limit;
+
+        $service = new \App\Services\PlaybackHistoryService();
+
+        return $this->json([
+            'success' => true,
+            'items' => $service->listForUser((int) $user->id, $limit, $offset),
+            'total' => $service->countForUser((int) $user->id),
+            'page' => $page,
+            'limit' => $limit,
         ]);
     }
 
@@ -642,6 +715,7 @@ class MediaUserController extends Controller
                         'max_streams_raw' => $u->max_streams,
                         'default_max_streams' => $defaultMaxStreams,
                         'expires_at' => expires_date_input($u->expires_at),
+                        'status' => (string) $u->status,
                         'telegram_chat_id' => $tg,
                     ];
                 }, $users),
@@ -875,8 +949,13 @@ class MediaUserController extends Controller
         }
 
         $expiresAt = trim((string) $request->input('expires_at', ''));
+        $reactivate = filter_var($request->input('reactivate', false), FILTER_VALIDATE_BOOLEAN);
 
-        return $this->json($this->management->updateExpires($user, $expiresAt !== '' ? $expiresAt : null));
+        return $this->json($this->management->updateExpires(
+            $user,
+            $expiresAt !== '' ? $expiresAt : null,
+            $reactivate
+        ));
     }
 
     public function discoverIdentity(Request $request, string $uuid): Response

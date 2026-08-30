@@ -27,6 +27,83 @@ final class SessionKillLinkService
     private bool $tableEnsured = false;
 
     /**
+     * @param array<int, array{server_id: int, session_id: string, reason_key?: string}> $targets
+     * @return array{success: bool, short_url?: string, code?: string, message?: string}
+     */
+    public function createBatch(
+        int $tenantId,
+        array $targets,
+        string $killMessage,
+        string $reasonKey = 'all',
+        ?int $ttlMinutes = null,
+    ): array {
+        $killMessage = trim($killMessage);
+        if ($tenantId <= 0 || $killMessage === '' || count($targets) < 2) {
+            return ['success' => false, 'message' => 'Datos de sesión incompletos.'];
+        }
+
+        $normalized = [];
+        foreach ($targets as $target) {
+            if (!is_array($target)) {
+                continue;
+            }
+            $serverId = (int) ($target['server_id'] ?? 0);
+            $sessionId = trim((string) ($target['session_id'] ?? ''));
+            if ($serverId <= 0 || $sessionId === '') {
+                continue;
+            }
+            $normalized[] = [
+                'server_id' => $serverId,
+                'session_id' => $sessionId,
+                'reason_key' => trim((string) ($target['reason_key'] ?? '')),
+            ];
+        }
+
+        if (count($normalized) < 2) {
+            return ['success' => false, 'message' => 'Se necesitan al menos dos reproducciones.'];
+        }
+
+        $base = $this->publicBaseUrl();
+        if ($base === null) {
+            return ['success' => false, 'message' => 'APP_URL no es una URL pública válida.'];
+        }
+
+        $first = $normalized[0];
+        $server = Server::find((int) $first['server_id']);
+        if ($server === null || (int) $server->tenant_id !== $tenantId) {
+            return ['success' => false, 'message' => 'Servidor no encontrado.'];
+        }
+
+        $this->ensureTable();
+        $ttlMinutes = max(5, min(720, $ttlMinutes ?? self::DEFAULT_TTL_MINUTES));
+        $expires = (new \DateTimeImmutable('now'))->modify('+' . $ttlMinutes . ' minutes');
+
+        try {
+            $code = $this->allocateUniqueCode();
+            Database::getInstance()->insert('session_kill_links', [
+                'tenant_id' => $tenantId,
+                'server_id' => (int) $first['server_id'],
+                'session_id' => (string) $first['session_id'],
+                'batch_sessions' => json_encode($normalized, JSON_UNESCAPED_UNICODE),
+                'code' => $code,
+                'reason_key' => trim($reasonKey),
+                'kill_message' => mb_substr($killMessage, 0, 500),
+                'expires_at' => $expires->format('Y-m-d H:i:s'),
+            ]);
+
+            return [
+                'success' => true,
+                'code' => $code,
+                'short_url' => $base . '/k/' . $code,
+            ];
+        } catch (\Throwable $e) {
+            Logger::warning('Session kill link batch create failed', ['error' => $e->getMessage()]);
+
+            return ['success' => false, 'message' => 'No se pudo crear el enlace de corte.'];
+        }
+    }
+
+    /**
      * @return array{success: bool, short_url?: string, code?: string, message?: string}
      */
     public function create(
@@ -122,6 +199,57 @@ final class SessionKillLinkService
         $serverId = (int) ($row['server_id'] ?? 0);
         $sessionId = trim((string) ($row['session_id'] ?? ''));
         $message = trim((string) ($row['kill_message'] ?? ''));
+
+        $batchRaw = $row['batch_sessions'] ?? null;
+        $batch = is_string($batchRaw) ? json_decode($batchRaw, true) : $batchRaw;
+        if (is_array($batch) && $batch !== []) {
+            $killedCount = 0;
+            $attempted = 0;
+            foreach ($batch as $target) {
+                if (!is_array($target)) {
+                    continue;
+                }
+                $targetServerId = (int) ($target['server_id'] ?? 0);
+                $targetSessionId = trim((string) ($target['session_id'] ?? ''));
+                if ($targetServerId <= 0 || $targetSessionId === '') {
+                    continue;
+                }
+                $targetServer = Server::find($targetServerId);
+                if ($targetServer === null || (int) $targetServer->tenant_id !== $tenantId) {
+                    continue;
+                }
+                $attempted++;
+                if ($this->terminateSession($targetServer, $targetSessionId, $message)) {
+                    $killedCount++;
+                }
+            }
+
+            try {
+                $db->update(
+                    'session_kill_links',
+                    ['used_at' => now()->format('Y-m-d H:i:s')],
+                    'id = ?',
+                    [(int) $row['id']]
+                );
+            } catch (\Throwable) {
+            }
+
+            if ($killedCount === 0) {
+                return [
+                    'ok' => true,
+                    'killed' => false,
+                    'error' => 'No había reproducciones activas o no se pudo cortar (puede que ya terminaran).',
+                ];
+            }
+
+            return [
+                'ok' => true,
+                'killed' => true,
+                'title' => $killedCount === $attempted
+                    ? 'Reproducciones cortadas'
+                    : "Reproducciones cortadas ({$killedCount}/{$attempted})",
+            ];
+        }
 
         $server = Server::find($serverId);
         if ($server === null || (int) $server->tenant_id !== $tenantId || $sessionId === '') {

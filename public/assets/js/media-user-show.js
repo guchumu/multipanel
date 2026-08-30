@@ -75,6 +75,33 @@
     if (expiresInput) {
         expiresInput.dataset.savedValue = expiresInput.value;
         let expiresTimer = null;
+
+        function isFutureOrToday(dateStr) {
+            if (!dateStr) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const d = new Date(`${dateStr}T00:00:00`);
+            return !Number.isNaN(d.getTime()) && d >= today;
+        }
+
+        function resolveExpiresSaveConfirm(dbStatus, newVal, savedVal) {
+            if (newVal === '' && savedVal !== '') {
+                if (!confirm('¿Quitar la fecha?\n\nVacío = sin caducidad (el panel no programará avisos por vencimiento).')) {
+                    return { proceed: false, reactivate: false };
+                }
+            }
+            let reactivate = false;
+            const inactive = dbStatus === 'expired' || dbStatus === 'suspended';
+            const canReactivate = inactive && (newVal === '' || isFutureOrToday(newVal));
+            if (canReactivate) {
+                const msg = newVal === ''
+                    ? '¿Reactivar también el acceso en Plex/Jellyfin?\n\n· Aceptar: guarda sin caducidad y restaura el acceso\n· Cancelar: solo guarda, sin reactivar'
+                    : '¿Reactivar también el acceso en Plex/Jellyfin?\n\n· Aceptar: guarda la fecha y restaura el acceso (puede activar avisos automáticos)\n· Cancelar: solo guarda la fecha, sin reactivar';
+                reactivate = confirm(msg);
+            }
+            return { proceed: true, reactivate };
+        }
+
         const saveExpires = async () => {
             const savedVal = expiresInput.dataset.savedValue ?? '';
             const newVal = expiresInput.value;
@@ -82,7 +109,8 @@
                 expiresInput.classList.remove('is-saving-expires');
                 return;
             }
-            if (newVal === '' && savedVal !== '' && !confirm('¿Quitar la fecha de expiración?')) {
+            const confirmResult = resolveExpiresSaveConfirm(expiresInput.dataset.dbStatus || '', newVal, savedVal);
+            if (!confirmResult.proceed) {
                 expiresInput.value = savedVal;
                 expiresInput.classList.remove('is-saving-expires');
                 return;
@@ -90,15 +118,25 @@
             expiresInput.classList.add('is-saving-expires');
             expiresInput.disabled = true;
             try {
-                const data = await post(`/media-users/${uuid}/expires`, { expires_at: newVal });
+                const data = await post(`/media-users/${uuid}/expires`, {
+                    expires_at: newVal,
+                    reactivate: confirmResult.reactivate,
+                });
                 if (data.success === false) throw new Error(data.message || 'Error');
                 const stored = data.expires_date || newVal;
                 expiresInput.value = stored;
                 expiresInput.dataset.savedValue = stored;
+                if (data.status) {
+                    expiresInput.dataset.dbStatus = data.status;
+                }
                 expiresInput.classList.remove('is-saving-expires');
                 expiresInput.classList.add('is-saved-expires');
-                toast(data.reactivated ? 'Fecha guardada · acceso reactivado' : 'Fecha guardada');
-                setTimeout(() => expiresInput.classList.remove('is-saved-expires'), 2500);
+                toast(data.message || (data.reactivated ? 'Fecha guardada · acceso reactivado' : 'Fecha guardada'));
+                if (data.reactivated) {
+                    setTimeout(() => location.reload(), 600);
+                } else {
+                    setTimeout(() => expiresInput.classList.remove('is-saved-expires'), 2500);
+                }
             } catch (err) {
                 expiresInput.value = savedVal;
                 toast(err.message);
@@ -615,4 +653,80 @@
             }
         });
     });
+
+    const playbackMoreBtn = document.getElementById('playback-history-more');
+    const playbackBody = document.getElementById('playback-history-body');
+
+    function formatPlaybackDuration(seconds, endedAt) {
+        const sec = Number(seconds || 0);
+        if (sec > 0) {
+            const h = Math.floor(sec / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+            return m > 0 ? `${m} min` : `${sec} s`;
+        }
+        if (!endedAt) return 'En curso';
+        return '—';
+    }
+
+    function playbackRowHtml(row) {
+        const title = String(row.title || '—');
+        const subtitle = String(row.subtitle || '').trim();
+        const server = String(row.server_name || '').trim();
+        const player = String(row.player || '—');
+        const device = String(row.device || '').trim();
+        const ip = String(row.ip_address || '').trim();
+        const started = String(row.started_at || '—');
+        const duration = formatPlaybackDuration(row.duration_seconds, row.ended_at);
+        return `<tr>
+            <td class="small">
+                <div class="fw-semibold">${escapeHtml(title)}</div>
+                ${subtitle ? `<div class="text-muted">${escapeHtml(subtitle)}</div>` : ''}
+                ${server ? `<div class="text-muted">${escapeHtml(server)}</div>` : ''}
+            </td>
+            <td class="small">
+                ${escapeHtml(player)}
+                ${device ? `<div class="text-muted">${escapeHtml(device)}</div>` : ''}
+                ${ip ? `<div class="text-muted"><code>${escapeHtml(ip)}</code></div>` : ''}
+            </td>
+            <td class="small text-nowrap">${escapeHtml(started)}</td>
+            <td class="small text-nowrap">${escapeHtml(duration)}</td>
+        </tr>`;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[ch]));
+    }
+
+    if (playbackMoreBtn && playbackBody) {
+        playbackMoreBtn.addEventListener('click', async () => {
+            const page = Number(playbackMoreBtn.dataset.page || 1) + 1;
+            const limit = Number(playbackMoreBtn.dataset.limit || 40);
+            playbackMoreBtn.disabled = true;
+            try {
+                const res = await fetch(`/media-users/${encodeURIComponent(uuid)}/playback-history?page=${page}&limit=${limit}`, {
+                    headers: { Accept: 'application/json' },
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message || 'Error');
+                const items = Array.isArray(data.items) ? data.items : [];
+                if (items.length === 0) {
+                    playbackMoreBtn.remove();
+                    return;
+                }
+                playbackBody.insertAdjacentHTML('beforeend', items.map(playbackRowHtml).join(''));
+                playbackMoreBtn.dataset.page = String(page);
+                const loaded = playbackBody.querySelectorAll('tr').length;
+                if (loaded >= Number(data.total || 0)) {
+                    playbackMoreBtn.remove();
+                }
+            } catch (err) {
+                toast(err.message || 'No se pudo cargar más');
+            } finally {
+                playbackMoreBtn.disabled = false;
+            }
+        });
+    }
 })();

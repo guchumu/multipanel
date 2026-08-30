@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Media\SessionClientIp;
+use Core\Cache;
 use Core\Database;
 use Core\Logger;
 
@@ -150,6 +151,164 @@ final class MediaUserEndpointService
         }
     }
 
+    /**
+     * Marca casa/fuera desde una sesión en directo (upsert endpoint + bloqueo manual).
+     *
+     * @param array<string, mixed> $session
+     * @return array{success: bool, message?: string, kind?: string, endpoint_id?: int}
+     */
+    public function setKindFromSession(int $tenantId, array $session, string $kind): array
+    {
+        $mediaUserId = (int) ($session['media_user_id'] ?? 0);
+        $kind = self::normalizeKind($kind);
+        if ($mediaUserId <= 0) {
+            return ['success' => false, 'message' => 'Usuario no identificado en la sesión.'];
+        }
+        if ($kind === self::KIND_UNKNOWN) {
+            return ['success' => false, 'message' => 'Tipo no válido.'];
+        }
+
+        $identity = $this->sessionIdentity($session);
+        if ($identity === null) {
+            return ['success' => false, 'message' => 'No hay IP ni dispositivo identificable.'];
+        }
+
+        $this->ensureTable();
+        $db = Database::getInstance();
+        $now = date('Y-m-d H:i:s');
+
+        try {
+            $existing = $db->fetchOne(
+                'SELECT id FROM media_user_endpoints
+                 WHERE media_user_id = ? AND ip = ? AND device_key = ? LIMIT 1',
+                [$mediaUserId, $identity['ip'], $identity['device_key']]
+            );
+
+            if ($existing) {
+                $endpointId = (int) $existing['id'];
+                $db->query(
+                    'UPDATE media_user_endpoints
+                     SET lan_ip = ?, location = ?, device_name = ?, product = ?, platform = ?,
+                         machine_id = ?, kind = ?, kind_locked = 1, last_seen_at = ?
+                     WHERE id = ?',
+                    [
+                        $identity['lan_ip'] !== '' ? $identity['lan_ip'] : null,
+                        $identity['location'],
+                        $identity['device_name'] !== '' ? $identity['device_name'] : null,
+                        $identity['product'] !== '' ? $identity['product'] : null,
+                        $identity['platform'] !== '' ? $identity['platform'] : null,
+                        $identity['machine_id'] !== '' ? $identity['machine_id'] : null,
+                        $kind,
+                        $now,
+                        $endpointId,
+                    ]
+                );
+            } else {
+                $endpointId = $db->insert('media_user_endpoints', [
+                    'tenant_id' => $tenantId,
+                    'media_user_id' => $mediaUserId,
+                    'ip' => $identity['ip'],
+                    'lan_ip' => $identity['lan_ip'] !== '' ? $identity['lan_ip'] : null,
+                    'location' => $identity['location'],
+                    'device_key' => $identity['device_key'],
+                    'device_name' => $identity['device_name'] !== '' ? $identity['device_name'] : null,
+                    'product' => $identity['product'] !== '' ? $identity['product'] : null,
+                    'platform' => $identity['platform'] !== '' ? $identity['platform'] : null,
+                    'machine_id' => $identity['machine_id'] !== '' ? $identity['machine_id'] : null,
+                    'kind' => $kind,
+                    'kind_locked' => 1,
+                    'play_count' => 1,
+                    'first_seen_at' => $now,
+                    'last_seen_at' => $now,
+                ]);
+            }
+
+            return [
+                'success' => true,
+                'kind' => $kind,
+                'endpoint_id' => $endpointId,
+                'message' => $kind === self::KIND_HOME ? 'Marcado como Casa.' : 'Marcado como Fuera.',
+            ];
+        } catch (\Throwable $e) {
+            Logger::warning('setKindFromSession failed', ['error' => $e->getMessage()]);
+
+            return ['success' => false, 'message' => 'No se pudo guardar.'];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @return array<string, mixed>|null
+     */
+    public function findEndpointForSession(int $mediaUserId, array $session): ?array
+    {
+        if ($mediaUserId <= 0) {
+            return null;
+        }
+
+        $identity = $this->sessionIdentity($session);
+        if ($identity === null) {
+            return null;
+        }
+
+        $this->ensureTable();
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT id, kind, kind_locked FROM media_user_endpoints
+                 WHERE media_user_id = ? AND ip = ? AND device_key = ? LIMIT 1',
+                [$mediaUserId, $identity['ip'], $identity['device_key']]
+            );
+
+            return $row ?: null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @return array{
+     *   ip: string,
+     *   lan_ip: string,
+     *   location: string,
+     *   device_key: string,
+     *   device_name: string,
+     *   product: string,
+     *   platform: string,
+     *   machine_id: string
+     * }|null
+     */
+    public function sessionIdentity(array $session): ?array
+    {
+        $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
+        $lanIp = SessionClientIp::normalize((string) ($session['lan_ip'] ?? ''));
+        $ip = $publicIp !== '' ? $publicIp : $lanIp;
+        $deviceName = trim((string) ($session['player'] ?? ''));
+        $product = trim((string) ($session['product'] ?? ''));
+        $platform = trim((string) ($session['platform'] ?? ''));
+        $machineId = trim((string) ($session['machine_id'] ?? ''));
+        if ($ip === '' && $deviceName === '' && $machineId === '') {
+            return null;
+        }
+
+        $location = SessionClientIp::classifyLocation(
+            isset($session['location']) ? (string) $session['location'] : null,
+            $ip !== '' ? $ip : $lanIp,
+            $lanIp
+        );
+
+        return [
+            'ip' => $ip !== '' ? $ip : 'unknown',
+            'lan_ip' => $lanIp,
+            'location' => $location,
+            'device_key' => self::deviceKey($ip !== '' ? $ip : 'unknown', $machineId, $deviceName, $product, $platform),
+            'device_name' => $deviceName,
+            'product' => $product,
+            'platform' => $platform,
+            'machine_id' => $machineId,
+        ];
+    }
+
     public function setKind(int $tenantId, int $mediaUserId, int $endpointId, string $kind): bool
     {
         $kind = self::normalizeKind($kind);
@@ -168,6 +327,8 @@ final class MediaUserEndpointService
              WHERE id = ? AND media_user_id = ? AND tenant_id = ?',
             [$kind, $locked, $endpointId, $mediaUserId, $tenantId]
         );
+
+        Cache::forget('activity_snapshot_' . $tenantId);
 
         return true;
     }
@@ -429,17 +590,38 @@ final class MediaUserEndpointService
     /**
      * @param array<string, mixed> $session
      * @param list<string> $homeIps
-     * @return array{kind: string, source: string, device_class: string}
+     * @return array{kind: string, source: string, device_class: string, endpoint_id: ?int}
      */
-    public function classifyPlaybackMeta(array $session, array $homeIps = []): array
+    public function classifyPlaybackMeta(array $session, array $homeIps = [], ?int $mediaUserId = null): array
     {
+        $mediaUserId ??= (int) ($session['media_user_id'] ?? 0);
+        $endpointId = null;
+
+        if ($mediaUserId > 0) {
+            $endpoint = $this->findEndpointForSession($mediaUserId, $session);
+            if ($endpoint !== null) {
+                $endpointId = (int) $endpoint['id'];
+                if ((int) ($endpoint['kind_locked'] ?? 0) === 1) {
+                    $kind = self::normalizeKind((string) ($endpoint['kind'] ?? self::KIND_UNKNOWN));
+                    if ($kind !== self::KIND_UNKNOWN) {
+                        return [
+                            'kind' => $kind,
+                            'source' => 'manual',
+                            'device_class' => self::classifyDeviceClass($session),
+                            'endpoint_id' => $endpointId,
+                        ];
+                    }
+                }
+            }
+        }
+
         $deviceClass = self::classifyDeviceClass($session);
         if ($deviceClass === 'tv') {
-            return ['kind' => self::KIND_HOME, 'source' => 'device_tv', 'device_class' => $deviceClass];
+            return ['kind' => self::KIND_HOME, 'source' => 'device_tv', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
         }
 
         if (self::sessionHasHomeIp($session, $homeIps)) {
-            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
+            return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
         }
 
         $publicIp = SessionClientIp::normalize((string) ($session['public_ip'] ?? $session['client_ip'] ?? ''));
@@ -450,20 +632,19 @@ final class MediaUserEndpointService
             $lanIp
         );
 
-        // Misma red que el servidor Plex y ya hay una tele/IP de casa → el móvil también es casa.
         if ($deviceClass === 'mobile') {
             if ($location === 'LAN' && $homeIps !== []) {
-                return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass];
+                return ['kind' => self::KIND_HOME, 'source' => 'home_ip', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
             }
 
-            return ['kind' => self::KIND_AWAY, 'source' => 'device_mobile', 'device_class' => $deviceClass];
+            return ['kind' => self::KIND_AWAY, 'source' => 'device_mobile', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
         }
 
         if ($location === 'LAN') {
-            return ['kind' => self::KIND_HOME, 'source' => 'lan', 'device_class' => $deviceClass];
+            return ['kind' => self::KIND_HOME, 'source' => 'lan', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
         }
 
-        return ['kind' => self::KIND_AWAY, 'source' => 'wan', 'device_class' => $deviceClass];
+        return ['kind' => self::KIND_AWAY, 'source' => 'wan', 'device_class' => $deviceClass, 'endpoint_id' => $endpointId];
     }
 
     /**

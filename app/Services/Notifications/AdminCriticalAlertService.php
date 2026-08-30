@@ -251,42 +251,53 @@ final class AdminCriticalAlertService
         $otherLines = [];
         $killLinks = new \App\Services\SessionKillLinkService();
         $streamSettings = new \App\Services\StreamLimitSettingsService();
+        $defaultKillMessage = $streamSettings->getKillMessage($tenantId);
+        $batchTargets = [];
+        $streamNum = 0;
+
         foreach ($sessions as $s) {
             if (!is_array($s)) {
                 continue;
             }
             $reason = (string) ($s['cut_reason'] ?? '');
-            $isCut = !empty($s['killed']) || !empty($s['would_cut']) || $reason !== '';
+            $alreadyKilled = !empty($s['killed']);
+            $isCut = $alreadyKilled || !empty($s['would_cut']) || $reason !== '';
             $why = match ($reason) {
                 'away' => (($s['household_source'] ?? '') === 'device_mobile' || ($s['device_class'] ?? '') === 'mobile')
                     ? 'móvil'
                     : 'otra casa',
                 'home' => 'demasiadas teles',
-                default => !empty($s['killed']) ? 'cortada' : '',
+                default => $alreadyKilled ? 'cortada' : '',
             };
             $titleS = trim((string) ($s['title'] ?? '')) ?: 'Sin título';
             $ip = trim((string) ($s['ip'] ?? '')) ?: 'IP ?';
             $player = trim((string) ($s['player'] ?? '')) ?: 'reproductor ?';
             $zone = (($s['household'] ?? '') === 'home') ? 'Casa' : 'Fuera';
-            $bit = "{$zone}: {$titleS} · {$ip} · {$player}";
+            $streamNum++;
+            $bit = "{$streamNum}) {$zone}: {$titleS} · {$ip} · {$player}";
             if ($why !== '') {
                 $bit .= " → {$why}";
             }
-            if ($isCut && empty($s['killed'])) {
-                $serverId = (int) ($s['server_id'] ?? 0);
-                $sessionId = trim((string) ($s['session_id'] ?? ''));
-                if ($serverId > 0 && $sessionId !== '') {
-                    $killMessage = match ($reason) {
-                        'away' => $streamSettings->getKillMessageAway($tenantId),
-                        'home' => $streamSettings->getKillMessageHome($tenantId),
-                        default => $streamSettings->getKillMessage($tenantId),
-                    };
-                    $link = $killLinks->create($tenantId, $serverId, $sessionId, $killMessage, $reason);
-                    if (!empty($link['short_url'])) {
-                        $bit .= "\n  Cortar: " . $link['short_url'];
-                    }
+
+            $serverId = (int) ($s['server_id'] ?? 0);
+            $sessionId = trim((string) ($s['session_id'] ?? ''));
+            if (!$alreadyKilled && $serverId > 0 && $sessionId !== '') {
+                $killMessage = match ($reason) {
+                    'away' => $streamSettings->getKillMessageAway($tenantId),
+                    'home' => $streamSettings->getKillMessageHome($tenantId),
+                    default => $defaultKillMessage,
+                };
+                $link = $killLinks->create($tenantId, $serverId, $sessionId, $killMessage, $reason);
+                if (!empty($link['short_url'])) {
+                    $bit .= "\n  Cortar: " . $link['short_url'];
+                    $batchTargets[] = [
+                        'server_id' => $serverId,
+                        'session_id' => $sessionId,
+                        'reason_key' => $reason,
+                    ];
                 }
             }
+
             if ($isCut) {
                 $cutLines[] = $bit;
             } else {
@@ -303,6 +314,12 @@ final class AdminCriticalAlertService
             $lines[] = 'Siguen:';
             foreach ($otherLines as $line) {
                 $lines[] = '· ' . $line;
+            }
+        }
+        if (count($batchTargets) >= 2) {
+            $batchLink = $killLinks->createBatch($tenantId, $batchTargets, $defaultKillMessage, 'all');
+            if (!empty($batchLink['short_url'])) {
+                $lines[] = 'Cortar todas (' . count($batchTargets) . '): ' . $batchLink['short_url'];
             }
         }
 

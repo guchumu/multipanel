@@ -103,10 +103,11 @@ final class ConcurrentStreamLimitService
 
         foreach ($sessions as $i => $session) {
             $uid = (int) ($session['media_user_id'] ?? 0);
-            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? []);
+            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? [], $uid > 0 ? $uid : null);
             $sessions[$i]['household'] = $meta['kind'];
             $sessions[$i]['household_source'] = $meta['source'];
             $sessions[$i]['device_class'] = $meta['device_class'];
+            $sessions[$i]['endpoint_id'] = $meta['endpoint_id'] ?? null;
         }
 
         // Group by media_user_id (only matched sessions).
@@ -362,7 +363,48 @@ final class ConcurrentStreamLimitService
         } catch (\Throwable) {
         }
 
+        try {
+            (new PlaybackHistoryService())->recordFromActivitySnapshot($tenantId, $sessions);
+        } catch (\Throwable) {
+        }
+
         return ['sessions' => $sessions, 'killed' => $killedTotal, 'violations' => $violations];
+    }
+
+    /**
+     * Solo anota casa/fuera (sin cortes ni registro de incumplimientos).
+     *
+     * @param array<int, array<string, mixed>> $sessions
+     * @return array<int, array<string, mixed>>
+     */
+    public function annotateHousehold(array $sessions): array
+    {
+        if ($sessions === []) {
+            return [];
+        }
+
+        $endpoints = new MediaUserEndpointService();
+        $matchedIds = [];
+        foreach ($sessions as $session) {
+            $uid = (int) ($session['media_user_id'] ?? 0);
+            if ($uid > 0) {
+                $matchedIds[$uid] = $uid;
+            }
+        }
+
+        $homeIps = $endpoints->homeIpsByUserIds(array_values($matchedIds));
+        $homeIps = $endpoints->mergeSessionHomeIps($sessions, $homeIps);
+
+        foreach ($sessions as $i => $session) {
+            $uid = (int) ($session['media_user_id'] ?? 0);
+            $meta = $endpoints->classifyPlaybackMeta($session, $homeIps[$uid] ?? [], $uid > 0 ? $uid : null);
+            $sessions[$i]['household'] = $meta['kind'];
+            $sessions[$i]['household_source'] = $meta['source'];
+            $sessions[$i]['device_class'] = $meta['device_class'];
+            $sessions[$i]['endpoint_id'] = $meta['endpoint_id'] ?? null;
+        }
+
+        return $sessions;
     }
 
     /**

@@ -141,6 +141,7 @@ ob_start();
         </a>
         <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
         <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
+        <a href="/media-users/expiring?bucket=d180" class="btn btn-outline-dark btn-sm"><i class="bi bi-archive me-1"></i><span class="d-none d-lg-inline">180+ días</span><span class="d-lg-none">180+</span></a>
         <a href="/media-users/broadcast" class="btn btn-outline-info btn-sm"><i class="bi bi-megaphone me-1"></i><span class="d-none d-lg-inline">Mensaje masivo</span></a>
         <a href="/media-users/bulk" class="btn btn-outline-primary btn-sm"><i class="bi bi-envelope-plus me-1"></i><span class="d-none d-lg-inline">Añadir emails</span><span class="d-lg-none">Emails</span></a>
         <a href="/media-users/create" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Nuevo</a>
@@ -280,7 +281,7 @@ ob_start();
                         <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('max_streams')) ?>">Str.<?= $sortIcon('max_streams') ?></a>
                     </th>
                     <th title="Fecha de expiración">
-                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('expires')) ?>">Expira<?= $sortIcon('expires') ?></a>
+                        <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('expires')) ?>" title="Vacío = sin caducidad">Expira<?= $sortIcon('expires') ?></a>
                     </th>
                     <th title="Vence en">Vence</th>
                     <th title="Telegram Chat ID">
@@ -402,7 +403,9 @@ ob_start();
                     <td class="d-none d-xl-table-cell small"><?= (int) $streams ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
-                               value="<?= e($expiresValue) ?>" data-saved-value="<?= e($expiresValue) ?>">
+                               data-db-status="<?= e((string) $u->status) ?>"
+                               value="<?= e($expiresValue) ?>" data-saved-value="<?= e($expiresValue) ?>"
+                               title="Vacío = sin caducidad">
                     </td>
                     <td class="small text-nowrap">
                         <?php $dl = days_left_badge($u->expires_at); ?>

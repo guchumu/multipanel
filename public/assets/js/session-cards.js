@@ -143,14 +143,81 @@
         const home = String(s.household || '') === 'home';
         const label = home ? 'Casa' : 'Fuera';
         const cls = home ? 'bg-success' : 'bg-warning text-dark';
+        const nextKind = home ? 'away' : 'home';
         const src = String(s.household_source || '');
         let title = home ? 'Casa' : 'Fuera';
         if (src === 'device_tv') title = 'Tele / Fire Stick';
         else if (src === 'device_mobile') title = 'Móvil / tablet';
         else if (src === 'lan') title = 'Misma red que el servidor';
         else if (src === 'home_ip') title = 'IP marcada como hogar';
-        return `<span class="badge session-household-badge ${cls}" title="${escapeHtml(title)}">${label}</span>`;
+        else if (src === 'manual') title = 'Marcado manualmente';
+        const canToggle = Number(s.media_user_id || 0) > 0 && String(s.session_id || '') !== '';
+        if (!canToggle) {
+            return `<span class="badge session-household-badge ${cls}" title="${escapeHtml(title)}">${label}</span>`;
+        }
+        return `<button type="button" class="badge session-household-badge ${cls}" data-toggle-kind="1" data-server-id="${Number(s.server_id || 0)}" data-session-id="${escapeHtml(String(s.session_id))}" data-kind="${nextKind}" title="${escapeHtml(title + ' — clic para cambiar')}">${label}</button>`;
     }
+
+    function applyHouseholdBadge(btn, kind) {
+        const home = kind === 'home';
+        btn.textContent = home ? 'Casa' : 'Fuera';
+        btn.dataset.kind = home ? 'away' : 'home';
+        btn.classList.remove('bg-success', 'bg-warning', 'text-dark');
+        if (home) {
+            btn.classList.add('bg-success');
+        } else {
+            btn.classList.add('bg-warning', 'text-dark');
+        }
+        btn.title = (home ? 'Casa' : 'Fuera') + ' — clic para cambiar';
+    }
+
+    async function toggleSessionHousehold(btn) {
+        if (btn.disabled || btn.dataset.busy === '1') return;
+        const serverId = Number(btn.dataset.serverId || 0);
+        const sessionId = String(btn.dataset.sessionId || '');
+        const kind = String(btn.dataset.kind || '');
+        if (!serverId || !sessionId || !kind) return;
+
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        btn.dataset.busy = '1';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/activity/session-kind', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Csrf-Token': csrf,
+                },
+                body: JSON.stringify({ _token: csrf, server_id: serverId, session_id: sessionId, kind }),
+            });
+            const data = await res.json();
+            if (!data.success) {
+                window.alert(data.message || 'No se pudo guardar.');
+                return;
+            }
+            applyHouseholdBadge(btn, String(data.kind || kind));
+            if (typeof window.MP_REFRESH_SESSIONS === 'function') {
+                window.MP_REFRESH_SESSIONS();
+            }
+        } catch (e) {
+            console.error('session-kind failed', e);
+            window.alert('Error de red al guardar.');
+        } finally {
+            btn.disabled = false;
+            delete btn.dataset.busy;
+        }
+    }
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.session-household-badge[data-toggle-kind]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSessionHousehold(btn);
+    });
 
     function stateIconClass(state) {
         switch (String(state || '').toLowerCase()) {

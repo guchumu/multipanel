@@ -10,9 +10,11 @@ use App\Services\AuthService;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\MediaUserEndpointService;
 use App\Services\PlaybackStopMessageService;
 use App\Services\ServerLoadService;
 use App\Services\StreamingActivityService;
+use Core\Cache;
 use Core\Controller;
 use Core\Request;
 use Core\Response;
@@ -244,5 +246,46 @@ SVG;
                 ? ($message !== '' ? 'Reproducción detenida y mensaje enviado.' : 'Reproducción detenida.')
                 : 'No se pudo detener la reproducción.',
         ], $ok ? 200 : 500);
+    }
+
+    public function sessionKind(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = (int) $request->input('server_id');
+        $sessionId = trim((string) $request->input('session_id', ''));
+        $kind = (string) $request->input('kind', '');
+
+        if ($serverId <= 0 || $sessionId === '') {
+            return $this->json(['success' => false, 'message' => 'Datos de sesión incompletos.'], 422);
+        }
+
+        $snapshot = $this->activity->getSnapshot($tenantId);
+        $session = null;
+        foreach ($snapshot['sessions'] as $row) {
+            if ((int) ($row['server_id'] ?? 0) === $serverId
+                && (string) ($row['session_id'] ?? '') === $sessionId) {
+                $session = $row;
+                break;
+            }
+        }
+
+        if ($session === null) {
+            return $this->json(['success' => false, 'message' => 'Sesión no encontrada (puede haber terminado).'], 404);
+        }
+
+        $result = (new MediaUserEndpointService())->setKindFromSession($tenantId, $session, $kind);
+        if (!$result['success']) {
+            return $this->json($result, 422);
+        }
+
+        Cache::forget('activity_snapshot_' . $tenantId);
+
+        return $this->json([
+            'success' => true,
+            'kind' => $result['kind'] ?? $kind,
+            'household_source' => 'manual',
+            'endpoint_id' => $result['endpoint_id'] ?? null,
+            'message' => $result['message'] ?? 'Guardado.',
+        ]);
     }
 }

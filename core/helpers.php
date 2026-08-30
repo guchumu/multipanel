@@ -357,3 +357,43 @@ if (!function_exists('media_service_badge')) {
         return '';
     }
 }
+
+if (!function_exists('media_user_message_type_label')) {
+    function media_user_message_type_label(?string $type): string
+    {
+        $type = trim((string) $type);
+        if ($type === '') {
+            return '—';
+        }
+
+        return match ($type) {
+            'manual' => 'Manual',
+            'reengage_invite' => 'Gancho volver',
+            'reengage_trial' => 'Prueba',
+            'payment' => 'Pago',
+            'portal_link' => 'Enlace portal',
+            'portal_password' => 'Contraseña portal',
+            default => str_starts_with($type, 'expiry_') ? 'Caducidad' : $type,
+        };
+    }
+}
+
+if (!function_exists('message_snippet')) {
+    function message_snippet(?string $title, ?string $body, int $max = 72): string
+    {
+        $title = trim((string) $title);
+        $body = trim((string) $body);
+        $text = $title !== '' ? $title : $body;
+        if ($text === '' && $body !== '') {
+            $text = $body;
+        }
+        if ($text === '') {
+            return '—';
+        }
+        if (mb_strlen($text) <= $max) {
+            return $text;
+        }
+
+        return mb_substr($text, 0, max(1, $max - 1)) . '…';
+    }
+}

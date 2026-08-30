@@ -187,7 +187,9 @@
                 <td class="d-none d-xl-table-cell small">${streams}</td>
                 <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="${escapeHtml(u.uuid)}"
-                           value="${escapeHtml(expiresDate)}" data-saved-value="${escapeHtml(expiresDate)}">
+                           data-db-status="${escapeHtml(dbStatus)}"
+                           value="${escapeHtml(expiresDate)}" data-saved-value="${escapeHtml(expiresDate)}"
+                           title="Vacío = sin caducidad">
                 </td>
                 <td class="small text-nowrap"><span class="badge expires-days-badge ${dl.cls}" data-uuid="${escapeHtml(u.uuid)}">${escapeHtml(dl.label)}</span></td>
                 <td class="small">
@@ -217,6 +219,32 @@
             </tr>`;
         }).join('');
         initExpiresInputs(tbody);
+    }
+
+    function isFutureOrToday(dateStr) {
+        if (!dateStr) return false;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const d = new Date(`${dateStr}T00:00:00`);
+        return !Number.isNaN(d.getTime()) && d >= today;
+    }
+
+    function resolveExpiresSaveConfirm(dbStatus, newVal, savedVal) {
+        if (newVal === '' && savedVal !== '') {
+            if (!confirm('¿Quitar la fecha?\n\nVacío = sin caducidad (el panel no programará avisos por vencimiento).')) {
+                return { proceed: false, reactivate: false };
+            }
+        }
+        let reactivate = false;
+        const inactive = dbStatus === 'expired' || dbStatus === 'suspended';
+        const canReactivate = inactive && (newVal === '' || isFutureOrToday(newVal));
+        if (canReactivate) {
+            const msg = newVal === ''
+                ? '¿Reactivar también el acceso en Plex/Jellyfin?\n\n· Aceptar: guarda sin caducidad y restaura el acceso\n· Cancelar: solo guarda, sin reactivar'
+                : '¿Reactivar también el acceso en Plex/Jellyfin?\n\n· Aceptar: guarda la fecha y restaura el acceso (puede activar avisos automáticos)\n· Cancelar: solo guarda la fecha, sin reactivar';
+            reactivate = confirm(msg);
+        }
+        return { proceed: true, reactivate };
     }
 
     const EXPIRES_SAVE_DELAY_MS = 1500;
@@ -269,17 +297,16 @@
         const savedVal = input.dataset.savedValue ?? '';
         if (newVal === savedVal) {
             input.classList.remove('is-saving-expires');
-            input.title = '';
+            input.title = 'Vacío = sin caducidad';
             return;
         }
 
-        if (newVal === '' && savedVal !== '') {
-            if (!confirm('¿Quitar la fecha de expiración de este usuario?')) {
-                input.value = savedVal;
-                input.classList.remove('is-saving-expires');
-                input.title = '';
-                return;
-            }
+        const confirmResult = resolveExpiresSaveConfirm(input.dataset.dbStatus || '', newVal, savedVal);
+        if (!confirmResult.proceed) {
+            input.value = savedVal;
+            input.classList.remove('is-saving-expires');
+            input.title = 'Vacío = sin caducidad';
+            return;
         }
 
         input.classList.add('is-saving-expires');
@@ -294,7 +321,7 @@
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
-                body: JSON.stringify({ expires_at: newVal }),
+                body: JSON.stringify({ expires_at: newVal, reactivate: confirmResult.reactivate }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success === false) {
@@ -308,14 +335,17 @@
                 : newVal;
             input.value = stored;
             input.dataset.savedValue = stored;
+            if (data.status) {
+                input.dataset.dbStatus = data.status;
+            }
             updateExpiresDaysBadge(uuid, stored);
             input.classList.remove('is-saving-expires');
             input.classList.add('is-saved-expires');
-            input.title = data.reactivated ? 'Guardado · acceso reactivado' : 'Guardado';
+            input.title = data.reactivated ? 'Guardado · acceso reactivado' : 'Vacío = sin caducidad';
             setTimeout(() => {
                 input.classList.remove('is-saved-expires');
-                if (input.title === 'Guardado' || input.title === 'Guardado · acceso reactivado') {
-                    input.title = '';
+                if (input.title === 'Guardado · acceso reactivado' || input.title === 'Vacío = sin caducidad') {
+                    input.title = 'Vacío = sin caducidad';
                 }
             }, 2500);
         } catch (err) {

@@ -130,6 +130,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/activity/thumb/{uuid}', [ActivityController::class, 'thumb'], 'activity.thumb');
     $router->get('/activity/thumbs-debug', [ActivityController::class, 'thumbsDebug'], 'activity.thumbs_debug');
     $router->post('/activity/kill', [ActivityController::class, 'kill'], 'activity.kill', [CsrfMiddleware::class]);
+    $router->post('/activity/session-kind', [ActivityController::class, 'sessionKind'], 'activity.session_kind', [CsrfMiddleware::class]);
 
     // Servers
     $router->get('/servers', [ServerController::class, 'index'], 'servers.index');
@@ -158,6 +159,12 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
     $router->get('/media-users/stream-violations', [StreamLimitController::class, 'violations'], 'media_users.stream_violations');
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
+    $router->get('/media-users/expired-outreach', static function (\Core\Request $request) {
+        $serverId = $request->input('server_id');
+        $query = 'bucket=d180' . ($serverId ? '&server_id=' . (int) $serverId : '');
+
+        return \Core\Response::redirect('/media-users/expiring?' . $query);
+    }, 'media_users.expired_outreach');
     $router->get('/media-users/estimacion', [MediaUserController::class, 'estimacion'], 'media_users.estimacion');
     $router->post('/media-users/expiring/broadcast', [MediaUserController::class, 'expiringBroadcast'], 'media_users.expiring.broadcast', [CsrfMiddleware::class]);
     $router->post('/media-users/expiring/bulk-renew', [MediaUserController::class, 'expiringBulkRenew'], 'media_users.expiring.bulk_renew', [CsrfMiddleware::class]);
@@ -205,6 +212,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/media-users/{uuid}/portal-link/revoke', [MediaUserController::class, 'revokePortalLink'], 'media_users.portal_link.revoke', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/portal-link/send', [MediaUserController::class, 'sendPortalLink'], 'media_users.portal_link.send', [CsrfMiddleware::class]);
     $router->post('/media-users/{uuid}/endpoints/{id}/kind', [MediaUserController::class, 'setEndpointKind'], 'media_users.endpoints.kind', [CsrfMiddleware::class]);
+    $router->get('/media-users/{uuid}/playback-history', [MediaUserController::class, 'playbackHistory'], 'media_users.playback_history');
     $router->get('/media-users/{uuid}/messages', [MediaUserController::class, 'messages'], 'media_users.messages');
     $router->delete('/media-users/{uuid}', [MediaUserController::class, 'destroy'], 'media_users.destroy', [CsrfMiddleware::class]);
 

@@ -34,9 +34,14 @@ final class SessionKillLinkController extends Controller
         }
 
         if ($killed) {
+            $pageTitle = trim((string) ($result['title'] ?? '')) ?: 'Reproducción cortada';
+            $body = str_contains($pageTitle, 'Reproducciones')
+                ? 'Se han detenido las emisiones con el mensaje configurado para el límite de reproducciones.'
+                : 'Se ha detenido la emisión con el mensaje configurado para el límite de reproducciones.';
+
             return Response::html($this->page(
-                'Reproducción cortada',
-                'Se ha detenido la emisión con el mensaje configurado para el límite de reproducciones.',
+                $pageTitle,
+                $body,
                 true
             ), 200);
         }

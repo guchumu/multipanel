@@ -158,7 +158,11 @@ ob_start();
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Fecha expiración</label>
-                    <input type="date" id="expiresAt" class="form-control form-control-sm expires-input media-users-expires-input" value="<?= e(expires_date_input($mediaUser->expires_at)) ?>">
+                    <input type="date" id="expiresAt" class="form-control form-control-sm expires-input media-users-expires-input"
+                           data-db-status="<?= e((string) $mediaUser->status) ?>"
+                           value="<?= e(expires_date_input($mediaUser->expires_at)) ?>"
+                           title="Vacío = sin caducidad">
+                    <div class="form-text">Deja vacío para acceso sin caducidad (indefinido). No se enviarán avisos de vencimiento.</div>
                 </div>
                 <div class="mb-3 d-flex flex-wrap gap-2">
                     <span class="small text-muted w-100">Sumar días:</span>
@@ -398,6 +402,92 @@ ob_start();
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <?php
+        $playbackHistory = is_array($playbackHistory ?? null) ? $playbackHistory : [];
+        $playbackHistoryTotal = (int) ($playbackHistoryTotal ?? count($playbackHistory));
+        $formatPlaybackDuration = static function (?int $seconds, ?string $startedAt, ?string $endedAt): string {
+            if ($seconds !== null && $seconds > 0) {
+                $h = intdiv($seconds, 3600);
+                $m = intdiv($seconds % 3600, 60);
+                if ($h > 0) {
+                    return sprintf('%dh %02dm', $h, $m);
+                }
+
+                return $m > 0 ? $m . ' min' : $seconds . ' s';
+            }
+            if ($endedAt === null || $endedAt === '') {
+                return 'En curso';
+            }
+
+            return '—';
+        };
+        ?>
+        <div class="card border-0 shadow-sm mb-4" id="playback-history-card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Historial de reproducción</strong>
+                    <div class="small text-muted fw-normal">Se registra al ver contenido en directo o en sincronización del servidor.</div>
+                </div>
+                <?php if ($playbackHistoryTotal > 0): ?>
+                <span class="badge bg-secondary" id="playback-history-count"><?= $playbackHistoryTotal ?></span>
+                <?php endif; ?>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Título</th>
+                            <th>Dispositivo</th>
+                            <th>Inicio</th>
+                            <th>Duración</th>
+                        </tr>
+                    </thead>
+                    <tbody id="playback-history-body">
+                    <?php if ($playbackHistory === []): ?>
+                    <tr><td colspan="4" class="text-muted text-center py-3">Aún no hay reproducciones registradas</td></tr>
+                    <?php else: ?>
+                    <?php foreach ($playbackHistory as $row): ?>
+                    <tr>
+                        <td class="small">
+                            <div class="fw-semibold"><?= e((string) ($row['title'] ?? '—')) ?></div>
+                            <?php if (!empty($row['subtitle'])): ?>
+                            <div class="text-muted"><?= e((string) $row['subtitle']) ?></div>
+                            <?php endif; ?>
+                            <?php if (!empty($row['server_name'])): ?>
+                            <div class="text-muted"><?= e((string) $row['server_name']) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="small">
+                            <?= e((string) (($row['player'] ?? '') !== '' ? $row['player'] : '—')) ?>
+                            <?php if (!empty($row['device'])): ?>
+                            <div class="text-muted"><?= e((string) $row['device']) ?></div>
+                            <?php endif; ?>
+                            <?php if (!empty($row['ip_address'])): ?>
+                            <div class="text-muted"><code><?= e((string) $row['ip_address']) ?></code></div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="small text-nowrap"><?= e((string) ($row['started_at'] ?? '—')) ?></td>
+                        <td class="small text-nowrap"><?= e($formatPlaybackDuration(
+                            isset($row['duration_seconds']) ? (int) $row['duration_seconds'] : null,
+                            isset($row['started_at']) ? (string) $row['started_at'] : null,
+                            isset($row['ended_at']) ? (string) $row['ended_at'] : null,
+                        )) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php if ($playbackHistoryTotal > count($playbackHistory)): ?>
+            <div class="card-footer bg-white text-center">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="playback-history-more"
+                        data-page="1" data-limit="40">
+                    Cargar más
+                </button>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="card border-0 shadow-sm mb-4">

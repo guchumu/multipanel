@@ -575,6 +575,22 @@ body {
     padding: 0.15em 0.4em;
     margin-right: 0.3rem;
     vertical-align: middle;
+    border: none;
+    line-height: 1.2;
+    cursor: default;
+}
+
+button.session-household-badge {
+    cursor: pointer;
+}
+
+button.session-household-badge:hover {
+    filter: brightness(1.08);
+}
+
+button.session-household-badge:disabled {
+    opacity: 0.65;
+    cursor: wait;
 }
 
 /* Compat: expand toggle ya no usa resumen corto; el panel es el detalle */
@@ -1098,6 +1114,10 @@ body {
     transform: translateY(-1px);
     box-shadow: 0 0.4rem 1rem rgba(15, 23, 42, 0.1);
 }
+.urgency-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0.4rem 1rem rgba(15, 23, 42, 0.1);
+}
 .urgency-card:disabled {
     opacity: 0.55;
     cursor: not-allowed;
@@ -1120,6 +1140,7 @@ body {
     margin-top: 0.55rem;
 }
 .urgency-card--expired { color: #dc3545; }
+.urgency-card--archived { color: #495057; }
 .urgency-card--soon { color: #fd7e14; }
 .urgency-card--week { color: #ffc107; }
 .urgency-card--month { color: #0d6efd; }

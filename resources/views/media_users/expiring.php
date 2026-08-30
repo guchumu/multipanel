@@ -1,36 +1,73 @@
 <?php
+/** @var int $longExpiredDays */
+/** @var int $longExpiredTotal */
+$longExpiredDays = (int) ($longExpiredDays ?? 180);
+$longExpiredTotal = (int) ($longExpiredTotal ?? 0);
+$currentBucket = (string) ($currentBucket ?? '');
+
 $buckets = [
+    'd180' => [],
     'expired' => [],
     'd3' => [],
     'd7' => [],
     'd30' => [],
 ];
-foreach ($users as $u) {
-    $days = isset($u->days_left) ? (int) $u->days_left : (int) (days_left($u->expires_at) ?? 0);
-    if ($days < 0) {
-        $buckets['expired'][] = $u;
-    } elseif ($days <= 3) {
-        $buckets['d3'][] = $u;
-    } elseif ($days <= 7) {
-        $buckets['d7'][] = $u;
-    } else {
-        $buckets['d30'][] = $u;
+
+$bucketForUser = static function ($u) use ($longExpiredDays): string {
+    $days = isset($u->days_left) ? (int) $u->days_left : days_left($u->expires_at ?? null);
+    if ($days === null && isset($u->days_left)) {
+        $days = (int) $u->days_left;
     }
+    $daysExpired = isset($u->days_expired) && $u->days_expired !== null
+        ? (int) $u->days_expired
+        : ($days !== null && $days < 0 ? abs($days) : null);
+    $status = strtolower(trim((string) ($u->status ?? '')));
+
+    if ($daysExpired !== null && $daysExpired >= $longExpiredDays) {
+        return 'd180';
+    }
+    if ($days !== null && $days <= -$longExpiredDays) {
+        return 'd180';
+    }
+    if ($status === 'expired' && $days === null) {
+        return 'd180';
+    }
+    if ($days !== null && $days < 0) {
+        return 'expired';
+    }
+    if ($days !== null && $days <= 3) {
+        return 'd3';
+    }
+    if ($days !== null && $days <= 7) {
+        return 'd7';
+    }
+
+    return 'd30';
+};
+
+foreach ($users as $u) {
+    $buckets[$bucketForUser($u)][] = $u;
 }
 
 $bucketMeta = [
-    'expired' => ['title' => 'Caducados', 'hint' => 'Ya vencidos', 'icon' => 'bi-exclamation-octagon', 'class' => 'urgency-card--expired'],
+    'd180' => ['title' => '180+ días', 'hint' => 'Caducados hace ≥180d', 'icon' => 'bi-archive', 'class' => 'urgency-card--archived'],
+    'expired' => ['title' => 'Caducados', 'hint' => 'Recientes (<180d)', 'icon' => 'bi-exclamation-octagon', 'class' => 'urgency-card--expired'],
     'd3' => ['title' => '3 días', 'hint' => 'Hoy a 3 días', 'icon' => 'bi-hourglass-split', 'class' => 'urgency-card--soon'],
     'd7' => ['title' => '7 días', 'hint' => '4 a 7 días', 'icon' => 'bi-calendar-week', 'class' => 'urgency-card--week'],
     'd30' => ['title' => '30 días', 'hint' => '8 a 30 días', 'icon' => 'bi-calendar3', 'class' => 'urgency-card--month'],
 ];
 
-$activeBucket = 'expired';
-foreach (['expired', 'd3', 'd7', 'd30'] as $key) {
-    if ($buckets[$key] !== []) {
-        $activeBucket = $key;
-        break;
+$activeBucket = in_array($currentBucket, array_keys($bucketMeta), true) ? $currentBucket : '';
+if ($activeBucket === '') {
+    foreach (['d180', 'expired', 'd3', 'd7', 'd30'] as $key) {
+        if ($buckets[$key] !== []) {
+            $activeBucket = $key;
+            break;
+        }
     }
+}
+if ($activeBucket === '') {
+    $activeBucket = 'd30';
 }
 
 ob_start();
@@ -39,7 +76,7 @@ ob_start();
     <div class="min-w-0">
         <a href="/media-users" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Usuarios</a>
         <h4 class="mb-0 mt-1 text-truncate">Vencimientos</h4>
-        <p class="text-muted small mb-0">Por urgencia. Selecciona una tarjeta y actúa sobre esa lista.</p>
+        <p class="text-muted small mb-0">Por urgencia. Tarjeta <strong>180+ días</strong>: caducados antiguos con último aviso enviado.</p>
     </div>
     <a href="/media-users/broadcast" class="btn btn-outline-info btn-sm flex-shrink-0"><i class="bi bi-megaphone me-1"></i>Mensaje masivo</a>
 </div>
@@ -55,8 +92,14 @@ ob_start();
                 <?php endforeach; ?>
             </select>
             <input type="hidden" name="days" value="30">
+            <?php if ($activeBucket !== ''): ?>
+            <input type="hidden" name="bucket" value="<?= e($activeBucket) ?>">
+            <?php endif; ?>
             <span class="small text-muted ms-md-auto">
                 Total: <strong><?= count($users) ?></strong>
+                <?php if ($longExpiredTotal > 0): ?>
+                · <strong><?= $longExpiredTotal ?></strong> con ≥<?= $longExpiredDays ?>d
+                <?php endif; ?>
             </span>
         </form>
     </div>
@@ -72,11 +115,9 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
         <div class="min-w-0">
             <strong class="d-block">Gancho para volver</strong>
             <p class="small text-muted mb-0">
-                Antes: renovar a los 15/30/45 días (precio de Facturación).
-                Reenganche desde el día <?= (int) ($reengageCfg['min_expired_days'] ?? 60) ?>:
-                enlace de pago con <?= (int) ($reengageCfg['discount_percent'] ?? 15) ?>% único o prueba <?= $trialDays ?>d manual.
-                Se repiten cada <?= (int) ($reengageCfg['interval_days'] ?? 14) ?> días si no vuelven
-                <?= !empty($reengageCfg['enabled']) ? '' : ' (automático ahora apagado)' ?>.
+                En <strong>180+ días</strong> puedes invitar a volver o mandar mensaje masivo.
+                Reenganche automático desde el día <?= (int) ($reengageCfg['min_expired_days'] ?? 60) ?>:
+                enlace de pago con <?= (int) ($reengageCfg['discount_percent'] ?? 15) ?>% o prueba <?= $trialDays ?>d manual.
                 <a href="/settings/notifications#reengage">Editar mensajes</a>
             </p>
         </div>
@@ -91,14 +132,16 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
     </div>
 </div>
 
-<div class="row g-3 mb-3" id="urgencyCards">
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-5 g-3 mb-3" id="urgencyCards">
     <?php foreach ($bucketMeta as $id => $meta): ?>
-    <?php $count = count($buckets[$id]); ?>
-    <div class="col-6 col-lg-3">
+    <?php
+    $count = $id === 'd180' ? max($longExpiredTotal, count($buckets['d180'])) : count($buckets[$id]);
+    ?>
+    <div class="col">
         <button type="button"
                 class="urgency-card <?= e($meta['class']) ?> <?= $activeBucket === $id ? 'is-active' : '' ?>"
                 data-bucket="<?= e($id) ?>"
-                <?= $count === 0 ? 'disabled' : '' ?>>
+                aria-pressed="<?= $activeBucket === $id ? 'true' : 'false' ?>">
             <div class="d-flex justify-content-between align-items-start gap-2">
                 <div>
                     <div class="urgency-card-title"><?= e($meta['title']) ?></div>
@@ -161,7 +204,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
 <?php if (empty($users)): ?>
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center text-muted py-5">
-        No hay vencimientos en los próximos 30 días
+        No hay vencimientos en los próximos 30 días ni caducados antiguos
     </div>
 </div>
 <?php else: ?>
@@ -181,24 +224,28 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                     <th>Usuario</th>
                     <th>Servidor</th>
                     <th>Días</th>
+                    <th class="d-none d-lg-table-cell expiring-col-last-msg">Último aviso</th>
                     <th class="text-end">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($users as $u): ?>
                 <?php
-                $days = isset($u->days_left) ? (int) $u->days_left : (int) (days_left($u->expires_at) ?? 0);
-                if ($days < 0) {
-                    $bucket = 'expired';
-                } elseif ($days <= 3) {
-                    $bucket = 'd3';
-                } elseif ($days <= 7) {
-                    $bucket = 'd7';
-                } else {
-                    $bucket = 'd30';
-                }
+                $bucket = $bucketForUser($u);
+                $days = isset($u->days_left) ? (int) $u->days_left : days_left($u->expires_at ?? null);
+                $daysExpired = isset($u->days_expired) && $u->days_expired !== null
+                    ? (int) $u->days_expired
+                    : ($days !== null && $days < 0 ? abs($days) : null);
                 $dl = days_left_badge($u->expires_at);
                 $hidden = $bucket !== $activeBucket ? ' d-none' : '';
+                $lastAt = $u->last_message_at ?? null;
+                $lastType = (string) ($u->last_message_type ?? '');
+                $lastTitle = (string) ($u->last_message_title ?? '');
+                $lastBody = (string) ($u->last_message_body ?? '');
+                $lastChannel = (string) ($u->last_message_channel ?? '');
+                $snippet = message_snippet($lastTitle, $lastBody);
+                $fullPreview = trim($lastTitle . ($lastTitle !== '' && $lastBody !== '' ? "\n\n" : '') . $lastBody);
+                $showReengage = in_array($bucket, ['expired', 'd180'], true);
                 ?>
                 <tr class="expiring-row<?= $hidden ?>" data-bucket="<?= e($bucket) ?>">
                     <td>
@@ -222,14 +269,39 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                         <span class="text-muted">—</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span></td>
+                    <td class="small text-nowrap">
+                        <?php if ($bucket === 'd180'): ?>
+                        <?php if ($daysExpired !== null && $daysExpired > 0): ?>
+                        <span class="badge bg-dark">hace <?= $daysExpired ?>d</span>
+                        <?php else: ?>
+                        <span class="badge bg-secondary">Sin fecha</span>
+                        <?php endif; ?>
+                        <div class="text-muted"><?= e(expires_date_input($u->expires_at)) ?: '—' ?></div>
+                        <?php else: ?>
+                        <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
+                        <?php endif; ?>
+                    </td>
+                    <td class="small d-none d-lg-table-cell expiring-col-last-msg" style="max-width: 14rem;">
+                        <?php if ($lastAt): ?>
+                        <div class="text-nowrap"><?= e(substr((string) $lastAt, 0, 16)) ?>
+                            <?php if ($lastChannel === 'telegram'): ?><i class="bi bi-telegram text-info" title="Telegram"></i>
+                            <?php elseif ($lastChannel === 'whatsapp'): ?><i class="bi bi-whatsapp text-success" title="WhatsApp"></i><?php endif; ?>
+                        </div>
+                        <span class="badge bg-secondary"><?= e(media_user_message_type_label($lastType)) ?></span>
+                        <div class="text-truncate" title="<?= e($fullPreview) ?>"><?= e($snippet) ?></div>
+                        <?php elseif ($bucket === 'd180'): ?>
+                        <span class="text-muted">Nunca</span>
+                        <?php else: ?>
+                        <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td class="text-end">
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Acciones">
                                 <i class="bi bi-three-dots"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                <?php if ($bucket === 'expired'): ?>
+                                <?php if ($showReengage): ?>
                                 <li>
                                     <a class="dropdown-item btn-reengage-invite" href="#" data-uuid="<?= e($u->uuid) ?>">
                                         <i class="bi bi-heart me-2"></i>Invitar a volver
@@ -242,6 +314,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
                                 <?php endif; ?>
+                                <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>/messages"><i class="bi bi-chat-dots me-2"></i>Historial mensajes</a></li>
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>"><i class="bi bi-eye me-2"></i>Ver ficha</a></li>
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>#stripe"><i class="bi bi-credit-card me-2"></i>Enlace de pago</a></li>
                                 <li><hr class="dropdown-divider"></li>
@@ -270,6 +343,7 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
 $content = ob_get_clean();
 $scripts = '<script>window.EXPIRING_FILTER_DAYS = 30;'
     . 'window.EXPIRING_SERVER_ID = ' . json_encode($currentServerId ? (int) $currentServerId : null) . ';'
+    . 'window.EXPIRING_INITIAL_BUCKET = ' . json_encode($activeBucket, JSON_UNESCAPED_UNICODE) . ';'
     . 'window.EXPIRING_BUCKET_TITLES = ' . json_encode(array_map(static fn ($m) => $m['title'], $bucketMeta), JSON_UNESCAPED_UNICODE) . ';</script>';
 $scripts .= '<script src="' . e(asset('js/media-users-expiring.js')) . '?v=' . (@filemtime(public_path('assets/js/media-users-expiring.js')) ?: '1') . '"></script>';
 include base_path('resources/views/layouts/app.php');
