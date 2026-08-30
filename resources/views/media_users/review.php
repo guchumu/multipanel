@@ -138,6 +138,81 @@ ob_start();
         </div>
 
         <?php
+        $lookupResult = \Core\Session::getInstance()->getFlash('identity_lookup');
+        if (is_array($lookupResult)):
+            $serverMatches = array_values(array_filter(
+                $lookupResult['matches'] ?? [],
+                static fn (array $m): bool => empty($m['error'])
+            ));
+            $lookupErrors = array_values(array_filter(
+                $lookupResult['matches'] ?? [],
+                static fn (array $m): bool => !empty($m['error'])
+            ));
+        ?>
+        <div class="card border-info mb-3">
+            <div class="card-header py-2 bg-info-subtle">
+                <strong><i class="bi bi-search me-1"></i>Resultado búsqueda email / usuario</strong>
+                <?php if (!empty($lookupResult['applied'])): ?>
+                <span class="badge bg-success ms-2">Datos aplicados</span>
+                <?php endif; ?>
+            </div>
+            <div class="card-body py-2">
+                <?php if ($serverMatches !== []): ?>
+                <p class="small text-muted mb-2">Coincidencias en servidores Plex/Jellyfin:</p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-2 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Servidor</th>
+                                <th>Tipo</th>
+                                <th>Usuario</th>
+                                <th>Email</th>
+                                <th>ID servidor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($serverMatches as $match): ?>
+                            <tr>
+                                <td><?= e($match['server_name'] ?? '—') ?></td>
+                                <td><?= e(strtoupper((string) ($match['server_type'] ?? ''))) ?></td>
+                                <td><strong><?= e($match['username'] ?? '—') ?></strong></td>
+                                <td><?= e($match['email'] ?? '—') ?></td>
+                                <td class="font-monospace small"><?= e($match['external_id'] ?? '—') ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php else: ?>
+                <p class="small mb-2">No hay coincidencias en la lista de usuarios de ningún servidor.</p>
+                <?php endif; ?>
+
+                <?php if (!empty($lookupResult['panel_hint']) && is_array($lookupResult['panel_hint'])):
+                    $ph = $lookupResult['panel_hint']; ?>
+                <p class="small mb-1"><strong>Panel previo</strong>
+                    (ID <?= (int) ($ph['id'] ?? 0) ?><?= !empty($ph['deleted_at']) ? ', eliminado' : '' ?>):
+                    usuario <?= e($ph['username'] ?: '—') ?>,
+                    email <?= e($ph['email'] ?: '—') ?>,
+                    Telegram <?= e($ph['telegram_chat_id'] ?: '—') ?>
+                </p>
+                <?php endif; ?>
+
+                <?php if (!empty($lookupResult['customer_hint']) && is_array($lookupResult['customer_hint'])):
+                    $ch = $lookupResult['customer_hint']; ?>
+                <p class="small mb-1"><strong>Cliente CRM</strong>:
+                    <?= e(trim((string) ($ch['name'] ?? ''))) ?> · <?= e($ch['email'] ?? '—') ?>
+                </p>
+                <?php endif; ?>
+
+                <?php foreach ($lookupErrors as $err): ?>
+                <p class="small text-danger mb-1">⚠ <?= e($err['server_name'] ?? 'Servidor') ?>:
+                    <?= e($err['error'] ?? 'error de conexión') ?></p>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <?php
             $tgValue = normalize_telegram_chat_id($mediaUser->telegram_chat_id ?? null);
             $emailValue = trim((string) ($mediaUser->email ?? ''));
             $waValue = trim((string) ($mediaUser->metaGet('whatsapp_phone') ?? ''));

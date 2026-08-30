@@ -651,7 +651,7 @@ class MediaUserRepository
 
         if ($externalId !== '') {
             $row = $db->fetchOne(
-                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                'SELECT id, username, server_id, deleted_at, email, telegram_chat_id, expires_at, notes FROM media_users
                  WHERE tenant_id = ? AND external_id = ?' . $excludeSql . '
                  ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
                 array_merge([$tenantId, $externalId], $excludeParams)
@@ -663,7 +663,7 @@ class MediaUserRepository
 
         if ($email !== '') {
             $row = $db->fetchOne(
-                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                'SELECT id, username, server_id, deleted_at, email, telegram_chat_id, expires_at, notes FROM media_users
                  WHERE tenant_id = ? AND LOWER(email) = LOWER(?)' . $excludeSql . '
                  ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
                 array_merge([$tenantId, $email, $serverId], $excludeParams)
@@ -675,7 +675,7 @@ class MediaUserRepository
 
         if ($username !== '') {
             $row = $db->fetchOne(
-                'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
+                'SELECT id, username, server_id, deleted_at, email, telegram_chat_id, expires_at, notes FROM media_users
                  WHERE tenant_id = ? AND (LOWER(username) = LOWER(?) OR LOWER(display_name) = LOWER(?))'
                  . $excludeSql . '
                  ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
@@ -690,7 +690,16 @@ class MediaUserRepository
             return null;
         }
 
-        $merged = ['email' => null, 'telegram_chat_id' => null, 'expires_at' => null, 'notes' => null];
+        $merged = [
+            'id' => null,
+            'username' => null,
+            'server_id' => null,
+            'deleted_at' => null,
+            'email' => null,
+            'telegram_chat_id' => null,
+            'expires_at' => null,
+            'notes' => null,
+        ];
         foreach ($candidates as $row) {
             foreach (array_keys($merged) as $field) {
                 $val = $row[$field] ?? null;

@@ -69,6 +69,10 @@ final class MediaUserManagementService
         $user->save();
 
         $sync = $this->syncServerAccess($user, disable: false);
+        if ($sync) {
+            $user->metaSet('access_revoked_at', null);
+            $user->save();
+        }
         AuditService::log('media_user.activated', 'media_user', (int) $user->id, $old, [
             'status' => 'active',
             'server_sync' => $sync,
@@ -149,6 +153,29 @@ final class MediaUserManagementService
         if ($status === 'suspended') {
             return $this->suspend($user);
         }
+        if ($status === 'expired') {
+            $old = ['status' => $user->status];
+            $user->status = 'expired';
+            $user->save();
+
+            $syncResult = $this->revokeServerAccess($user);
+            $sync = (bool) ($syncResult['ok'] ?? false);
+            AuditService::log('media_user.status_updated', 'media_user', (int) $user->id, $old, [
+                'status' => 'expired',
+                'server_sync' => $sync,
+                'revoke' => $syncResult,
+            ]);
+
+            $hasServer = (int) ($user->server_id ?? 0) > 0;
+
+            return [
+                'success' => true,
+                'message' => !$hasServer || $sync || !empty($syncResult['skipped'])
+                    ? 'Usuario marcado como caducado.'
+                    : 'Marcado como caducado en el panel, pero NO se pudo cortar el acceso en el servidor.',
+                'status' => 'expired',
+            ];
+        }
 
         $old = ['status' => $user->status];
         $user->status = $status;
@@ -159,7 +186,32 @@ final class MediaUserManagementService
     }
 
     /**
-     * Busca email/usuario en Plex/Jellyfin, registros previos del panel o clientes.
+     * Corta acceso Plex/Jellyfin sin cambiar el estado del panel.
+     *
+     * @return array{ok: bool, skipped?: bool, message?: string, method?: ?string}
+     */
+    public function revokeServerAccess(MediaUser $user): array
+    {
+        if (!(int) ($user->server_id ?? 0)) {
+            return ['ok' => true, 'skipped' => true, 'message' => 'Sin servidor asociado.'];
+        }
+
+        $revokedAt = trim((string) ($user->metaGet('access_revoked_at') ?? ''));
+        if ($revokedAt !== '' && (int) ($user->on_server ?? -1) !== 1) {
+            return ['ok' => true, 'skipped' => true, 'message' => 'Acceso ya revocado anteriormente.'];
+        }
+
+        $result = $this->syncServerAccessDetailed($user, disable: true);
+        if (!empty($result['ok'])) {
+            $user->metaSet('access_revoked_at', date('Y-m-d H:i:s'));
+            $user->save();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Busca email/usuario en todos los Plex/Jellyfin, registros previos del panel o clientes.
      *
      * @return array{
      *   success: bool,
@@ -167,10 +219,14 @@ final class MediaUserManagementService
      *   email?: ?string,
      *   username?: ?string,
      *   external_id?: ?string,
+     *   server_id?: ?int,
      *   telegram_chat_id?: ?string,
      *   expires_at?: ?string,
      *   applied?: bool,
-     *   sources?: array<int, string>
+     *   sources?: array<int, string>,
+     *   matches?: array<int, array<string, mixed>>,
+     *   panel_hint?: ?array<string, mixed>,
+     *   customer_hint?: ?array<string, mixed>
      * }
      */
     public function discoverIdentity(MediaUser $user, bool $apply = false): array
@@ -180,10 +236,12 @@ final class MediaUserManagementService
             'email' => null,
             'username' => null,
             'external_id' => null,
+            'server_id' => null,
             'telegram_chat_id' => null,
             'expires_at' => null,
         ];
         $sources = [];
+        $matches = [];
 
         $needles = array_values(array_unique(array_filter(array_map(
             static fn (?string $v): string => mb_strtolower(trim((string) $v)),
@@ -194,7 +252,15 @@ final class MediaUserManagementService
             ]
         ))));
 
-        // Registros previos del panel (soft-deleted, otro external_id…)
+        if ($needles === []) {
+            return [
+                'success' => false,
+                'message' => 'Escribe al menos un nombre, usuario o email en la ficha para poder buscar.',
+                'matches' => [],
+            ];
+        }
+
+        $panelHint = null;
         $twin = $this->users->findIdentityTwin(
             $tenantId,
             (int) ($user->server_id ?? 0),
@@ -205,85 +271,98 @@ final class MediaUserManagementService
         );
         if ($twin !== null) {
             $sources[] = 'panel previo';
-            if ($hints['email'] === null && !empty($twin['email'])) {
-                $hints['email'] = trim((string) $twin['email']);
+            $panelHint = [
+                'id' => (int) ($twin['id'] ?? 0),
+                'username' => trim((string) ($twin['username'] ?? '')),
+                'email' => trim((string) ($twin['email'] ?? '')),
+                'telegram_chat_id' => trim((string) ($twin['telegram_chat_id'] ?? '')),
+                'expires_at' => trim((string) ($twin['expires_at'] ?? '')),
+                'server_id' => isset($twin['server_id']) ? (int) $twin['server_id'] : null,
+                'deleted_at' => trim((string) ($twin['deleted_at'] ?? '')),
+            ];
+            if ($hints['email'] === null && $panelHint['email'] !== '') {
+                $hints['email'] = $panelHint['email'];
             }
-            if ($hints['telegram_chat_id'] === null && !empty($twin['telegram_chat_id'])) {
-                $hints['telegram_chat_id'] = trim((string) $twin['telegram_chat_id']);
+            if ($hints['telegram_chat_id'] === null && $panelHint['telegram_chat_id'] !== '') {
+                $hints['telegram_chat_id'] = $panelHint['telegram_chat_id'];
             }
-            if ($hints['expires_at'] === null && !empty($twin['expires_at'])) {
-                $hints['expires_at'] = trim((string) $twin['expires_at']);
+            if ($hints['expires_at'] === null && $panelHint['expires_at'] !== '') {
+                $hints['expires_at'] = $panelHint['expires_at'];
             }
         }
 
-        // Clientes (customers)
-        if ($needles !== []) {
-            foreach ($needles as $needle) {
-                if ($needle === '' || str_contains($needle, '@')) {
-                    continue;
+        $customerHint = null;
+        foreach ($needles as $needle) {
+            if ($needle === '' || str_contains($needle, '@')) {
+                continue;
+            }
+            $customer = \Core\Database::getInstance()->fetchOne(
+                'SELECT id, email, first_name, last_name FROM customers
+                 WHERE tenant_id = ?
+                   AND (LOWER(CONCAT(COALESCE(first_name,\'\'), \' \', COALESCE(last_name,\'\'))) = ?
+                        OR LOWER(email) LIKE ?)
+                 LIMIT 1',
+                [$tenantId, $needle, '%' . $needle . '%']
+            );
+            if ($customer !== null) {
+                $sources[] = 'cliente CRM';
+                $customerHint = [
+                    'id' => (int) ($customer['id'] ?? 0),
+                    'name' => trim((string) (($customer['first_name'] ?? '') . ' ' . ($customer['last_name'] ?? ''))),
+                    'email' => trim((string) ($customer['email'] ?? '')),
+                ];
+                if ($hints['email'] === null && $customerHint['email'] !== '') {
+                    $hints['email'] = $customerHint['email'];
                 }
-                $customer = \Core\Database::getInstance()->fetchOne(
-                    'SELECT email, first_name, last_name FROM customers
-                     WHERE tenant_id = ?
-                       AND (LOWER(CONCAT(COALESCE(first_name,\'\'), \' \', COALESCE(last_name,\'\'))) = ?
-                            OR LOWER(email) LIKE ?)
-                     LIMIT 1',
-                    [$tenantId, $needle, '%' . $needle . '%']
-                );
-                if ($customer !== null) {
-                    $sources[] = 'cliente';
-                    if ($hints['email'] === null && trim((string) ($customer['email'] ?? '')) !== '') {
-                        $hints['email'] = trim((string) $customer['email']);
+                break;
+            }
+        }
+
+        foreach ($this->servers->allByTenant($tenantId) as $server) {
+            try {
+                $media = MediaServerFactory::make($server, true);
+                foreach ($media->getUsers() as $remote) {
+                    if (!$this->identityNeedleMatches($remote, $needles)) {
+                        continue;
                     }
-                    break;
+                    $matches[] = [
+                        'server_id' => (int) $server->id,
+                        'server_name' => $server->displayLabel(),
+                        'server_type' => (string) $server->type,
+                        'username' => trim((string) ($remote['username'] ?? '')),
+                        'email' => trim((string) ($remote['email'] ?? '')) ?: null,
+                        'external_id' => trim((string) ($remote['external_id'] ?? '')) ?: null,
+                        'restricted' => $remote['restricted'] ?? null,
+                    ];
+                    $sources[] = ucfirst((string) $server->type) . ' · ' . $server->displayLabel();
                 }
+            } catch (\Throwable $e) {
+                $matches[] = [
+                    'server_id' => (int) $server->id,
+                    'server_name' => $server->displayLabel(),
+                    'server_type' => (string) $server->type,
+                    'error' => $e->getMessage(),
+                ];
             }
         }
 
-        // Lista del servidor Plex/Jellyfin
-        if ((int) ($user->server_id ?? 0) > 0) {
-            $server = Server::find((int) $user->server_id);
-            if ($server !== null) {
-                try {
-                    $media = MediaServerFactory::make($server, true);
-                    foreach ($media->getUsers() as $remote) {
-                        $remoteUser = mb_strtolower(trim((string) ($remote['username'] ?? '')));
-                        $remoteEmail = mb_strtolower(trim((string) ($remote['email'] ?? '')));
-                        $match = false;
-                        foreach ($needles as $needle) {
-                            if ($needle === '') {
-                                continue;
-                            }
-                            if ($remoteUser !== '' && ($remoteUser === $needle || str_contains($remoteUser, $needle) || str_contains($needle, $remoteUser))) {
-                                $match = true;
-                                break;
-                            }
-                            if (str_contains($needle, '@') && $remoteEmail !== '' && $remoteEmail === $needle) {
-                                $match = true;
-                                break;
-                            }
-                        }
-                        if (!$match) {
-                            continue;
-                        }
-                        $sources[] = 'servidor ' . $server->type;
-                        if ($hints['username'] === null && trim((string) ($remote['username'] ?? '')) !== '') {
-                            $hints['username'] = trim((string) $remote['username']);
-                        }
-                        if ($hints['email'] === null && trim((string) ($remote['email'] ?? '')) !== '') {
-                            $hints['email'] = trim((string) $remote['email']);
-                        }
-                        if ($hints['external_id'] === null && trim((string) ($remote['external_id'] ?? '')) !== '') {
-                            $hints['external_id'] = trim((string) $remote['external_id']);
-                        }
-                        break;
-                    }
-                } catch (\Throwable) {
-                }
+        $bestMatch = $this->pickBestServerMatch($matches, (int) ($user->server_id ?? 0));
+        if ($bestMatch !== null) {
+            if ($hints['username'] === null && ($bestMatch['username'] ?? '') !== '') {
+                $hints['username'] = (string) $bestMatch['username'];
+            }
+            if ($hints['email'] === null && !empty($bestMatch['email'])) {
+                $hints['email'] = (string) $bestMatch['email'];
+            }
+            if ($hints['external_id'] === null && !empty($bestMatch['external_id'])) {
+                $hints['external_id'] = (string) $bestMatch['external_id'];
+            }
+            if ($hints['server_id'] === null && !empty($bestMatch['server_id'])) {
+                $hints['server_id'] = (int) $bestMatch['server_id'];
             }
         }
 
-        $foundAnything = false;
+        $foundAnything = $matches !== [] || $panelHint !== null || $customerHint !== null;
         foreach ($hints as $v) {
             if ($v !== null && trim((string) $v) !== '') {
                 $foundAnything = true;
@@ -294,8 +373,11 @@ final class MediaUserManagementService
         if (!$foundAnything) {
             return [
                 'success' => false,
-                'message' => 'No se encontró email ni usuario coincidente en el servidor, clientes ni registros previos.',
+                'message' => 'No se encontró coincidencia en ningún servidor Plex/Jellyfin, clientes ni registros previos del panel.',
                 'sources' => $sources,
+                'matches' => $matches,
+                'panel_hint' => $panelHint,
+                'customer_hint' => $customerHint,
             ];
         }
 
@@ -314,6 +396,10 @@ final class MediaUserManagementService
                 $user->external_id = $hints['external_id'];
                 $changed = true;
             }
+            if ($hints['server_id'] !== null && !(int) ($user->server_id ?? 0)) {
+                $user->server_id = (int) $hints['server_id'];
+                $changed = true;
+            }
             if ($hints['telegram_chat_id'] !== null && trim((string) ($user->telegram_chat_id ?? '')) === '') {
                 $user->telegram_chat_id = $hints['telegram_chat_id'];
                 $changed = true;
@@ -329,30 +415,145 @@ final class MediaUserManagementService
             }
         }
 
-        $parts = [];
-        if ($hints['email'] !== null) {
-            $parts[] = 'email: ' . $hints['email'];
-        }
-        if ($hints['username'] !== null) {
-            $parts[] = 'usuario: ' . $hints['username'];
-        }
-        if ($hints['external_id'] !== null) {
-            $parts[] = 'ID servidor: ' . $hints['external_id'];
-        }
-
         return [
             'success' => true,
-            'message' => ($applied ? 'Datos aplicados. ' : 'Encontrado: ')
-                . implode(' · ', $parts)
-                . ($sources !== [] ? ' (' . implode(', ', array_unique($sources)) . ')' : ''),
+            'message' => $this->buildIdentityDiscoveryMessage($matches, $panelHint, $customerHint, $hints, $applied),
             'email' => $hints['email'],
             'username' => $hints['username'],
             'external_id' => $hints['external_id'],
+            'server_id' => $hints['server_id'],
             'telegram_chat_id' => $hints['telegram_chat_id'],
             'expires_at' => $hints['expires_at'],
             'applied' => $applied,
             'sources' => array_values(array_unique($sources)),
+            'matches' => $matches,
+            'panel_hint' => $panelHint,
+            'customer_hint' => $customerHint,
         ];
+    }
+
+    /** @param array<string, mixed> $remote @param array<int, string> $needles */
+    private function identityNeedleMatches(array $remote, array $needles): bool
+    {
+        $remoteUser = mb_strtolower(trim((string) ($remote['username'] ?? '')));
+        $remoteEmail = mb_strtolower(trim((string) ($remote['email'] ?? '')));
+
+        foreach ($needles as $needle) {
+            if ($needle === '') {
+                continue;
+            }
+            if ($remoteUser !== '' && ($remoteUser === $needle || str_contains($remoteUser, $needle) || str_contains($needle, $remoteUser))) {
+                return true;
+            }
+            if (str_contains($needle, '@') && $remoteEmail !== '' && $remoteEmail === $needle) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<int, array<string, mixed>> $matches */
+    private function pickBestServerMatch(array $matches, int $preferredServerId): ?array
+    {
+        $valid = array_values(array_filter(
+            $matches,
+            static fn (array $m): bool => empty($m['error']) && trim((string) ($m['username'] ?? '')) !== ''
+        ));
+        if ($valid === []) {
+            return null;
+        }
+        if ($preferredServerId > 0) {
+            foreach ($valid as $match) {
+                if ((int) ($match['server_id'] ?? 0) === $preferredServerId) {
+                    return $match;
+                }
+            }
+        }
+
+        return $valid[0];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $matches
+     * @param array<string, mixed>|null $panelHint
+     * @param array<string, mixed>|null $customerHint
+     * @param array<string, mixed> $hints
+     */
+    private function buildIdentityDiscoveryMessage(
+        array $matches,
+        ?array $panelHint,
+        ?array $customerHint,
+        array $hints,
+        bool $applied
+    ): string {
+        $lines = [];
+        if ($applied) {
+            $lines[] = 'Datos aplicados a la ficha.';
+        }
+
+        $validMatches = array_values(array_filter($matches, static fn (array $m): bool => empty($m['error'])));
+        if ($validMatches !== []) {
+            $lines[] = count($validMatches) === 1
+                ? '1 coincidencia en servidores:'
+                : count($validMatches) . ' coincidencias en servidores:';
+            foreach ($validMatches as $match) {
+                $type = strtoupper((string) ($match['server_type'] ?? ''));
+                $parts = [
+                    $type . ' «' . ($match['server_name'] ?? '?') . '»',
+                    'usuario: ' . ($match['username'] ?? '—'),
+                ];
+                if (!empty($match['email'])) {
+                    $parts[] = 'email: ' . $match['email'];
+                }
+                if (!empty($match['external_id'])) {
+                    $parts[] = 'ID: ' . $match['external_id'];
+                }
+                $lines[] = '· ' . implode(' · ', $parts);
+            }
+        }
+
+        foreach (array_filter($matches, static fn (array $m): bool => !empty($m['error'])) as $err) {
+            $lines[] = '⚠ ' . ($err['server_name'] ?? 'Servidor') . ': ' . ($err['error'] ?? 'error');
+        }
+
+        if ($panelHint !== null) {
+            $ph = [];
+            if (($panelHint['username'] ?? '') !== '') {
+                $ph[] = 'usuario ' . $panelHint['username'];
+            }
+            if (($panelHint['email'] ?? '') !== '') {
+                $ph[] = 'email ' . $panelHint['email'];
+            }
+            if (($panelHint['telegram_chat_id'] ?? '') !== '') {
+                $ph[] = 'Telegram ' . $panelHint['telegram_chat_id'];
+            }
+            if ($ph !== []) {
+                $lines[] = 'Panel previo: ' . implode(', ', $ph);
+            }
+        }
+
+        if ($customerHint !== null && ($customerHint['email'] ?? '') !== '') {
+            $lines[] = 'Cliente CRM: ' . trim((string) ($customerHint['name'] ?? ''))
+                . ' · ' . $customerHint['email'];
+        }
+
+        if ($lines === []) {
+            $parts = [];
+            if ($hints['email'] !== null) {
+                $parts[] = 'email: ' . $hints['email'];
+            }
+            if ($hints['username'] !== null) {
+                $parts[] = 'usuario: ' . $hints['username'];
+            }
+            if ($hints['external_id'] !== null) {
+                $parts[] = 'ID servidor: ' . $hints['external_id'];
+            }
+
+            return ($applied ? 'Datos aplicados. ' : 'Encontrado: ') . implode(' · ', $parts);
+        }
+
+        return implode("\n", $lines);
     }
 
     /** @return array{success: bool, message: string, expires_at: string} */
@@ -373,6 +574,8 @@ final class MediaUserManagementService
 
         if ($wasInactive) {
             $this->syncServerAccess($user, disable: false);
+            $user->metaSet('access_revoked_at', null);
+            $user->save();
         }
 
         AuditService::log('media_user.days_added', 'media_user', (int) $user->id, $old, [

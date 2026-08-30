@@ -1485,6 +1485,7 @@ class MediaUserController extends Controller
                 !empty($result['success']) ? 'success' : 'warning',
                 (string) ($result['message'] ?? 'Búsqueda completada')
             );
+            Session::getInstance()->flash('identity_lookup', $result);
             $params = [];
             parse_str($query, $params);
             $params['uuid'] = $user->uuid;

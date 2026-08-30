@@ -40,7 +40,7 @@ final class CronService
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Reglas activas; servidor caído: Telegram / email / WhatsApp (diagnóstico + tipo Plex/Jellyfin + escalado 0/5/15/30 min).',
+                'description' => 'Reglas activas; caducados/suspendidos: corta acceso Plex/Jellyfin si sigue activo; servidor caído: Telegram / email / WhatsApp.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
@@ -326,8 +326,8 @@ final class CronService
             $result = $sync->sync($server);
             $out('  Server ' . $label . ': ' . ($result ? 'OK' : 'FAIL'));
             if (!$result) {
-                $fresh = $repo->find((int) $server->id) ?? $server;
-                $error = trim((string) ($fresh->last_error ?? $server->last_error ?? ''));
+                // last_error ya quedó en $server tras failSync()
+                $error = trim((string) ($server->last_error ?? ''));
                 $out('    error: ' . ($error !== '' ? $error : '(vacío)'));
                 $failures[] = ['name' => $label, 'error' => $error];
             }
@@ -343,6 +343,25 @@ final class CronService
     /** @param callable(string): void $out */
     private function runAutomation(int $tenantId, callable $out): void
     {
+        $out('Enforcing expired/suspended access...');
+        try {
+            $access = (new MediaUserAccessEnforcementService())->run($tenantId);
+            if (!empty($access['disabled'])) {
+                $out('  Skipped: deactivate_on_expiry desactivado en config.');
+            } else {
+                $out(sprintf(
+                    '  Expired access: checked=%d marked_expired=%d revoked=%d skipped=%d errors=%d',
+                    $access['checked'],
+                    $access['marked_expired'],
+                    $access['revoked'],
+                    $access['skipped'],
+                    $access['errors']
+                ));
+            }
+        } catch (\Throwable $e) {
+            $out('  Expired access enforcement failed: ' . $e->getMessage());
+        }
+
         $out('Running automation engine...');
         try {
             $result = (new AutomationEngine())->runAllWithStats($tenantId);
