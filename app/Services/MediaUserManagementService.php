@@ -101,16 +101,40 @@ final class MediaUserManagementService
             return ['success' => false, 'message' => 'Fecha de expiración no válida.', 'expires_at' => $user->expires_at];
         }
 
-        $old = ['expires_at' => $user->expires_at];
+        $old = ['expires_at' => $user->expires_at, 'status' => $user->status];
         $user->expires_at = $normalized;
+        $wasInactive = in_array($user->status, ['suspended', 'expired'], true);
+        $shouldReactivate = false;
+        if ($wasInactive && $normalized !== null) {
+            $parsed = SubscriptionPeriod::parseDate($normalized);
+            if ($parsed !== null) {
+                $today = new \DateTimeImmutable('today');
+                $exp = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed);
+                if ($exp !== false && $exp >= $today) {
+                    $user->status = 'active';
+                    $shouldReactivate = true;
+                }
+            }
+        }
         $user->save();
-        AuditService::log('media_user.expires_updated', 'media_user', (int) $user->id, $old, ['expires_at' => $normalized]);
+        AuditService::log('media_user.expires_updated', 'media_user', (int) $user->id, $old, [
+            'expires_at' => $normalized,
+            'reactivated' => $shouldReactivate,
+        ]);
+
+        if ($shouldReactivate) {
+            $this->syncServerAccess($user, disable: false);
+            $user->metaSet('access_revoked_at', null);
+            $user->save();
+        }
 
         return [
             'success' => true,
-            'message' => 'Fecha actualizada.',
+            'message' => $shouldReactivate ? 'Fecha actualizada y acceso reactivado.' : 'Fecha actualizada.',
             'expires_at' => $user->expires_at,
             'expires_date' => SubscriptionPeriod::formatForInput($user->expires_at),
+            'status' => (string) $user->status,
+            'reactivated' => $shouldReactivate,
         ];
     }
 

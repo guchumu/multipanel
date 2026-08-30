@@ -767,6 +767,16 @@ body {
     max-width: 10rem;
 }
 
+.media-users-expires-input.is-saving-expires {
+    border-color: var(--bs-warning);
+    box-shadow: 0 0 0 0.15rem rgba(var(--bs-warning-rgb), 0.25);
+}
+
+.media-users-expires-input.is-saved-expires {
+    border-color: var(--bs-success);
+    box-shadow: 0 0 0 0.15rem rgba(var(--bs-success-rgb), 0.2);
+}
+
 .media-users-telegram-input {
     min-width: 5.5rem;
     max-width: 8.5rem;

@@ -402,11 +402,11 @@ ob_start();
                     <td class="d-none d-xl-table-cell small"><?= (int) $streams ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
-                               value="<?= e($expiresValue) ?>">
+                               value="<?= e($expiresValue) ?>" data-saved-value="<?= e($expiresValue) ?>">
                     </td>
                     <td class="small text-nowrap">
                         <?php $dl = days_left_badge($u->expires_at); ?>
-                        <span class="badge <?= e($dl['class']) ?>"><?= e($dl['label']) ?></span>
+                        <span class="badge expires-days-badge <?= e($dl['class']) ?>" data-uuid="<?= e($u->uuid) ?>"><?= e($dl['label']) ?></span>
                     </td>
                     <td class="small">
                         <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="<?= e($u->uuid) ?>"

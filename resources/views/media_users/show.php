@@ -158,7 +158,7 @@ ob_start();
                 </div>
                 <div class="mb-3">
                     <label class="form-label small">Fecha expiración</label>
-                    <input type="date" id="expiresAt" class="form-control form-control-sm" value="<?= e(expires_date_input($mediaUser->expires_at)) ?>">
+                    <input type="date" id="expiresAt" class="form-control form-control-sm expires-input media-users-expires-input" value="<?= e(expires_date_input($mediaUser->expires_at)) ?>">
                 </div>
                 <div class="mb-3 d-flex flex-wrap gap-2">
                     <span class="small text-muted w-100">Sumar días:</span>

@@ -187,9 +187,9 @@
                 <td class="d-none d-xl-table-cell small">${streams}</td>
                 <td class="small">
                     <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="${escapeHtml(u.uuid)}"
-                           value="${escapeHtml(expiresDate)}">
+                           value="${escapeHtml(expiresDate)}" data-saved-value="${escapeHtml(expiresDate)}">
                 </td>
-                <td class="small text-nowrap"><span class="badge ${dl.cls}">${escapeHtml(dl.label)}</span></td>
+                <td class="small text-nowrap"><span class="badge expires-days-badge ${dl.cls}" data-uuid="${escapeHtml(u.uuid)}">${escapeHtml(dl.label)}</span></td>
                 <td class="small">
                     <input type="text" class="form-control form-control-sm telegram-input media-users-telegram-input" data-uuid="${escapeHtml(u.uuid)}"
                            value="${escapeHtml(tg)}" placeholder="Chat ID" title="Telegram Chat ID para enviar mensajes">
@@ -216,28 +216,125 @@
                 </td>
             </tr>`;
         }).join('');
+        initExpiresInputs(tbody);
     }
 
-    tbody.addEventListener('change', async (event) => {
-        const input = event.target;
-        if (!(input instanceof HTMLInputElement)) return;
+    const EXPIRES_SAVE_DELAY_MS = 1500;
+    const expiresSaveTimers = new Map();
 
-        if (input.classList.contains('expires-input')) {
-            const res = await fetch(`/media-users/${input.dataset.uuid}/expires`, {
+    function initExpiresInputs(root) {
+        root.querySelectorAll('.expires-input').forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) return;
+            if (input.dataset.savedValue === undefined) {
+                input.dataset.savedValue = input.value;
+            }
+        });
+    }
+
+    function updateExpiresDaysBadge(uuid, expiresAt) {
+        const badge = document.querySelector(`.expires-days-badge[data-uuid="${uuid}"]`);
+        if (!badge) return;
+        const dl = daysLeftBadge(expiresAt);
+        badge.className = `badge expires-days-badge ${dl.cls}`;
+        badge.textContent = dl.label;
+    }
+
+    function scheduleExpiresSave(input) {
+        const uuid = input.dataset.uuid;
+        if (!uuid) return;
+        const existing = expiresSaveTimers.get(uuid);
+        if (existing?.timer) {
+            clearTimeout(existing.timer);
+        }
+        input.classList.add('is-saving-expires');
+        input.classList.remove('is-saved-expires');
+        input.title = 'Guardando en un momento…';
+        const timer = setTimeout(() => {
+            flushExpiresSave(input);
+        }, EXPIRES_SAVE_DELAY_MS);
+        expiresSaveTimers.set(uuid, { timer, input });
+    }
+
+    async function flushExpiresSave(input) {
+        const uuid = input.dataset.uuid;
+        if (!uuid) return;
+
+        const pending = expiresSaveTimers.get(uuid);
+        if (pending?.timer) {
+            clearTimeout(pending.timer);
+        }
+        expiresSaveTimers.delete(uuid);
+
+        const newVal = input.value;
+        const savedVal = input.dataset.savedValue ?? '';
+        if (newVal === savedVal) {
+            input.classList.remove('is-saving-expires');
+            input.title = '';
+            return;
+        }
+
+        if (newVal === '' && savedVal !== '') {
+            if (!confirm('¿Quitar la fecha de expiración de este usuario?')) {
+                input.value = savedVal;
+                input.classList.remove('is-saving-expires');
+                input.title = '';
+                return;
+            }
+        }
+
+        input.classList.add('is-saving-expires');
+        input.title = 'Guardando…';
+        input.disabled = true;
+
+        try {
+            const res = await fetch(`/media-users/${uuid}/expires`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
-                body: JSON.stringify({ expires_at: input.value }),
+                body: JSON.stringify({ expires_at: newVal }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success === false) {
                 alert(data.message || 'Error al guardar fecha');
+                input.value = savedVal;
                 return;
             }
-            location.reload();
+
+            const stored = (typeof data.expires_date === 'string' && data.expires_date)
+                ? data.expires_date
+                : newVal;
+            input.value = stored;
+            input.dataset.savedValue = stored;
+            updateExpiresDaysBadge(uuid, stored);
+            input.classList.remove('is-saving-expires');
+            input.classList.add('is-saved-expires');
+            input.title = data.reactivated ? 'Guardado · acceso reactivado' : 'Guardado';
+            setTimeout(() => {
+                input.classList.remove('is-saved-expires');
+                if (input.title === 'Guardado' || input.title === 'Guardado · acceso reactivado') {
+                    input.title = '';
+                }
+            }, 2500);
+        } catch (err) {
+            alert('Error de red al guardar fecha: ' + err.message);
+            input.value = savedVal;
+        } finally {
+            input.disabled = false;
+            input.classList.remove('is-saving-expires');
+        }
+    }
+
+    initExpiresInputs(tbody);
+
+    tbody.addEventListener('change', async (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement)) return;
+
+        if (input.classList.contains('expires-input')) {
+            scheduleExpiresSave(input);
             return;
         }
 
@@ -260,10 +357,24 @@
         }
     });
 
+    tbody.addEventListener('focusout', (event) => {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement) || !input.classList.contains('expires-input')) {
+            return;
+        }
+        const uuid = input.dataset.uuid;
+        if (!uuid) return;
+        const pending = expiresSaveTimers.get(uuid);
+        if (pending?.input === input) {
+            flushExpiresSave(input);
+        }
+    });
+
     async function runSearch() {
         const q = searchInput.value.trim();
         if (q.length < 2) {
             tbody.innerHTML = initialHtml;
+            initExpiresInputs(tbody);
             meta?.classList.add('d-none');
             if (countSummary) countSummary.innerHTML = initialCountHtml;
             return;

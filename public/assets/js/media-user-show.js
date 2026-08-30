@@ -71,18 +71,55 @@
         }
     });
 
-    document.getElementById('expiresAt')?.addEventListener('change', async (e) => {
-        try {
-            const data = await post(`/media-users/${uuid}/expires`, { expires_at: e.target.value });
-            if (data.success && data.expires_date) {
-                e.target.value = data.expires_date;
+    const expiresInput = document.getElementById('expiresAt');
+    if (expiresInput) {
+        expiresInput.dataset.savedValue = expiresInput.value;
+        let expiresTimer = null;
+        const saveExpires = async () => {
+            const savedVal = expiresInput.dataset.savedValue ?? '';
+            const newVal = expiresInput.value;
+            if (newVal === savedVal) {
+                expiresInput.classList.remove('is-saving-expires');
+                return;
             }
-            if (data.success === false) throw new Error(data.message || 'Error');
-            toast('Fecha guardada');
-        } catch (err) {
-            toast(err.message);
-        }
-    });
+            if (newVal === '' && savedVal !== '' && !confirm('¿Quitar la fecha de expiración?')) {
+                expiresInput.value = savedVal;
+                expiresInput.classList.remove('is-saving-expires');
+                return;
+            }
+            expiresInput.classList.add('is-saving-expires');
+            expiresInput.disabled = true;
+            try {
+                const data = await post(`/media-users/${uuid}/expires`, { expires_at: newVal });
+                if (data.success === false) throw new Error(data.message || 'Error');
+                const stored = data.expires_date || newVal;
+                expiresInput.value = stored;
+                expiresInput.dataset.savedValue = stored;
+                expiresInput.classList.remove('is-saving-expires');
+                expiresInput.classList.add('is-saved-expires');
+                toast(data.reactivated ? 'Fecha guardada · acceso reactivado' : 'Fecha guardada');
+                setTimeout(() => expiresInput.classList.remove('is-saved-expires'), 2500);
+            } catch (err) {
+                expiresInput.value = savedVal;
+                toast(err.message);
+            } finally {
+                expiresInput.disabled = false;
+                expiresInput.classList.remove('is-saving-expires');
+            }
+        };
+        expiresInput.addEventListener('change', () => {
+            clearTimeout(expiresTimer);
+            expiresInput.classList.add('is-saving-expires');
+            expiresTimer = setTimeout(saveExpires, 1500);
+        });
+        expiresInput.addEventListener('focusout', () => {
+            if (expiresTimer) {
+                clearTimeout(expiresTimer);
+                expiresTimer = null;
+                saveExpires();
+            }
+        });
+    }
 
     document.getElementById('userNotes')?.addEventListener('change', async (e) => {
         try {
