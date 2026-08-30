@@ -153,6 +153,7 @@ ob_start();
             <div class="btn-group btn-group-sm flex-wrap">
                 <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= !$currentStatus && $currentOnServer === null ? 'active' : '' ?>">Todos</a>
                 <a href="/media-users<?= e($withFilters(['status' => 'active', 'on_server' => null])) ?>" class="btn btn-outline-success <?= $currentStatus === 'active' ? 'active' : '' ?>">Activos</a>
+                <a href="/media-users<?= e($withFilters(['status' => 'expired', 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'expired' ? 'active' : '' ?>">Caducados</a>
                 <a href="/media-users<?= e($withFilters(['status' => 'suspended', 'on_server' => null])) ?>" class="btn btn-outline-warning <?= $currentStatus === 'suspended' ? 'active' : '' ?>">Suspendidos</a>
                 <a href="/media-users<?= e($withFilters(['status' => 'pending', 'on_server' => null])) ?>" class="btn btn-outline-secondary <?= $currentStatus === 'pending' ? 'active' : '' ?>">Pendientes</a>
                 <a href="/media-users<?= e($withFilters(['status' => null, 'on_server' => false])) ?>" class="btn btn-outline-danger <?= $currentOnServer === false ? 'active' : '' ?>">Fuera del servidor</a>
@@ -299,6 +300,11 @@ ob_start();
                     $streams = ($u->max_streams !== null && $u->max_streams !== '')
                         ? max(1, min(50, (int) $u->max_streams))
                         : $defaultMaxStreams;
+                    $st = media_user_list_status($u);
+                    $dbStatus = (string) $u->status;
+                    $isActive = $dbStatus === 'active';
+                    $isExpiredStatus = $dbStatus === 'expired';
+                    $expiresValue = expires_date_input($u->expires_at);
                 ?>
                 <tr>
                     <td class="small text-muted media-users-col-id"><?= (int) $u->id ?></td>
@@ -320,10 +326,10 @@ ob_start();
                     <td>
                         <div class="dropdown">
                             <button type="button"
-                                    class="badge <?= e($statusBadgeClass((string) $u->status)) ?> border-0 dropdown-toggle media-users-status-toggle"
+                                    class="badge <?= e($st['class']) ?> border-0 dropdown-toggle media-users-status-toggle"
                                     data-bs-toggle="dropdown" aria-expanded="false"
-                                    title="Actualizar / renovar o cambiar estado">
-                                <?= e($statusLabel((string) $u->status)) ?>
+                                    title="<?= e($st['title'] !== '' ? $st['title'] : 'Actualizar / renovar o cambiar estado') ?>">
+                                <?= e($st['label']) ?>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-start shadow-sm">
                                 <li><h6 class="dropdown-header">Actualizar / renovar</h6></li>
@@ -343,14 +349,7 @@ ob_start();
                                     </button>
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
-                                <?php if ($u->status === 'active'): ?>
-                                <li>
-                                    <button type="button" class="dropdown-item text-warning"
-                                            onclick="suspendUser('<?= e($u->uuid) ?>')">
-                                        Pausar acceso
-                                    </button>
-                                </li>
-                                <?php else: ?>
+                                <?php if (!$isActive && !$isExpiredStatus): ?>
                                 <li>
                                     <button type="button" class="dropdown-item text-success"
                                             onclick="activateUser('<?= e($u->uuid) ?>')">
@@ -358,6 +357,34 @@ ob_start();
                                     </button>
                                 </li>
                                 <?php endif; ?>
+                                <?php if ($isActive): ?>
+                                <li>
+                                    <button type="button" class="dropdown-item text-warning"
+                                            onclick="suspendUser('<?= e($u->uuid) ?>')">
+                                        Pausar acceso
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item text-secondary"
+                                            onclick="expireUser('<?= e($u->uuid) ?>')">
+                                        Marcar caducado
+                                    </button>
+                                </li>
+                                <?php elseif (!$isExpiredStatus): ?>
+                                <li>
+                                    <button type="button" class="dropdown-item text-secondary"
+                                            onclick="expireUser('<?= e($u->uuid) ?>')">
+                                        Marcar caducado
+                                    </button>
+                                </li>
+                                <?php endif; ?>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <button type="button" class="dropdown-item text-danger"
+                                            onclick="removeAndDeleteUser('<?= e($u->uuid) ?>')">
+                                        Quitar del servidor y eliminar del panel
+                                    </button>
+                                </li>
                                 <li>
                                     <a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>">Abrir ficha</a>
                                 </li>
@@ -375,7 +402,7 @@ ob_start();
                     <td class="d-none d-xl-table-cell small"><?= (int) $streams ?></td>
                     <td class="small">
                         <input type="date" class="form-control form-control-sm expires-input media-users-expires-input" data-uuid="<?= e($u->uuid) ?>"
-                               value="<?= e($u->expires_at ? substr((string) $u->expires_at, 0, 10) : '') ?>">
+                               value="<?= e($expiresValue) ?>">
                     </td>
                     <td class="small text-nowrap">
                         <?php $dl = days_left_badge($u->expires_at); ?>
@@ -416,19 +443,15 @@ ob_start();
                                     </li>
                                 </ul>
                             </div>
-                            <?php if ($u->status === 'active'): ?>
+                            <?php if ($isActive): ?>
                             <button class="btn btn-outline-warning" onclick="suspendUser('<?= e($u->uuid) ?>')" title="Pausar"><i class="bi bi-pause"></i></button>
+                            <button class="btn btn-outline-secondary" onclick="expireUser('<?= e($u->uuid) ?>')" title="Marcar caducado"><i class="bi bi-hourglass-bottom"></i></button>
+                            <?php elseif (!$isExpiredStatus): ?>
+                            <button class="btn btn-outline-success" onclick="activateUser('<?= e($u->uuid) ?>')" title="Activar"><i class="bi bi-play"></i></button>
                             <?php else: ?>
                             <button class="btn btn-outline-success" onclick="activateUser('<?= e($u->uuid) ?>')" title="Activar"><i class="bi bi-play"></i></button>
                             <?php endif; ?>
-                            <?php if (isset($u->on_server) && (int) $u->on_server === 0): ?>
-                            <form method="POST" action="/media-users/<?= e($u->uuid) ?>" class="d-inline"
-                                  onsubmit="return confirm('¿Eliminar del panel? No toca Plex/Jellyfin.');">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="_method" value="DELETE">
-                                <button type="submit" class="btn btn-outline-danger" title="Eliminar del panel"><i class="bi bi-trash"></i></button>
-                            </form>
-                            <?php endif; ?>
+                            <button class="btn btn-outline-danger" onclick="removeAndDeleteUser('<?= e($u->uuid) ?>')" title="Quitar del servidor y eliminar del panel"><i class="bi bi-trash"></i></button>
                         </div>
                     </td>
                 </tr>
@@ -519,6 +542,12 @@ function suspendUser(uuid) {
 }
 function activateUser(uuid) {
     toggleUserStatus(uuid, 'activate');
+}
+function expireUser(uuid) {
+    toggleUserStatus(uuid, 'expire', '¿Marcar como caducado? Se cortará el acceso en Plex/Jellyfin.');
+}
+function removeAndDeleteUser(uuid) {
+    toggleUserStatus(uuid, 'remove-and-delete', '¿Quitar del servidor Plex/Jellyfin y eliminar del panel? Esta acción no se puede deshacer desde aquí.');
 }
 function focusExpiresInput(uuid) {
     const input = document.querySelector(`.expires-input[data-uuid="${uuid}"]`);

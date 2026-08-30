@@ -218,8 +218,8 @@ if (!function_exists('days_left')) {
             return null;
         }
 
-        $expiresAt = trim((string) $expiresAt);
-        if ($expiresAt === '' || str_starts_with($expiresAt, '0000-00-00')) {
+        $parsed = \App\Services\SubscriptionPeriod::parseDate(is_scalar($expiresAt) ? (string) $expiresAt : null);
+        if ($parsed === null) {
             return null;
         }
 
@@ -227,12 +227,60 @@ if (!function_exists('days_left')) {
         $today = new DateTimeImmutable('today', $tz);
 
         try {
-            $expires = new DateTimeImmutable(substr($expiresAt, 0, 10), $tz);
+            $expires = new DateTimeImmutable($parsed, $tz);
         } catch (\Exception) {
             return null;
         }
 
         return (int) floor(($expires->getTimestamp() - $today->getTimestamp()) / 86400);
+    }
+}
+
+if (!function_exists('media_user_list_status')) {
+    /**
+     * Estado mostrado en listados (marca caducado si la fecha pasó aunque el status siga active).
+     *
+     * @return array{key: string, label: string, class: string, title: string}
+     */
+    function media_user_list_status(object $user): array
+    {
+        $status = strtolower(trim((string) ($user->status ?? '')));
+        $labels = [
+            'active' => ['Activo', 'bg-success', ''],
+            'suspended' => ['Suspendido', 'bg-warning text-dark', ''],
+            'expired' => ['Caducado', 'bg-secondary', ''],
+            'pending' => ['Pendiente', 'bg-secondary', ''],
+            'invited' => ['Invitado', 'bg-info text-dark', ''],
+            'blocked' => ['Bloqueado', 'bg-danger', ''],
+        ];
+
+        if (in_array($status, ['active', 'invited'], true)) {
+            $days = days_left($user->expires_at ?? null);
+            if ($days !== null && $days < 0) {
+                return [
+                    'key' => 'expired',
+                    'label' => 'Caducado',
+                    'class' => 'bg-secondary',
+                    'title' => 'Fecha de expiración pasada (estado en BD: ' . ($labels[$status][0] ?? $status) . ')',
+                ];
+            }
+        }
+
+        if (isset($labels[$status])) {
+            return [
+                'key' => $status,
+                'label' => $labels[$status][0],
+                'class' => $labels[$status][1],
+                'title' => $labels[$status][2],
+            ];
+        }
+
+        return [
+            'key' => $status,
+            'label' => $status !== '' ? ucfirst($status) : '—',
+            'class' => 'bg-light text-dark border',
+            'title' => '',
+        ];
     }
 }
 

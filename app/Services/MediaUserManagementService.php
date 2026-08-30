@@ -816,8 +816,33 @@ final class MediaUserManagementService
         ];
     }
 
-    /**
-     * Aplica un pago confirmado (Stripe, etc.) a un usuario media: suma los días
+    /** Quita del servidor (si aplica) y elimina la ficha del panel (soft-delete). */
+    public function removeFromPanelAfterServer(MediaUser $user): array
+    {
+        $serverNote = 'Sin servidor asociado.';
+        if ((int) ($user->server_id ?? 0) > 0) {
+            $remove = $this->removeFromServer($user);
+            $serverNote = !empty($remove['removed'])
+                ? 'Eliminado del servidor Plex/Jellyfin.'
+                : ('Servidor: ' . (string) ($remove['message'] ?? 'no se pudo quitar') . '.');
+            $fresh = $this->users->findByUuid((string) $user->uuid);
+            if ($fresh !== null) {
+                $user = $fresh;
+            }
+        }
+
+        $user->deleted_at = now()->format('Y-m-d H:i:s');
+        $user->save();
+        AuditService::log('media_user.deleted', 'media_user', (int) $user->id, null, [
+            'via' => 'remove_from_panel_after_server',
+            'server_note' => $serverNote,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => $serverNote . ' Eliminado del panel.',
+        ];
+    }
      * pagados, reactiva el acceso si estaba suspendido/caducado y avisa por Telegram.
      *
      * @return array{success: bool, message: string, expires_at: string}

@@ -36,7 +36,9 @@
         switch (status) {
             case 'active': return 'bg-success';
             case 'suspended': return 'bg-warning text-dark';
+            case 'expired': return 'bg-secondary';
             case 'pending': return 'bg-secondary';
+            case 'invited': return 'bg-info text-dark';
             default: return 'bg-light text-dark border';
         }
     }
@@ -45,11 +47,23 @@
         switch (status) {
             case 'active': return 'Activo';
             case 'suspended': return 'Suspendido';
+            case 'expired': return 'Caducado';
             case 'pending': return 'Pendiente';
             case 'invited': return 'Invitado';
             case 'inactive': return 'Inactivo';
             default: return status;
         }
+    }
+
+    function effectiveStatus(user) {
+        const dbStatus = String(user.status || '');
+        if ((dbStatus === 'active' || dbStatus === 'invited') && user.expires_at) {
+            const dl = daysLeftBadge(user.expires_at);
+            if (dl.label.startsWith('Caducó')) {
+                return { key: 'expired', label: 'Caducado', cls: 'bg-secondary' };
+            }
+        }
+        return { key: dbStatus, label: statusLabel(dbStatus), cls: statusBadgeClass(dbStatus) };
     }
 
     function membershipBadge(onServer) {
@@ -62,12 +76,22 @@
         return { label: 'No está en el servidor', cls: 'bg-danger' };
     }
 
+    function normalizeExpiresDate(value) {
+        if (!value) return '';
+        const datePart = String(value).slice(0, 10);
+        const m = datePart.match(/^(\d{1,4})-(\d{2})-(\d{2})$/);
+        if (!m) return datePart;
+        let y = Number(m[1]);
+        if (y >= 0 && y < 100) y += 2000;
+        if (y >= 100 && y < 1000) y += 2000;
+        return `${String(y).padStart(4, '0')}-${m[2]}-${m[3]}`;
+    }
+
     function daysLeftBadge(expiresAt) {
         if (!expiresAt) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        // Acepta "YYYY-MM-DD" o datetime completo "YYYY-MM-DD HH:MM:SS"
-        const datePart = String(expiresAt).slice(0, 10);
+        const datePart = normalizeExpiresDate(expiresAt);
         const expires = new Date(datePart + 'T00:00:00');
         if (Number.isNaN(expires.getTime())) return { label: 'Sin fecha', cls: 'bg-light text-dark border' };
         const days = Math.floor((expires.getTime() - today.getTime()) / 86400000);
@@ -97,32 +121,38 @@
         }
 
         tbody.innerHTML = users.map((u) => {
-            const active = u.status === 'active';
-            const serverBadge = u.server_name
-                ? `${serviceBadgeHtml(u.server_type)} <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
-                : (serviceBadgeHtml(u.server_type) || '<span class="text-muted">—</span>');
-            const actionBtn = active
-                ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')" title="Pausar"><i class="bi bi-pause"></i></button>`
+            const dbStatus = String(u.status || '');
+            const isActive = dbStatus === 'active';
+            const isExpiredStatus = dbStatus === 'expired';
+            const st = effectiveStatus(u);
+            const actionBtns = isActive
+                ? `<button class="btn btn-outline-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')" title="Pausar"><i class="bi bi-pause"></i></button>
+                   <button class="btn btn-outline-secondary" onclick="expireUser('${escapeHtml(u.uuid)}')" title="Marcar caducado"><i class="bi bi-hourglass-bottom"></i></button>`
                 : `<button class="btn btn-outline-success" onclick="activateUser('${escapeHtml(u.uuid)}')" title="Activar"><i class="bi bi-play"></i></button>`;
-            const statusMenu = active
-                ? `<li><button type="button" class="dropdown-item text-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')">Pausar acceso</button></li>`
-                : `<li><button type="button" class="dropdown-item text-success" onclick="activateUser('${escapeHtml(u.uuid)}')">Activar acceso</button></li>`;
+            const statusMenu = [];
+            if (!isActive && !isExpiredStatus) {
+                statusMenu.push(`<li><button type="button" class="dropdown-item text-success" onclick="activateUser('${escapeHtml(u.uuid)}')">Activar acceso</button></li>`);
+            }
+            if (isActive) {
+                statusMenu.push(`<li><button type="button" class="dropdown-item text-warning" onclick="suspendUser('${escapeHtml(u.uuid)}')">Pausar acceso</button></li>`);
+                statusMenu.push(`<li><button type="button" class="dropdown-item text-secondary" onclick="expireUser('${escapeHtml(u.uuid)}')">Marcar caducado</button></li>`);
+            } else if (!isExpiredStatus) {
+                statusMenu.push(`<li><button type="button" class="dropdown-item text-secondary" onclick="expireUser('${escapeHtml(u.uuid)}')">Marcar caducado</button></li>`);
+            }
+            statusMenu.push(`<li><hr class="dropdown-divider"></li>`);
+            statusMenu.push(`<li><button type="button" class="dropdown-item text-danger" onclick="removeAndDeleteUser('${escapeHtml(u.uuid)}')">Quitar del servidor y eliminar del panel</button></li>`);
             const renewItems = [7, 15, 30, 90, 365].map((d) =>
                 `<li><button type="button" class="dropdown-item btn-quick-renew" data-uuid="${escapeHtml(u.uuid)}" data-days="${d}">+${d} días</button></li>`
             ).join('');
             const expiresDate = u.expires_at ? String(u.expires_at).slice(0, 10) : '';
-            const dl = daysLeftBadge(expiresDate);
+            const dl = daysLeftBadge(expiresDate || u.expires_at);
             const mb = membershipBadge(u.on_server);
             const username = escapeHtml(u.display_name || u.username || '');
             const tg = normalizeTelegram(u.telegram_chat_id);
             const streams = Number(u.max_streams || 0);
-            const deleteBtn = Number(u.on_server) === 0
-                ? `<form method="POST" action="/media-users/${escapeHtml(u.uuid)}" class="d-inline" onsubmit="return confirm('¿Eliminar del panel? No toca Plex/Jellyfin.');">
-                    <input type="hidden" name="_token" value="${escapeHtml(csrf)}">
-                    <input type="hidden" name="_method" value="DELETE">
-                    <button type="submit" class="btn btn-outline-danger" title="Eliminar del panel"><i class="bi bi-trash"></i></button>
-                   </form>`
-                : '';
+            const serverBadge = u.server_name
+                ? `${serviceBadgeHtml(u.server_type)} <span class="badge bg-light text-dark border text-truncate d-inline-block media-users-server-badge">${escapeHtml(u.server_name)}</span>`
+                : (serviceBadgeHtml(u.server_type) || '<span class="text-muted">—</span>');
 
             return `<tr>
                 <td class="small text-muted media-users-col-id">${Number(u.id || 0)}</td>
@@ -134,10 +164,10 @@
                 <td class="small d-none d-xl-table-cell">${serverBadge}</td>
                 <td>
                     <div class="dropdown">
-                        <button type="button" class="badge ${statusBadgeClass(u.status)} border-0 dropdown-toggle media-users-status-toggle"
+                        <button type="button" class="badge ${st.cls} border-0 dropdown-toggle media-users-status-toggle"
                                 data-bs-toggle="dropdown" aria-expanded="false"
                                 title="Actualizar / renovar o cambiar estado">
-                            ${escapeHtml(statusLabel(u.status))}
+                            ${escapeHtml(st.label)}
                         </button>
                         <ul class="dropdown-menu dropdown-menu-start shadow-sm">
                             <li><h6 class="dropdown-header">Actualizar / renovar</h6></li>
@@ -145,7 +175,7 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><button type="button" class="dropdown-item" onclick="focusExpiresInput('${escapeHtml(u.uuid)}')">Cambiar fecha…</button></li>
                             <li><hr class="dropdown-divider"></li>
-                            ${statusMenu}
+                            ${statusMenu.join('')}
                             <li><a class="dropdown-item" href="/media-users/${escapeHtml(u.uuid)}">Abrir ficha</a></li>
                             <li><a class="dropdown-item" href="/media-users/${escapeHtml(u.uuid)}/messages">Mensajes</a></li>
                         </ul>
@@ -180,8 +210,8 @@
                                 <li><button type="button" class="dropdown-item" onclick="focusExpiresInput('${escapeHtml(u.uuid)}')">Cambiar fecha…</button></li>
                             </ul>
                         </div>
-                        ${actionBtn}
-                        ${deleteBtn}
+                        ${actionBtns}
+                        <button class="btn btn-outline-danger" onclick="removeAndDeleteUser('${escapeHtml(u.uuid)}')" title="Quitar del servidor y eliminar del panel"><i class="bi bi-trash"></i></button>
                     </div>
                 </td>
             </tr>`;
@@ -197,11 +227,17 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                 },
                 body: JSON.stringify({ expires_at: input.value }),
             });
-            if (!res.ok) alert('Error al guardar fecha');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                alert(data.message || 'Error al guardar fecha');
+                return;
+            }
+            location.reload();
             return;
         }
 

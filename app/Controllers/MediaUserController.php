@@ -641,7 +641,7 @@ class MediaUserController extends Controller
                         'max_streams' => $streamLimits->resolveLimitForUser($tenantId, $u->max_streams ?? null),
                         'max_streams_raw' => $u->max_streams,
                         'default_max_streams' => $defaultMaxStreams,
-                        'expires_at' => $u->expires_at ? substr((string) $u->expires_at, 0, 10) : '',
+                        'expires_at' => expires_date_input($u->expires_at),
                         'telegram_chat_id' => $tg,
                     ];
                 }, $users),
@@ -839,6 +839,30 @@ class MediaUserController extends Controller
         }
 
         $result = $this->management->activate($user);
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    public function expire(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['error' => 'Usuario no encontrado'], 404);
+        }
+
+        $result = $this->management->updateStatus($user, 'expired');
+
+        return $this->json($result, !empty($result['success']) ? 200 : 422);
+    }
+
+    public function removeAndDelete(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $result = $this->management->removeFromPanelAfterServer($user);
 
         return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
