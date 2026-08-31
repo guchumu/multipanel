@@ -114,8 +114,6 @@ final class TelegramChannel implements NotificationChannelInterface
         ?string $sandboxNote = null,
         ?string $parseModeOverride = null,
     ): array {
-        $hasUrl = self::containsHttpUrl($title) || self::containsHttpUrl($message);
-
         if ($parseModeOverride === '') {
             $text = $title . "\n\n" . $message;
             if ($sandboxNote !== null && $sandboxNote !== '') {
@@ -125,22 +123,23 @@ final class TelegramChannel implements NotificationChannelInterface
             return ['text' => $text, 'parse_mode' => null];
         }
 
-        if ($parseModeOverride === 'HTML' || ($parseModeOverride === null && $hasUrl)) {
-            $text = '<b>' . self::escapeHtml($title) . "</b>\n\n" . self::linkifyHtml($message);
+        if ($parseModeOverride === 'Markdown') {
+            $body = AdminMessageFormat::normalizeSpacing($message);
+            $text = '*' . $title . "*\n\n" . $body;
             if ($sandboxNote !== null && $sandboxNote !== '') {
-                $text .= "\n\n<i>" . self::escapeHtml($sandboxNote) . '</i>';
+                $text .= "\n\n_[" . $sandboxNote . ']_';
             }
 
-            return ['text' => $text, 'parse_mode' => 'HTML'];
+            return ['text' => $text, 'parse_mode' => 'Markdown'];
         }
 
-        // Markdown (legacy / mensajes sin URL)
-        $text = '*' . $title . "*\n\n" . $message;
+        $text = '<b>' . self::escapeHtml($title) . "</b>\n\n"
+            . AdminMessageFormat::toTelegramHtml($message);
         if ($sandboxNote !== null && $sandboxNote !== '') {
-            $text .= "\n\n_[" . $sandboxNote . ']_';
+            $text .= "\n\n<i>" . self::escapeHtml($sandboxNote) . '</i>';
         }
 
-        return ['text' => $text, 'parse_mode' => 'Markdown'];
+        return ['text' => $text, 'parse_mode' => 'HTML'];
     }
 
     public static function containsHttpUrl(string $text): bool

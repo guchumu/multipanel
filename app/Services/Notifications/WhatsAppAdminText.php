@@ -26,7 +26,8 @@ final class WhatsAppAdminText
         };
         $title = trim($title) !== '' ? trim($title) : 'Aviso MultiPanel';
         $preview = "{$icon} {$title} · {$when}";
-        $body = '*' . $title . "*\n" . $when . "\n\n" . trim($message);
+        $bodyMessage = AdminMessageFormat::normalizeSpacing(trim($message));
+        $body = '*' . $title . "*\n_" . $when . "_\n\n" . $bodyMessage;
 
         return $preview . "\n\n" . $body;
     }

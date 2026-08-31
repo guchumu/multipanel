@@ -379,46 +379,46 @@ final class ServerDownAlertService
         $sinceLocal = $firstSeen->setTimezone($tz)->format('d/m/Y H:i');
 
         $label = $server->displayLabel();
-        $lines = [];
-        $lines[] = 'El servidor "' . $label . '" no responde.';
-        $lines[] = 'Tipo: ' . $server->typeLabel();
+        $intro = ['El servidor «' . $label . '» no responde.', AdminMessageFormat::label('Tipo', $server->typeLabel())];
         if ($escalationLevel > 0) {
-            $lines[] = "⚠️ Sigue caído desde {$sinceLocal} ({$elapsedMin} min). Escalado #{$escalationLevel} (≥ {$requiredMin} min).";
+            $intro[] = "⚠️ Sigue caído desde {$sinceLocal} ({$elapsedMin} min).";
+            $intro[] = AdminMessageFormat::label('Escalado', "#{$escalationLevel} (≥ {$requiredMin} min)");
         } else {
-            $lines[] = "Detectado a las {$sinceLocal}.";
+            $intro[] = AdminMessageFormat::label('Detectado', $sinceLocal);
         }
-        $lines[] = '';
-        $lines[] = '— Diagnóstico —';
-        $lines[] = 'URL: ' . ($diagnosis['configured_url'] ?? '—');
-        $lines[] = 'Host: ' . (($diagnosis['host'] ?? '') !== '' ? $diagnosis['host'] : '—');
+
+        $diag = [
+            AdminMessageFormat::label('URL', (string) ($diagnosis['configured_url'] ?? '—')),
+            AdminMessageFormat::label('Host', (($diagnosis['host'] ?? '') !== '' ? (string) $diagnosis['host'] : '—')),
+        ];
         $dns = $diagnosis['dns_ok'];
         if ($dns === true) {
-            $lines[] = 'DNS: OK' . (!empty($diagnosis['resolved_ip']) ? ' → ' . $diagnosis['resolved_ip'] : '');
+            $diag[] = AdminMessageFormat::label('DNS', 'OK' . (!empty($diagnosis['resolved_ip']) ? ' → ' . $diagnosis['resolved_ip'] : ''));
         } elseif ($dns === false) {
-            $lines[] = 'DNS: FALLÓ (no resuelve)';
+            $diag[] = AdminMessageFormat::label('DNS', 'FALLÓ (no resuelve)');
         } else {
-            $lines[] = 'DNS: n/d';
+            $diag[] = AdminMessageFormat::label('DNS', 'n/d');
         }
-        $lines[] = 'HTTP alcanzable: ' . (!empty($diagnosis['reachable']) ? 'sí' : 'no');
-        $lines[] = 'Status code: ' . ($diagnosis['status_code'] !== null ? (string) $diagnosis['status_code'] : '—');
+        $diag[] = AdminMessageFormat::label('HTTP alcanzable', !empty($diagnosis['reachable']) ? 'sí' : 'no');
+        $diag[] = AdminMessageFormat::label('Status code', $diagnosis['status_code'] !== null ? (string) $diagnosis['status_code'] : '—');
         if ($diagnosis['latency_ms'] !== null) {
-            $lines[] = 'Latencia: ' . $diagnosis['latency_ms'] . ' ms';
+            $diag[] = AdminMessageFormat::label('Latencia', $diagnosis['latency_ms'] . ' ms');
         }
         if (!empty($diagnosis['error_class'])) {
-            $lines[] = 'Tipo error: ' . $diagnosis['error_class'];
+            $diag[] = AdminMessageFormat::label('Tipo error', (string) $diagnosis['error_class']);
         }
         if (!empty($diagnosis['error'])) {
-            $lines[] = 'Error probe: ' . $diagnosis['error'];
+            $diag[] = AdminMessageFormat::label('Error probe', (string) $diagnosis['error']);
         }
         $lastError = trim((string) ($diagnosis['last_error'] ?? ''));
         if ($lastError !== '') {
-            $lines[] = 'last_error (sync): ' . $lastError;
+            $diag[] = AdminMessageFormat::label('last_error (sync)', $lastError);
         }
         $lastCheck = trim((string) ($diagnosis['last_check_at'] ?? ''));
         if ($lastCheck !== '') {
-            $lines[] = 'last_check_at: ' . $lastCheck;
+            $diag[] = AdminMessageFormat::label('last_check_at', $lastCheck);
         }
-        $lines[] = '';
+
         $channelBits = [];
         if ($this->alerts->telegramNotifyServerDown((int) $server->tenant_id)) {
             $channelBits[] = 'Telegram';
@@ -430,8 +430,11 @@ final class ServerDownAlertService
             && $this->alerts->whatsappConfigured((int) $server->tenant_id)) {
             $channelBits[] = 'WhatsApp';
         }
-        $lines[] = 'Canales: ' . ($channelBits !== [] ? implode(' + ', $channelBits) : 'ninguno');
 
-        return implode("\n", $lines);
+        return AdminMessageFormat::compose([
+            implode("\n", $intro),
+            AdminMessageFormat::title('Diagnóstico') . "\n" . implode("\n", $diag),
+            AdminMessageFormat::label('Canales', $channelBits !== [] ? implode(' + ', $channelBits) : 'ninguno'),
+        ]);
     }
 }

@@ -157,13 +157,26 @@ final class AdminCriticalAlertService
         $detailLines = [];
         foreach ($rows as $row) {
             $err = $row['error'] !== '' ? $row['error'] : 'sin detalle (revisa Servidores → last_error)';
-            $detailLines[] = "• {$row['name']}: {$err}";
+            $detailLines[] = AdminMessageFormat::block($row['name'], [$err]);
         }
-        $details = implode("\n", $detailLines);
+        $details = AdminMessageFormat::bullets($detailLines);
 
         $body = $count === 1
-            ? "El sync del servidor \"{$list}\" ha fallado.\n\nMotivo:\n{$details}\n\nNota: si hay gente viendo, Plex puede seguir activo en la red local; el panel no alcanzó la API de administración (URL / token / timeout)."
-            : "Han fallado {$count} servidores en el sync:\n{$details}\n\nNota: el sync del panel no es lo mismo que el visionado de los clientes.";
+            ? AdminMessageFormat::compose([
+                "El sync del servidor «{$list}» ha fallado.",
+                AdminMessageFormat::label('Motivo', $details),
+                AdminMessageFormat::block('Nota', [
+                    'Si hay gente viendo, Plex puede seguir activo en la red local.',
+                    'El panel no alcanzó la API de administración (URL, token o timeout).',
+                ]),
+            ])
+            : AdminMessageFormat::compose([
+                "Han fallado {$count} servidores en el sync:",
+                $details,
+                AdminMessageFormat::block('Nota', [
+                    'El sync del panel no es lo mismo que el visionado de los clientes.',
+                ]),
+            ]);
 
         return $this->notify(
             $tenantId,
@@ -186,7 +199,10 @@ final class AdminCriticalAlertService
             $tenantId,
             $fp,
             "CRON FALLÓ: {$task}",
-            "La tarea de cron \"{$task}\" ha fallado:\n{$error}",
+            AdminMessageFormat::compose([
+                "La tarea de cron «{$task}» ha fallado.",
+                AdminMessageFormat::label('Error', $error),
+            ]),
             ['debounce_minutes' => 60]
         );
     }
@@ -202,7 +218,12 @@ final class AdminCriticalAlertService
             $tenantId,
             'backup_fail',
             'BACKUP FALLIDO',
-            $detail !== '' ? "El backup no se pudo crear.\n{$detail}" : 'El backup no se pudo crear.',
+            $detail !== ''
+                ? AdminMessageFormat::compose([
+                    'El backup no se pudo crear.',
+                    AdminMessageFormat::label('Detalle', $detail),
+                ])
+                : 'El backup no se pudo crear.',
             ['debounce_minutes' => 120]
         );
     }
@@ -233,19 +254,25 @@ final class AdminCriticalAlertService
         }
 
         $title = $enforced ? 'CORTE de reproducción' : 'SANDBOX: se habría cortado';
-        $lines = [];
+        $sections = [];
+
         if ($sandbox) {
-            $lines[] = 'No se ha cortado. El corte automático está apagado.';
+            $sections[] = '🧪 No se ha cortado. El corte automático está apagado.';
         } else {
-            $lines[] = 'Corte aplicado.';
+            $sections[] = '✂️ Corte aplicado.';
         }
-        $lines[] = "Momento: {$when}";
-        $lines[] = "Usuario: {$username}";
+
+        $summary = [
+            AdminMessageFormat::label('Momento', $when),
+            AdminMessageFormat::label('Usuario', $username),
+        ];
         if ($household) {
-            $lines[] = "Casa: {$homeCount}/{$homeLimit} · Fuera: {$awayCount}/{$awayLimit}";
+            $summary[] = AdminMessageFormat::label('Casa', "{$homeCount}/{$homeLimit}");
+            $summary[] = AdminMessageFormat::label('Fuera', "{$awayCount}/{$awayLimit}");
         } else {
-            $lines[] = "Streams: {$count}/{$limit}";
+            $summary[] = AdminMessageFormat::label('Streams', "{$count}/{$limit}");
         }
+        $sections[] = implode("\n", $summary);
 
         $cutLines = [];
         $otherLines = [];
@@ -274,10 +301,13 @@ final class AdminCriticalAlertService
             $player = trim((string) ($s['player'] ?? '')) ?: 'reproductor ?';
             $zone = (($s['household'] ?? '') === 'home') ? 'Casa' : 'Fuera';
             $streamNum++;
-            $bit = "{$streamNum}) {$zone}: {$titleS} · {$ip} · {$player}";
-            if ($why !== '') {
-                $bit .= " → {$why}";
-            }
+            $bit = AdminMessageFormat::compose([
+                AdminMessageFormat::label("Stream {$streamNum}", $titleS),
+                AdminMessageFormat::label('Zona', $zone),
+                AdminMessageFormat::label('IP', $ip),
+                AdminMessageFormat::label('Reproductor', $player),
+                $why !== '' ? AdminMessageFormat::label('Motivo', $why) : '',
+            ]);
 
             $serverId = (int) ($s['server_id'] ?? 0);
             $sessionId = trim((string) ($s['session_id'] ?? ''));
@@ -289,7 +319,7 @@ final class AdminCriticalAlertService
                 };
                 $link = $killLinks->create($tenantId, $serverId, $sessionId, $killMessage, $reason);
                 if (!empty($link['short_url'])) {
-                    $bit .= "\n  Cortar: " . $link['short_url'];
+                    $bit .= "\n" . AdminMessageFormat::label('Cortar', $link['short_url']);
                     $batchTargets[] = [
                         'server_id' => $serverId,
                         'session_id' => $sessionId,
@@ -305,21 +335,21 @@ final class AdminCriticalAlertService
             }
         }
         if ($cutLines !== []) {
-            $lines[] = $sandbox ? 'Se habría cortado:' : 'Cortado:';
-            foreach ($cutLines as $line) {
-                $lines[] = '· ' . $line;
-            }
+            $sections[] = AdminMessageFormat::label(
+                $sandbox ? 'Se habría cortado' : 'Cortado',
+                implode("\n\n", $cutLines)
+            );
         }
         if ($otherLines !== []) {
-            $lines[] = 'Siguen:';
-            foreach ($otherLines as $line) {
-                $lines[] = '· ' . $line;
-            }
+            $sections[] = AdminMessageFormat::label('Siguen activas', implode("\n\n", $otherLines));
         }
         if (count($batchTargets) >= 2) {
             $batchLink = $killLinks->createBatch($tenantId, $batchTargets, $defaultKillMessage, 'all');
             if (!empty($batchLink['short_url'])) {
-                $lines[] = 'Cortar todas (' . count($batchTargets) . '): ' . $batchLink['short_url'];
+                $sections[] = AdminMessageFormat::label(
+                    'Cortar todas (' . count($batchTargets) . ')',
+                    $batchLink['short_url']
+                );
             }
         }
 
@@ -327,7 +357,7 @@ final class AdminCriticalAlertService
             $tenantId,
             'stream_limit:' . $fingerprint,
             $title,
-            implode("\n", $lines),
+            AdminMessageFormat::compose($sections),
             [
                 'debounce_minutes' => $sandbox ? 3 : 15,
                 'data' => [
@@ -349,7 +379,12 @@ final class AdminCriticalAlertService
             $tenantId,
             'payment_webhook:' . $gateway . ':' . md5($error),
             "Webhook pago fallido ({$gateway})",
-            $error !== '' ? $error : 'Firma inválida o payload ilegible.',
+            $error !== ''
+                ? AdminMessageFormat::compose([
+                    "Fallo al procesar webhook de pago ({$gateway}).",
+                    AdminMessageFormat::label('Detalle', $error),
+                ])
+                : 'Firma inválida o payload ilegible.',
             ['debounce_minutes' => 60]
         );
     }

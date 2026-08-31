@@ -284,59 +284,65 @@ final class AdminDigestService
     /** @param array<string, mixed> $p */
     private function formatMessage(array $p, string $dateYmd): string
     {
-        $lines = [];
-        $lines[] = '*Caducidades hoy:* ' . (int) $p['today_count'];
+        $caducidades = [
+            AdminMessageFormat::label('Caducidades hoy', (string) (int) $p['today_count']),
+        ];
         if ($p['today_emails'] !== []) {
-            $lines[] = '  · ' . implode(', ', $p['today_emails']);
+            $caducidades[] = '  ' . implode(', ', $p['today_emails']);
             if ((int) $p['today_count'] > count($p['today_emails'])) {
-                $lines[] = '  · …';
+                $caducidades[] = '  …';
             }
         }
-
-        $lines[] = 'Caducidades ≤7d: ' . (int) $p['week_count'];
+        $caducidades[] = AdminMessageFormat::label('Caducidades ≤7d', (string) (int) $p['week_count']);
         if ($p['week_emails'] !== [] && (int) $p['week_count'] !== (int) $p['today_count']) {
-            $lines[] = '  · ' . implode(', ', $p['week_emails']);
+            $caducidades[] = '  ' . implode(', ', $p['week_emails']);
             if ((int) $p['week_count'] > count($p['week_emails'])) {
-                $lines[] = '  · …';
+                $caducidades[] = '  …';
             }
         }
 
-        $lines[] = '';
-        $lines[] = sprintf(
-            'Servidores: %d online / %d offline (total %d)',
-            (int) $p['servers_online'],
-            (int) $p['servers_offline'],
-            (int) $p['servers_total']
-        );
+        $servidores = [
+            AdminMessageFormat::label(
+                'Servidores',
+                sprintf(
+                    '%d online / %d offline (total %d)',
+                    (int) $p['servers_online'],
+                    (int) $p['servers_offline'],
+                    (int) $p['servers_total']
+                )
+            ),
+        ];
         if (!empty($p['offline_names'])) {
-            $lines[] = '  Offline: ' . implode(', ', $p['offline_names']);
+            $servidores[] = AdminMessageFormat::label('Offline', implode(', ', $p['offline_names']));
         }
         if (!empty($p['sync_errors'])) {
-            $lines[] = '  Sync/err: ' . implode(' | ', $p['sync_errors']);
+            $servidores[] = AdminMessageFormat::label('Sync/err', implode(' | ', $p['sync_errors']));
         }
 
+        $extra = [];
         if ($p['violations_24h'] !== null) {
-            $lines[] = 'Violaciones streams (24h): ' . (int) $p['violations_24h'];
+            $extra[] = AdminMessageFormat::label('Violaciones streams (24h)', (string) (int) $p['violations_24h']);
             if (!empty($p['top_abusers'])) {
-                $lines[] = '  Top: ' . implode(', ', $p['top_abusers']);
+                $extra[] = AdminMessageFormat::label('Top', implode(', ', $p['top_abusers']));
             }
         }
-
         if ($p['open_tickets'] !== null) {
-            $lines[] = 'Tickets abiertos: ' . (int) $p['open_tickets'];
+            $extra[] = AdminMessageFormat::label('Tickets abiertos', (string) (int) $p['open_tickets']);
         }
-
         if ($p['peticiones_pendientes'] === null) {
-            $lines[] = 'Peticiones pendientes: n/d';
+            $extra[] = AdminMessageFormat::label('Peticiones pendientes', 'n/d');
         } else {
-            $lines[] = 'Peticiones pendientes: ' . (int) $p['peticiones_pendientes'];
+            $extra[] = AdminMessageFormat::label('Peticiones pendientes', (string) (int) $p['peticiones_pendientes']);
         }
-
         if ($p['overdue'] !== null) {
-            $lines[] = 'Suscripciones overdue: ' . (int) $p['overdue'];
+            $extra[] = AdminMessageFormat::label('Suscripciones overdue', (string) (int) $p['overdue']);
         }
 
-        $text = implode("\n", $lines);
+        $text = AdminMessageFormat::compose([
+            AdminMessageFormat::title('Caducidades') . "\n" . implode("\n", $caducidades),
+            AdminMessageFormat::title('Servidores') . "\n" . implode("\n", $servidores),
+            $extra !== [] ? AdminMessageFormat::title('Actividad') . "\n" . implode("\n", $extra) : '',
+        ]);
         // WhatsApp/Telegram: mantener mensaje manejable.
         if (mb_strlen($text) > 3500) {
             $text = mb_substr($text, 0, 3490) . "\n…";

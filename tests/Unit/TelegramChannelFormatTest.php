@@ -24,12 +24,13 @@ final class TelegramChannelFormatTest extends TestCase
         $this->assertStringContainsString('<b>Pago pendiente</b>', $formatted['text']);
     }
 
-    public function testMessageWithoutUrlKeepsMarkdown(): void
+    public function testMessageWithoutUrlUsesHtmlWithBoldTitle(): void
     {
-        $formatted = TelegramChannel::formatMessage('Aviso', 'Tu acceso caduca mañana.');
+        $formatted = TelegramChannel::formatMessage('Aviso', "Motivo:\nTimeout de conexión.");
 
-        $this->assertSame('Markdown', $formatted['parse_mode']);
-        $this->assertSame("*Aviso*\n\nTu acceso caduca mañana.", $formatted['text']);
+        $this->assertSame('HTML', $formatted['parse_mode']);
+        $this->assertStringContainsString('<b>Aviso</b>', $formatted['text']);
+        $this->assertStringContainsString('<b>Motivo:</b>', $formatted['text']);
     }
 
     public function testEmptyParseModeOverrideDisablesFormatting(): void
