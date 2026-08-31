@@ -69,7 +69,9 @@ final class PlexConnectionResolver
                 break;
             }
 
-            if ($quick && $this->isLocalEndpoint($endpoint)) {
+            // El panel suele estar fuera de la LAN del cliente: no perder tiempo con
+            // 192.168.x ni con *.plex.direct que codifican IP privada.
+            if ($this->isLocalEndpoint($endpoint)) {
                 continue;
             }
 
@@ -127,9 +129,7 @@ final class PlexConnectionResolver
                 'ok' => $error === null,
                 'error' => $error,
                 'latency_ms' => (int) round((microtime(true) - $start) * 1000),
-                'local' => str_contains($endpoint['url'], '192.168.')
-                    || str_contains($endpoint['url'], '10.')
-                    || str_starts_with($endpoint['url'], '172.'),
+                'local' => self::isLocalHost((string) $endpoint['url']),
             ];
         }
 
@@ -299,10 +299,13 @@ final class PlexConnectionResolver
                 }
 
                 foreach ($resource['connections'] ?? [] as $conn) {
+                    if (!empty($conn['local'])) {
+                        continue;
+                    }
                     $parsed = $this->parseConnection($conn);
                     if ($parsed !== null) {
-                        $parsed['local'] = (bool) ($conn['local'] ?? false);
                         $parsed['relay'] = (bool) ($conn['relay'] ?? false);
+                        $parsed['local'] = (bool) ($conn['local'] ?? false);
                         $endpoints[] = $parsed;
                     }
                 }
@@ -313,11 +316,13 @@ final class PlexConnectionResolver
                 return $score($a) <=> $score($b);
             });
 
-            return array_map(static fn ($e) => [
+            return array_values(array_filter(array_map(static fn ($e) => [
                 'url' => $e['url'],
                 'port' => $e['port'],
                 'ssl' => $e['ssl'],
-            ], $endpoints);
+            ], $endpoints), static function (array $e): bool {
+                return !self::isLocalHost((string) ($e['url'] ?? ''));
+            }));
         } catch (GuzzleException $e) {
             Logger::warning('plex.tv all resources lookup failed', ['error' => $e->getMessage()]);
             return [];
@@ -356,6 +361,9 @@ final class PlexConnectionResolver
                 }
 
                 foreach ($resource['connections'] ?? [] as $conn) {
+                    if (!empty($conn['local'])) {
+                        continue;
+                    }
                     $parsed = $this->parseConnection($conn);
                     if ($parsed !== null) {
                         $parsed['relay'] = (bool) ($conn['relay'] ?? false);
@@ -370,11 +378,13 @@ final class PlexConnectionResolver
                 return $score($a) <=> $score($b);
             });
 
-            return array_map(static fn ($e) => [
+            return array_values(array_filter(array_map(static fn ($e) => [
                 'url' => $e['url'],
                 'port' => $e['port'],
                 'ssl' => $e['ssl'],
-            ], $endpoints);
+            ], $endpoints), static function (array $e): bool {
+                return !self::isLocalHost((string) ($e['url'] ?? ''));
+            }));
         } catch (GuzzleException $e) {
             Logger::warning('plex.tv resources lookup failed', ['error' => $e->getMessage()]);
             return [];
@@ -448,25 +458,43 @@ final class PlexConnectionResolver
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
     private function isLocalEndpoint(array $endpoint): bool
     {
-        $host = strtolower(trim($endpoint['url']));
+        return self::isLocalHost((string) ($endpoint['url'] ?? ''));
+    }
+
+    /**
+     * IP privada, localhost o hostname plex.direct que codifica LAN (p. ej. 192-168-1-100.*.plex.direct).
+     */
+    public static function isLocalHost(string $host): bool
+    {
+        $host = strtolower(trim($host));
         if ($host === '' || $host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
             return true;
         }
 
-        // IMPORTANTE: no usar str_contains('10.') — haría "local" IPs como 210.x / 110.x
-        // y el sondeo rápido saltaría la URL pública real del PMS.
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $parts = array_map('intval', explode('.', $host));
-            if (count($parts) !== 4) {
-                return false;
-            }
+            return self::isPrivateIpv4($host);
+        }
 
-            return $parts[0] === 10
-                || ($parts[0] === 192 && $parts[1] === 168)
-                || ($parts[0] === 172 && $parts[1] >= 16 && $parts[1] <= 31)
-                || ($parts[0] === 127);
+        if (str_ends_with($host, '.plex.direct')) {
+            $firstLabel = explode('.', $host)[0] ?? '';
+            if (preg_match('/^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})$/', $firstLabel, $m) === 1) {
+                return self::isPrivateIpv4("{$m[1]}.{$m[2]}.{$m[3]}.{$m[4]}");
+            }
         }
 
         return false;
+    }
+
+    private static function isPrivateIpv4(string $ip): bool
+    {
+        $parts = array_map('intval', explode('.', $ip));
+        if (count($parts) !== 4) {
+            return false;
+        }
+
+        return $parts[0] === 10
+            || ($parts[0] === 192 && $parts[1] === 168)
+            || ($parts[0] === 172 && $parts[1] >= 16 && $parts[1] <= 31)
+            || ($parts[0] === 127);
     }
 }

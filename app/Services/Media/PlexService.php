@@ -48,7 +48,7 @@ final class PlexService
         }
         if ($resolved['error'] === null) {
             $endpoint = $resolved['endpoint'];
-            if ($this->shouldPersistEndpoint($endpoint)) {
+            if ($this->shouldPersistEndpoint($endpoint) && !PlexConnectionResolver::isLocalHost((string) $endpoint['url'])) {
                 if (!ServerEndpoint::shouldPreferCurrentHost((string) $this->server->url, $endpoint)) {
                     $server->url = $endpoint['url'];
                     $server->port = $endpoint['port'];
