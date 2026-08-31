@@ -60,6 +60,7 @@ final class PlexConnectionResolver
         $token = trim((string) ($server->token ?? ''));
         $candidates = $this->buildCandidates($server);
         $tried = [];
+        $seenProbes = [];
         $lastError = 'No se pudo conectar al servidor Plex.';
         $maxProbes = $quick ? 4 : 50;
         $probes = 0;
@@ -75,14 +76,21 @@ final class PlexConnectionResolver
                 continue;
             }
 
-            $label = ($endpoint['ssl'] ? 'https' : 'http') . "://{$endpoint['url']}:{$endpoint['port']}";
+            $probeEndpoint = self::asHttpProbe($endpoint);
+            $probeKey = $probeEndpoint['url'] . ':' . $probeEndpoint['port'];
+            if (isset($seenProbes[$probeKey])) {
+                continue;
+            }
+            $seenProbes[$probeKey] = true;
+
+            $label = "http://{$probeEndpoint['url']}:{$probeEndpoint['port']}";
             $tried[] = $label;
-            $error = $this->probe($endpoint, $token, $quick);
+            $error = $this->probe($probeEndpoint, $token, $quick);
             $probes++;
 
             if ($error === null) {
-                Cache::set($cacheKey, $endpoint, self::ENDPOINT_CACHE_TTL);
-                return ['endpoint' => $endpoint, 'error' => null, 'tried' => $tried];
+                Cache::set($cacheKey, $probeEndpoint, self::ENDPOINT_CACHE_TTL);
+                return ['endpoint' => $probeEndpoint, 'error' => null, 'tried' => $tried];
             }
 
             $lastError = $error;
@@ -118,18 +126,29 @@ final class PlexConnectionResolver
         $token = trim((string) ($server->token ?? ''));
         $candidates = $this->buildCandidates($server);
         $probes = [];
+        $seenProbes = [];
 
         foreach ($candidates as $endpoint) {
-            $scheme = $endpoint['ssl'] ? 'https' : 'http';
-            $label = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}/";
+            if ($this->isLocalEndpoint($endpoint)) {
+                continue;
+            }
+
+            $probeEndpoint = self::asHttpProbe($endpoint);
+            $probeKey = $probeEndpoint['url'] . ':' . $probeEndpoint['port'];
+            if (isset($seenProbes[$probeKey])) {
+                continue;
+            }
+            $seenProbes[$probeKey] = true;
+
+            $label = "http://{$probeEndpoint['url']}:{$probeEndpoint['port']}/";
             $start = microtime(true);
-            $error = $this->probe($endpoint, $token, false);
+            $error = $this->probe($probeEndpoint, $token, false);
             $probes[] = [
                 'url' => $label,
                 'ok' => $error === null,
                 'error' => $error,
                 'latency_ms' => (int) round((microtime(true) - $start) * 1000),
-                'local' => self::isLocalHost((string) $endpoint['url']),
+                'local' => self::isLocalHost((string) $probeEndpoint['url']),
             ];
         }
 
@@ -239,24 +258,35 @@ final class PlexConnectionResolver
             'ssl' => (bool) $server->ssl,
         ]);
 
+        $configuredPort = (int) ($server->port ?: 32400);
+        $addFromPlexTv = function (array $endpoint) use ($add, $configuredPort): void {
+            if ((int) ($endpoint['port'] ?? 0) !== $configuredPort) {
+                return;
+            }
+            $add($endpoint);
+        };
+
         $token = trim((string) ($server->token ?? ''));
         $machineId = trim((string) ($server->machine_id ?? ''));
 
         if ($token !== '') {
             if ($machineId !== '') {
                 foreach ($this->connectionsFromPlexTv($token, $machineId) as $endpoint) {
-                    $add($endpoint);
+                    $addFromPlexTv($endpoint);
                 }
             } else {
                 foreach ($this->allServerConnectionsFromPlexTv($token) as $endpoint) {
-                    $add($endpoint);
+                    $addFromPlexTv($endpoint);
                 }
             }
         }
 
         usort($list, function (array $a, array $b) {
-            // Públicos primero; LAN al final (el sondeo rápido ya salta LAN).
-            return ((int) $this->isLocalEndpoint($a)) <=> ((int) $this->isLocalEndpoint($b));
+            // Públicos primero; HTTP antes que HTTPS; LAN al final.
+            $score = fn (array $e): int => ($this->isLocalEndpoint($e) ? 100 : 0)
+                + (!empty($e['ssl']) ? 10 : 0);
+
+            return $score($a) <=> $score($b);
         });
 
         return $list;
@@ -423,8 +453,8 @@ final class PlexConnectionResolver
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
     private function probe(array $endpoint, string $token, bool $quick = true): ?string
     {
-        $scheme = $endpoint['ssl'] ? 'https' : 'http';
-        $uri = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}/";
+        $endpoint = self::asHttpProbe($endpoint);
+        $uri = "http://{$endpoint['url']}:{$endpoint['port']}/";
 
         try {
             $client = new Client([
@@ -453,6 +483,23 @@ final class PlexConnectionResolver
         } catch (GuzzleException $e) {
             return $e->getMessage();
         }
+    }
+
+    /**
+     * Mismo host y puerto que el candidato, pero sin SSL (HTTP).
+     *
+     * @param array{url: string, port: int, ssl: bool} $endpoint
+     * @return array{url: string, port: int, ssl: bool}
+     */
+    public static function asHttpProbe(array $endpoint): array
+    {
+        $port = (int) ($endpoint['port'] ?? 32400);
+
+        return [
+            'url' => (string) ($endpoint['url'] ?? ''),
+            'port' => $port > 0 ? $port : 32400,
+            'ssl' => false,
+        ];
     }
 
     /** @param array{url: string, port: int, ssl: bool} $endpoint */
