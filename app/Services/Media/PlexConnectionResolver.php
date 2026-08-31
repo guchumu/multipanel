@@ -454,12 +454,13 @@ final class PlexConnectionResolver
     private function probe(array $endpoint, string $token, bool $quick = true): ?string
     {
         $endpoint = self::asHttpProbe($endpoint);
-        $uri = "http://{$endpoint['url']}:{$endpoint['port']}/";
+        $connect = self::resolveConnectHost((string) $endpoint['url']);
+        $uri = "http://{$connect['connect_host']}:{$endpoint['port']}/";
 
         try {
             $client = new Client([
                 'timeout' => $quick ? 4 : 12,
-                'connect_timeout' => $quick ? 2 : 8,
+                'connect_timeout' => $quick ? 4 : 8,
                 'verify' => false,
             ]);
             $headers = [
@@ -467,6 +468,10 @@ final class PlexConnectionResolver
                 'X-Plex-Client-Identifier' => 'multipanel-erp',
                 'X-Plex-Product' => 'MultiPanel ERP',
             ];
+
+            if ($connect['host_header'] !== null) {
+                $headers['Host'] = $connect['host_header'];
+            }
 
             if ($token !== '') {
                 $headers['X-Plex-Token'] = $token;
@@ -483,6 +488,41 @@ final class PlexConnectionResolver
         } catch (GuzzleException $e) {
             return $e->getMessage();
         }
+    }
+
+    /**
+     * Host *.plex.direct codifica la IP (79-116-40-195 → 79.116.40.195).
+     * El DNS de plex.direct a veces falla o tarda en VPS; conectar por IP evita la resolución.
+     *
+     * @return array{connect_host: string, host_header: ?string}
+     */
+    public static function resolveConnectHost(string $hostname): array
+    {
+        $hostname = strtolower(trim($hostname));
+        $ip = self::ipv4FromPlexDirectHost($hostname);
+
+        if ($ip !== null) {
+            return ['connect_host' => $ip, 'host_header' => $hostname];
+        }
+
+        return ['connect_host' => $hostname, 'host_header' => null];
+    }
+
+    public static function ipv4FromPlexDirectHost(string $host): ?string
+    {
+        $host = strtolower(trim($host));
+        if (!str_ends_with($host, '.plex.direct')) {
+            return null;
+        }
+
+        $firstLabel = explode('.', $host)[0] ?? '';
+        if (preg_match('/^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})$/', $firstLabel, $m) !== 1) {
+            return null;
+        }
+
+        $ip = "{$m[1]}.{$m[2]}.{$m[3]}.{$m[4]}";
+
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $ip : null;
     }
 
     /**
@@ -523,9 +563,9 @@ final class PlexConnectionResolver
         }
 
         if (str_ends_with($host, '.plex.direct')) {
-            $firstLabel = explode('.', $host)[0] ?? '';
-            if (preg_match('/^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})$/', $firstLabel, $m) === 1) {
-                return self::isPrivateIpv4("{$m[1]}.{$m[2]}.{$m[3]}.{$m[4]}");
+            $ip = self::ipv4FromPlexDirectHost($host);
+            if ($ip !== null) {
+                return self::isPrivateIpv4($ip);
             }
         }
 

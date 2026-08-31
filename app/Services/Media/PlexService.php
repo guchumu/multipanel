@@ -64,18 +64,23 @@ final class PlexService
         }
 
         $scheme = $endpoint['ssl'] ? 'https' : 'http';
-        $this->baseUrl = "{$scheme}://{$endpoint['url']}:{$endpoint['port']}";
+        $connect = PlexConnectionResolver::resolveConnectHost((string) $endpoint['url']);
+        $this->baseUrl = "{$scheme}://{$connect['connect_host']}:{$endpoint['port']}";
+        $clientHeaders = array_merge([
+            'Accept' => 'application/xml',
+            'X-Plex-Client-Identifier' => 'multipanel-erp',
+            'X-Plex-Product' => 'MultiPanel ERP',
+            'X-Plex-Version' => '1.1.0',
+        ], $this->authHeaders());
+        if ($connect['host_header'] !== null) {
+            $clientHeaders['Host'] = $connect['host_header'];
+        }
         $this->client = new Client([
             'base_uri' => $this->baseUrl,
             'timeout' => $this->quick ? 10 : 30,
             'connect_timeout' => $this->quick ? 5 : 15,
             'verify' => false,
-            'headers' => array_merge([
-                'Accept' => 'application/xml',
-                'X-Plex-Client-Identifier' => 'multipanel-erp',
-                'X-Plex-Product' => 'MultiPanel ERP',
-                'X-Plex-Version' => '1.1.0',
-            ], $this->authHeaders()),
+            'headers' => $clientHeaders,
         ]);
     }
 

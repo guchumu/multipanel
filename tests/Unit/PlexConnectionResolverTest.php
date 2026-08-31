@@ -51,4 +51,28 @@ final class PlexConnectionResolverTest extends TestCase
         $this->assertSame(32400, $http['port']);
         $this->assertFalse($http['ssl']);
     }
+
+    public function testIpv4FromPlexDirectHost(): void
+    {
+        $this->assertSame(
+            '79.116.40.195',
+            PlexConnectionResolver::ipv4FromPlexDirectHost(
+                '79-116-40-195.680fc273a3314c4e8e28f3919866206e.plex.direct'
+            )
+        );
+        $this->assertNull(PlexConnectionResolver::ipv4FromPlexDirectHost('plex.example.com'));
+    }
+
+    public function testResolveConnectHostUsesIpForPlexDirect(): void
+    {
+        $resolved = PlexConnectionResolver::resolveConnectHost(
+            '79-116-40-195.680fc273a3314c4e8e28f3919866206e.plex.direct'
+        );
+
+        $this->assertSame('79.116.40.195', $resolved['connect_host']);
+        $this->assertSame(
+            '79-116-40-195.680fc273a3314c4e8e28f3919866206e.plex.direct',
+            $resolved['host_header']
+        );
+    }
 }
