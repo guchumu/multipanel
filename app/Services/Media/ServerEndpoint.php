@@ -108,11 +108,15 @@ final class ServerEndpoint
         $newHost = trim($endpoint['url']);
         $currentHost = trim($currentHost);
 
-        if ($currentHost === '' || self::isIpAddress($currentHost)) {
+        if ($currentHost === '' || !self::isHostname($currentHost)) {
             return false;
         }
 
-        if (self::isHostname($currentHost) && self::isIpAddress($newHost)) {
+        if (PlexConnectionResolver::isPlexDirectHost($currentHost)) {
+            return false;
+        }
+
+        if (self::isIpAddress($newHost) || PlexConnectionResolver::isPlexDirectHost($newHost)) {
             return true;
         }
 

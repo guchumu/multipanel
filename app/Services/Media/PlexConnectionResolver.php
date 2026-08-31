@@ -252,15 +252,23 @@ final class PlexConnectionResolver
             $list[] = $endpoint;
         };
 
-        $add([
-            'url' => (string) $server->url,
-            'port' => (int) ($server->port ?: 32400),
-            'ssl' => (bool) $server->ssl,
-        ]);
+        $configured = ServerEndpoint::normalize(
+            (string) $server->url,
+            (int) ($server->port ?: 32400),
+            (bool) $server->ssl,
+        );
+        $configuredHost = $configured['url'];
+        $hasCustomHost = ServerEndpoint::isHostname($configuredHost)
+            && !self::isPlexDirectHost($configuredHost);
+
+        $add($configured);
 
         $configuredPort = (int) ($server->port ?: 32400);
-        $addFromPlexTv = function (array $endpoint) use ($add, $configuredPort): void {
+        $addFromPlexTv = function (array $endpoint) use ($add, $configuredPort, $hasCustomHost): void {
             if ((int) ($endpoint['port'] ?? 0) !== $configuredPort) {
+                return;
+            }
+            if ($hasCustomHost && self::isPlexDirectHost((string) ($endpoint['url'] ?? ''))) {
                 return;
             }
             $add($endpoint);
@@ -281,9 +289,10 @@ final class PlexConnectionResolver
             }
         }
 
-        usort($list, function (array $a, array $b) {
-            // Públicos primero; HTTP antes que HTTPS; LAN al final.
-            $score = fn (array $e): int => ($this->isLocalEndpoint($e) ? 100 : 0)
+        usort($list, function (array $a, array $b) use ($configuredHost) {
+            // Tu dominio del panel siempre primero; luego públicos HTTP; LAN al final.
+            $score = fn (array $e): int => (strtolower((string) $e['url']) === strtolower($configuredHost) ? -1000 : 0)
+                + ($this->isLocalEndpoint($e) ? 100 : 0)
                 + (!empty($e['ssl']) ? 10 : 0);
 
             return $score($a) <=> $score($b);
@@ -511,7 +520,7 @@ final class PlexConnectionResolver
     public static function ipv4FromPlexDirectHost(string $host): ?string
     {
         $host = strtolower(trim($host));
-        if (!str_ends_with($host, '.plex.direct')) {
+        if (!self::isPlexDirectHost($host)) {
             return null;
         }
 
@@ -523,6 +532,11 @@ final class PlexConnectionResolver
         $ip = "{$m[1]}.{$m[2]}.{$m[3]}.{$m[4]}";
 
         return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $ip : null;
+    }
+
+    public static function isPlexDirectHost(string $host): bool
+    {
+        return str_ends_with(strtolower(trim($host)), '.plex.direct');
     }
 
     /**
