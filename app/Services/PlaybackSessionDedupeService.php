@@ -90,11 +90,13 @@ final class PlaybackSessionDedupeService
         }
 
         return Database::getInstance()->fetchAll(
-            "SELECT id, tenant_id, server_id, media_user_id, external_session_id, title, player,
-                    started_at, ended_at, duration_seconds, country, ip_address
-             FROM playback_sessions
-             WHERE tenant_id = ?{$sinceSql}
-             ORDER BY server_id, media_user_id, title, player, started_at, id",
+            "SELECT ps.id, ps.tenant_id, ps.server_id, ps.media_user_id, ps.external_session_id, ps.title, ps.player,
+                    ps.started_at, ps.ended_at, ps.duration_seconds, ps.country, ps.ip_address,
+                    mu.username, mu.display_name
+             FROM playback_sessions ps
+             LEFT JOIN media_users mu ON mu.id = ps.media_user_id
+             WHERE ps.tenant_id = ?{$sinceSql}
+             ORDER BY ps.server_id, ps.title, ps.player, ps.started_at, ps.id",
             $params
         ) ?: [];
     }
@@ -165,6 +167,7 @@ final class PlaybackSessionDedupeService
         $bestExternalId = (string) ($keep['external_session_id'] ?? '');
         $country = $keep['country'] ?? null;
         $ip = $keep['ip_address'] ?? null;
+        $bestMediaUserId = (int) ($keep['media_user_id'] ?? 0) > 0 ? (int) $keep['media_user_id'] : null;
 
         foreach ($cluster as $row) {
             $startedTs = strtotime((string) $row['started_at']);
@@ -189,6 +192,11 @@ final class PlaybackSessionDedupeService
             if ($ip === null && !empty($row['ip_address'])) {
                 $ip = $row['ip_address'];
             }
+
+            $rowUserId = (int) ($row['media_user_id'] ?? 0);
+            if ($rowUserId > 0) {
+                $bestMediaUserId = $rowUserId;
+            }
         }
 
         $endedAt = date('Y-m-d H:i:s', $maxEndedTs);
@@ -212,6 +220,9 @@ final class PlaybackSessionDedupeService
         }
         if ($ip !== null) {
             $update['ip_address'] = $ip;
+        }
+        if ($bestMediaUserId !== null && $bestMediaUserId > 0) {
+            $update['media_user_id'] = $bestMediaUserId;
         }
 
         $db->update('playback_sessions', $update, 'id = ?', [$keepId]);
@@ -248,7 +259,6 @@ final class PlaybackSessionDedupeService
 
         return implode('|', [
             (int) ($row['server_id'] ?? 0),
-            (int) ($row['media_user_id'] ?? 0),
             $title,
             mb_strtolower(trim((string) ($row['player'] ?? ''))),
         ]);

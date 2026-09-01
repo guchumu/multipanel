@@ -202,10 +202,10 @@ final class StatsService
         $params = array_merge([$tenantId, $period['from'], $period['to']], $typeParams, [$limit]);
 
         $rows = Database::getInstance()->fetchAll(
-            "SELECT ps.country as code, COUNT(*) as count FROM playback_sessions ps
+            "SELECT ps.country AS code, COUNT(*) AS count FROM playback_sessions ps
              WHERE ps.tenant_id = ? AND ps.started_at >= ? AND ps.started_at <= ?
-               AND ps.country IS NOT NULL AND ps.country != ''{$typeSql}
-             GROUP BY ps.country ORDER BY count DESC LIMIT ?",
+               AND ps.country IS NOT NULL AND TRIM(ps.country) != ''{$typeSql}
+             GROUP BY UPPER(TRIM(ps.country)) ORDER BY count DESC LIMIT ?",
             $params
         );
 
@@ -226,9 +226,11 @@ final class StatsService
         $params = array_merge([$tenantId, $period['from'], $period['to']], $typeParams, [$limit]);
 
         return Database::getInstance()->fetchAll(
-            "SELECT COALESCE(device, player, 'Desconocido') as device, COUNT(*) as count
+            "SELECT MAX(COALESCE(NULLIF(TRIM(device), ''), NULLIF(TRIM(player), ''), 'Desconocido')) AS device,
+                    COUNT(*) AS count
              FROM playback_sessions WHERE tenant_id = ? AND started_at >= ? AND started_at <= ?{$typeSql}
-             GROUP BY device ORDER BY count DESC LIMIT ?",
+             GROUP BY LOWER(TRIM(COALESCE(device, player, 'desconocido')))
+             ORDER BY count DESC LIMIT ?",
             $params
         );
     }
@@ -261,13 +263,16 @@ final class StatsService
         $params = array_merge([$tenantId, $period['from'], $period['to']], $typeParams, [$limit]);
 
         $rows = Database::getInstance()->fetchAll(
-            "SELECT ps.media_user_id, mu.uuid, mu.display_name, mu.username,
-                    COUNT(*) as count, COALESCE(SUM(ps.duration_seconds),0) as seconds
+            "SELECT MAX(mu.uuid) AS uuid,
+                    MAX(COALESCE(NULLIF(TRIM(mu.display_name), ''), NULLIF(TRIM(mu.username), ''), 'Usuario')) AS display_name,
+                    MAX(mu.username) AS username,
+                    COUNT(*) AS count,
+                    COALESCE(SUM(ps.duration_seconds), 0) AS seconds
              FROM playback_sessions ps
              LEFT JOIN media_users mu ON mu.id = ps.media_user_id
              WHERE ps.tenant_id = ? AND ps.started_at >= ? AND ps.started_at <= ?
                AND ps.media_user_id IS NOT NULL{$typeSql}
-             GROUP BY ps.media_user_id, mu.uuid, mu.display_name, mu.username
+             GROUP BY LOWER(TRIM(COALESCE(mu.username, mu.display_name, CONCAT('id:', ps.media_user_id))))
              ORDER BY count DESC LIMIT ?",
             $params
         );
