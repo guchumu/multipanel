@@ -369,11 +369,6 @@ final class ConcurrentStreamLimitService
         } catch (\Throwable) {
         }
 
-        try {
-            (new PlaybackHistoryService())->recordFromActivitySnapshot($tenantId, $sessions);
-        } catch (\Throwable) {
-        }
-
         return ['sessions' => $sessions, 'killed' => $killedTotal, 'violations' => $violations];
     }
 
@@ -564,6 +559,11 @@ final class ConcurrentStreamLimitService
         // (dentro de enforceAndAnnotate → getSnapshot).
         Cache::forget('activity_snapshot_' . $tenantId);
         $snapshot = (new StreamingActivityService())->getSnapshot($tenantId);
+
+        try {
+            (new PlaybackHistoryService())->recordFromActivitySnapshot($tenantId, $snapshot['sessions'] ?? []);
+        } catch (\Throwable) {
+        }
 
         return [
             'checked' => (int) ($snapshot['total_count'] ?? count($snapshot['sessions'] ?? [])),

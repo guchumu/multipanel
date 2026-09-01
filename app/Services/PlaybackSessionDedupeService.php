@@ -11,8 +11,8 @@ use Core\Database;
  */
 final class PlaybackSessionDedupeService
 {
-    /** Hueco máximo entre inicios para considerar la misma reproducción (poll ~3 min). */
-    private const GAP_SECONDS = 600;
+    /** Misma reproducción con pausa corta (poll cada ~3 min). */
+    private const GAP_SECONDS = 2700;
 
     /**
      * @return array{
@@ -35,7 +35,13 @@ final class PlaybackSessionDedupeService
         $deleted = 0;
 
         foreach ($tenantIds as $tid) {
-            $rows = $this->fetchRows((int) $tid, $since);
+            $tid = (int) $tid;
+            $dupResult = $this->mergeDuplicateExternalIds($tid, $since, $apply);
+            $clusters += $dupResult['clusters'];
+            $merged += $dupResult['merged'];
+            $deleted += $dupResult['deleted'];
+
+            $rows = $this->fetchRows($tid, $since);
             $scanned += count($rows);
             $groups = $this->clusterRows($rows);
 
@@ -63,6 +69,57 @@ final class PlaybackSessionDedupeService
         ];
     }
 
+    /**
+     * @return array{clusters: int, merged: int, deleted: int}
+     */
+    private function mergeDuplicateExternalIds(int $tenantId, ?string $since, bool $apply): array
+    {
+        $params = [$tenantId];
+        $sinceSql = '';
+        if ($since !== null) {
+            $sinceSql = ' AND started_at >= ?';
+            $params[] = $since;
+        }
+
+        $groups = Database::getInstance()->fetchAll(
+            "SELECT server_id, external_session_id
+             FROM playback_sessions
+             WHERE tenant_id = ? AND external_session_id IS NOT NULL AND TRIM(external_session_id) != ''{$sinceSql}
+             GROUP BY server_id, external_session_id
+             HAVING COUNT(*) > 1",
+            $params
+        ) ?: [];
+
+        $clusters = 0;
+        $merged = 0;
+        $deleted = 0;
+
+        foreach ($groups as $group) {
+            $rows = Database::getInstance()->fetchAll(
+                'SELECT id, tenant_id, server_id, media_user_id, external_session_id, title, player,
+                        started_at, ended_at, duration_seconds, country, ip_address, username, display_name
+                 FROM playback_sessions ps
+                 LEFT JOIN media_users mu ON mu.id = ps.media_user_id
+                 WHERE ps.server_id = ? AND ps.external_session_id = ?
+                 ORDER BY ps.started_at, ps.id',
+                [(int) $group['server_id'], (string) $group['external_session_id']]
+            ) ?: [];
+
+            if (count($rows) < 2) {
+                continue;
+            }
+
+            $clusters++;
+            $result = $this->mergeCluster($rows, $apply);
+            if ($result['merged']) {
+                $merged++;
+                $deleted += $result['deleted'];
+            }
+        }
+
+        return ['clusters' => $clusters, 'merged' => $merged, 'deleted' => $deleted];
+    }
+
     /** @return list<int> */
     private function tenantIds(int $tenantId): array
     {
@@ -85,7 +142,7 @@ final class PlaybackSessionDedupeService
         $params = [$tenantId];
         $sinceSql = '';
         if ($since !== null) {
-            $sinceSql = ' AND started_at >= ?';
+            $sinceSql = ' AND ps.started_at >= ?';
             $params[] = $since;
         }
 
@@ -96,7 +153,7 @@ final class PlaybackSessionDedupeService
              FROM playback_sessions ps
              LEFT JOIN media_users mu ON mu.id = ps.media_user_id
              WHERE ps.tenant_id = ?{$sinceSql}
-             ORDER BY ps.server_id, ps.title, ps.player, ps.started_at, ps.id",
+             ORDER BY ps.server_id, ps.title, ps.started_at, ps.id",
             $params
         ) ?: [];
     }
@@ -236,17 +293,17 @@ final class PlaybackSessionDedupeService
     /** @param list<array<string, mixed>> $cluster */
     private function continuesCluster(array $cluster, array $row): bool
     {
-        $activityEnd = 0;
+        $clusterEnd = 0;
         foreach ($cluster as $item) {
             $startedTs = strtotime((string) $item['started_at']);
             $endedRaw = $item['ended_at'] ?? null;
             $endTs = $endedRaw ? strtotime((string) $endedRaw) : $startedTs;
-            $activityEnd = max($activityEnd, $endTs, $startedTs);
+            $clusterEnd = max($clusterEnd, $endTs, $startedTs);
         }
 
         $newStart = strtotime((string) $row['started_at']);
 
-        return ($newStart - $activityEnd) <= self::GAP_SECONDS;
+        return $newStart <= ($clusterEnd + self::GAP_SECONDS);
     }
 
     /** @param array<string, mixed> $row */
@@ -260,7 +317,6 @@ final class PlaybackSessionDedupeService
         return implode('|', [
             (int) ($row['server_id'] ?? 0),
             $title,
-            mb_strtolower(trim((string) ($row['player'] ?? ''))),
         ]);
     }
 

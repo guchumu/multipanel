@@ -10,10 +10,14 @@ use Core\Database;
 use Core\Logger;
 
 /**
- * Historial de reproducciones por usuario (desde En directo / cron streams).
+ * Historial de reproducciones por usuario (cron streams / En directo).
+ * Una fila por reproducción real: actualiza la abierta o reabre la cerrada hace poco.
  */
 final class PlaybackHistoryService
 {
+    /** Si el sync cortó la fila por error, reabrir en lugar de insertar otra. */
+    private const REOPEN_WINDOW_SECONDS = 1800;
+
     /**
      * @param array<int, array<string, mixed>> $sessions
      */
@@ -34,8 +38,9 @@ final class PlaybackHistoryService
                 continue;
             }
 
-            $key = PlaybackSessionKey::forSession($session, $serverId);
-            $activeKeysByServer[$serverId][] = $key;
+            foreach (PlaybackSessionKey::lookupKeys($session, $serverId) as $lookupKey) {
+                $activeKeysByServer[$serverId][] = $lookupKey;
+            }
 
             $mediaUserId = (int) ($session['media_user_id'] ?? 0);
             if ($mediaUserId <= 0) {
@@ -47,6 +52,7 @@ final class PlaybackHistoryService
                 continue;
             }
 
+            $key = PlaybackSessionKey::forSession($session, $serverId);
             $ip = SessionClientIp::normalize((string) ($session['client_ip'] ?? $session['public_ip'] ?? ''));
             $payload = [
                 'title' => mb_substr($title, 0, 500),
@@ -57,13 +63,15 @@ final class PlaybackHistoryService
                 'quality' => $this->nullableString($session['play_method'] ?? null, 20),
                 'media_user_id' => $mediaUserId,
                 'external_session_id' => $key,
+                'ended_at' => null,
+                'duration_seconds' => null,
             ];
             if ($ip !== '') {
                 $payload['ip_address'] = $ip;
             }
 
             try {
-                $existing = $this->findOpenSession($db, $serverId, $session, $key);
+                $existing = $this->findSessionRow($db, $serverId, $session, $key);
                 if ($existing) {
                     $db->update('playback_sessions', $payload, 'id = ?', [(int) $existing['id']]);
                     continue;
@@ -80,7 +88,7 @@ final class PlaybackHistoryService
         }
 
         foreach ($activeKeysByServer as $serverId => $keys) {
-            $this->closeEndedSessions((int) $serverId, $keys, $now);
+            $this->closeEndedSessions((int) $serverId, array_values(array_unique($keys)), $now);
         }
     }
 
@@ -121,19 +129,38 @@ final class PlaybackHistoryService
 
     /**
      * @param array<string, mixed> $session
-     * @return array{id: int}|null
+     * @return array{id: int, started_at: string}|null
      */
-    private function findOpenSession(Database $db, int $serverId, array $session, string $canonicalKey): ?array
+    private function findSessionRow(Database $db, int $serverId, array $session, string $canonicalKey): ?array
     {
         foreach (PlaybackSessionKey::lookupKeys($session, $serverId) as $key) {
-            $row = $db->fetchOne(
-                'SELECT id FROM playback_sessions
+            $open = $db->fetchOne(
+                'SELECT id, started_at FROM playback_sessions
                  WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL
                  LIMIT 1',
                 [$serverId, $key]
             );
-            if ($row !== null) {
-                return ['id' => (int) $row['id']];
+            if ($open !== null) {
+                return [
+                    'id' => (int) $open['id'],
+                    'started_at' => (string) $open['started_at'],
+                ];
+            }
+
+            $recent = $db->fetchOne(
+                'SELECT id, started_at FROM playback_sessions
+                 WHERE server_id = ? AND external_session_id = ?
+                   AND ended_at IS NOT NULL
+                   AND ended_at >= DATE_SUB(NOW(), INTERVAL ? SECOND)
+                 ORDER BY ended_at DESC
+                 LIMIT 1',
+                [$serverId, $key, self::REOPEN_WINDOW_SECONDS]
+            );
+            if ($recent !== null) {
+                return [
+                    'id' => (int) $recent['id'],
+                    'started_at' => (string) $recent['started_at'],
+                ];
             }
         }
 
@@ -158,15 +185,6 @@ final class PlaybackHistoryService
     private function closeEndedSessions(int $serverId, array $activeKeys, string $now): void
     {
         if ($activeKeys === []) {
-            try {
-                Database::getInstance()->query(
-                    'UPDATE playback_sessions SET ended_at = ?, duration_seconds = TIMESTAMPDIFF(SECOND, started_at, ?)
-                     WHERE server_id = ? AND ended_at IS NULL',
-                    [$now, $now, $serverId]
-                );
-            } catch (\Throwable) {
-            }
-
             return;
         }
 

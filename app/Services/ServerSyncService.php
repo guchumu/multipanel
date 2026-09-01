@@ -9,9 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
-use App\Services\Media\PlaybackSessionKey;
 use App\Services\Media\ServerEndpoint;
-use App\Services\Media\SessionClientIp;
 use Core\Cache;
 use Core\Database;
 use Core\Logger;
@@ -81,7 +79,6 @@ final class ServerSyncService
             $userStats = $this->syncUsers($server, $media);
             $this->lastUserSyncStats = $userStats;
             $this->recordStats($server);
-            $this->recordActiveSessions($server, $sessions);
             $this->persistDebugLight($server, true);
             $this->forgetSoftSyncCache((int) $server->tenant_id);
 
@@ -121,7 +118,6 @@ final class ServerSyncService
             }
             $server->save();
 
-            $this->recordActiveSessions($server, $sessions);
             $this->persistDebugLight($server, true);
 
             return true;
@@ -662,107 +658,6 @@ final class ServerSyncService
             'online_users' => $server->active_sessions,
             'recorded_at' => now()->format('Y-m-d H:i:s'),
         ]);
-    }
-
-    /** @param array<int, array<string, mixed>> $sessions */
-    private function recordActiveSessions(Server $server, array $sessions): void
-    {
-        $geo = new GeoIpService();
-        $db = Database::getInstance();
-        $now = now()->format('Y-m-d H:i:s');
-        $activeKeys = [];
-
-        foreach ($sessions as $session) {
-            $sessionKey = PlaybackSessionKey::forSession($session, (int) $server->id);
-            $activeKeys[] = $sessionKey;
-
-            $existing = $this->findOpenPlaybackSession($db, (int) $server->id, $session, $sessionKey);
-
-            $mediaUserId = null;
-            $username = trim((string) ($session['user'] ?? ''));
-            if ($username !== '') {
-                $mediaUser = $db->fetchOne(
-                    'SELECT id FROM media_users WHERE server_id = ? AND deleted_at IS NULL AND (username = ? OR display_name = ?) LIMIT 1',
-                    [$server->id, $username, $username]
-                );
-                $mediaUserId = $mediaUser['id'] ?? null;
-            }
-
-            $ip = SessionClientIp::normalize((string) ($session['client_ip'] ?? $session['public_ip'] ?? ''));
-            $country = null;
-            if ($existing === null || empty($existing['country'])) {
-                $country = $geo->countryCode($ip);
-            }
-
-            $payload = [
-                'title' => $session['title'] ?? null,
-                'media_type' => $session['media_type'] ?? null,
-                'player' => $session['player'] ?? null,
-                'device' => $session['platform'] ?? null,
-                'quality' => $session['play_method'] ?? null,
-            ];
-            if ($ip !== '') {
-                $payload['ip_address'] = $ip;
-            }
-            if ($country !== null) {
-                $payload['country'] = $country;
-            }
-
-            if ($existing) {
-                $db->update('playback_sessions', array_merge($payload, [
-                    'external_session_id' => $sessionKey,
-                ]), 'id = ?', [$existing['id']]);
-                continue;
-            }
-
-            $db->insert('playback_sessions', array_merge($payload, [
-                'tenant_id' => $server->tenant_id,
-                'server_id' => $server->id,
-                'media_user_id' => $mediaUserId,
-                'external_session_id' => $sessionKey,
-                'started_at' => $now,
-            ]));
-        }
-
-        if ($activeKeys === []) {
-            $db->query(
-                'UPDATE playback_sessions SET ended_at = ?, duration_seconds = TIMESTAMPDIFF(SECOND, started_at, ?)
-                 WHERE server_id = ? AND ended_at IS NULL',
-                [$now, $now, $server->id]
-            );
-            return;
-        }
-
-        $placeholders = implode(',', array_fill(0, count($activeKeys), '?'));
-        $db->query(
-            "UPDATE playback_sessions SET ended_at = ?, duration_seconds = TIMESTAMPDIFF(SECOND, started_at, ?)
-             WHERE server_id = ? AND ended_at IS NULL AND external_session_id NOT IN ({$placeholders})",
-            array_merge([$now, $now, $server->id], $activeKeys)
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $session
-     * @return array{id: int, country: ?string}|null
-     */
-    private function findOpenPlaybackSession(Database $db, int $serverId, array $session, string $canonicalKey): ?array
-    {
-        foreach (PlaybackSessionKey::lookupKeys($session, $serverId) as $key) {
-            $row = $db->fetchOne(
-                'SELECT id, country FROM playback_sessions
-                 WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL
-                 LIMIT 1',
-                [$serverId, $key]
-            );
-            if ($row !== null) {
-                return [
-                    'id' => (int) $row['id'],
-                    'country' => $row['country'] ?? null,
-                ];
-            }
-        }
-
-        return null;
     }
 
     public function refreshStaleServers(int $tenantId, int $limit = 10): int

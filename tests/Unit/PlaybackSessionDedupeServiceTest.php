@@ -55,6 +55,20 @@ final class PlaybackSessionDedupeServiceTest extends TestCase
         $this->assertCount(2, $groups[0]);
     }
 
+    public function testClustersSameUserAndTitleDespiteDifferentPlayer(): void
+    {
+        $service = new PlaybackSessionDedupeService();
+        $rows = [
+            array_merge($this->row(1, 10, 'Film', '10:00:00', '10:05:00'), ['player' => 'Android']),
+            array_merge($this->row(2, 10, 'Film', '10:05:00', '10:10:00'), ['player' => 'Plex Web']),
+        ];
+
+        $groups = $this->invokeCluster($service, $rows);
+
+        $this->assertCount(1, $groups);
+        $this->assertCount(2, $groups[0]);
+    }
+
     /**
      * @param list<array<string, mixed>> $rows
      * @return list<list<array<string, mixed>>>
@@ -82,6 +96,8 @@ final class PlaybackSessionDedupeServiceTest extends TestCase
             'duration_seconds' => 180,
             'country' => null,
             'ip_address' => null,
+            'username' => 'pepe',
+            'display_name' => null,
         ];
     }
 }
