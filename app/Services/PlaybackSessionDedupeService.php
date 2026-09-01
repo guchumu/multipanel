@@ -96,8 +96,9 @@ final class PlaybackSessionDedupeService
 
         foreach ($groups as $group) {
             $rows = Database::getInstance()->fetchAll(
-                'SELECT id, tenant_id, server_id, media_user_id, external_session_id, title, player,
-                        started_at, ended_at, duration_seconds, country, ip_address, username, display_name
+                'SELECT ps.id, ps.tenant_id, ps.server_id, ps.media_user_id, ps.external_session_id, ps.title, ps.player,
+                        ps.started_at, ps.ended_at, ps.duration_seconds, ps.country, ps.ip_address,
+                        mu.username, mu.display_name
                  FROM playback_sessions ps
                  LEFT JOIN media_users mu ON mu.id = ps.media_user_id
                  WHERE ps.server_id = ? AND ps.external_session_id = ?
