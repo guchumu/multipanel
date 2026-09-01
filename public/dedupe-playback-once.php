@@ -5,10 +5,12 @@ declare(strict_types=1);
 /**
  * TEMPORAL — Ejecutar dedupe de playback_sessions y BORRAR este archivo.
  *
- * URL: https://tu-dominio/dedupe-playback-once.php?key=VALOR_DE_APP_KEY_EN_.env
- *      &apply=1  (opcional, para aplicar; sin apply = solo simulación)
+ * URL: https://tu-dominio/dedupe-playback-once.php?token=TU_CRON_TOKEN
+ *      &apply=1  (opcional; sin apply = solo simulación)
  *      &since=2026-08-29  (opcional)
  *      &tenant=1  (opcional)
+ *
+ * Token: el mismo CRON_TOKEN del cron (Configuración → Cron o .env).
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
@@ -19,15 +21,15 @@ require_once dirname(__DIR__) . '/core/helpers.php';
 
 header('Content-Type: text/html; charset=utf-8');
 
-$appKey = (string) env('APP_KEY', '');
-$providedKey = (string) ($_GET['key'] ?? '');
+$expectedToken = dedupeExpectedCronToken();
+$providedToken = (string) ($_GET['token'] ?? $_GET['key'] ?? '');
 
-if ($appKey === '' || !hash_equals($appKey, $providedKey)) {
+if ($expectedToken === '' || $providedToken === '' || !hash_equals($expectedToken, $providedToken)) {
     http_response_code(403);
     echo '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem">';
     echo '<h1>403</h1><p>Acceso denegado.</p>';
-    echo '<p>Abre esta URL con <code>?key=</code> y el valor de <code>APP_KEY</code> de tu archivo <code>.env</code>.</p>';
-    echo '<p><small>Ejemplo: <code>/dedupe-playback-once.php?key=tu_app_key_aqui</code></small></p>';
+    echo '<p>Usa <code>?token=</code> con el <strong>CRON_TOKEN</strong> (Configuración → Cron o <code>CRON_TOKEN</code> en .env).</p>';
+    echo '<p><small>Ejemplo: <code>/dedupe-playback-once.php?token=tu_token_cron</code></small></p>';
     echo '</body></html>';
     exit;
 }
@@ -37,7 +39,7 @@ $tenantId = max(0, (int) ($_GET['tenant'] ?? 0));
 $since = trim((string) ($_GET['since'] ?? '2026-08-29'));
 $sinceParam = $since !== '' ? $since : null;
 
-$baseQuery = 'key=' . rawurlencode($providedKey);
+$baseQuery = 'token=' . rawurlencode($providedToken);
 if ($sinceParam !== null) {
     $baseQuery .= '&since=' . rawurlencode($sinceParam);
 }
@@ -54,6 +56,24 @@ try {
 }
 
 $mode = $apply ? 'APLICADO' : 'SIMULACIÓN';
+
+function dedupeExpectedCronToken(): string
+{
+    $fromEnv = trim((string) env('CRON_TOKEN', ''));
+    if ($fromEnv !== '') {
+        return $fromEnv;
+    }
+
+    try {
+        $row = Core\Database::getInstance()->fetchOne(
+            "SELECT value FROM settings WHERE `group` = 'cron' AND `key` = 'cron_token' ORDER BY tenant_id IS NULL, tenant_id LIMIT 1"
+        );
+
+        return trim((string) ($row['value'] ?? ''));
+    } catch (Throwable) {
+        return '';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -100,6 +120,6 @@ $mode = $apply ? 'APLICADO' : 'SIMULACIÓN';
         <?php endif; ?>
     </p>
 
-    <p><small>Parámetros: <code>since</code> (fecha), <code>tenant</code> (id), <code>apply=1</code> (aplicar).</small></p>
+    <p><small>Parámetros: <code>token</code> (CRON_TOKEN), <code>since</code>, <code>tenant</code>, <code>apply=1</code>.</small></p>
 </body>
 </html>
