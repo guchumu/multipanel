@@ -226,6 +226,10 @@
         }
     });
 
+    document.getElementById('btnActivateHeader')?.addEventListener('click', () => {
+        document.getElementById('btnActivate')?.click();
+    });
+
     document.getElementById('btnSuspend')?.addEventListener('click', async () => {
         if (!confirm('¿Suspender este usuario? Se cortará el acceso a la biblioteca y se terminarán las sesiones activas.')) return;
         try {
@@ -239,6 +243,10 @@
         } catch (err) {
             toast(err.message || 'Error al suspender');
         }
+    });
+
+    document.getElementById('btnSuspendHeader')?.addEventListener('click', () => {
+        document.getElementById('btnSuspend')?.click();
     });
 
     document.getElementById('btnRemoveServer')?.addEventListener('click', async () => {
@@ -728,5 +736,52 @@
                 playbackMoreBtn.disabled = false;
             }
         });
+    }
+
+    const tabStorageKey = `media-user-tab:${uuid}`;
+    const tabEl = document.getElementById('mediaUserTabs');
+
+    function showMediaUserTab(tabId, scrollToId) {
+        const btn = document.querySelector(`[data-bs-target="#${tabId}"]`);
+        if (btn && window.bootstrap?.Tab) {
+            window.bootstrap.Tab.getOrCreateInstance(btn).show();
+        }
+        if (scrollToId) {
+            requestAnimationFrame(() => {
+                document.getElementById(scrollToId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        }
+    }
+
+    document.querySelectorAll('[data-mu-tab]').forEach((el) => {
+        el.addEventListener('click', () => {
+            showMediaUserTab(el.dataset.muTab, el.dataset.muSubtab || '');
+        });
+    });
+
+    tabEl?.addEventListener('shown.bs.tab', (e) => {
+        const target = e.target?.getAttribute('data-bs-target');
+        if (target) {
+            try {
+                sessionStorage.setItem(tabStorageKey, target.slice(1));
+            } catch (_) { /* ignore */ }
+        }
+    });
+
+    const hashTabMap = {
+        'portal-link': ['tab-comunicacion', 'portal-link'],
+        stripe: ['tab-comunicacion', 'stripe'],
+    };
+    const hash = (location.hash || '').replace(/^#/, '');
+    if (hashTabMap[hash]) {
+        const [tabId, scrollId] = hashTabMap[hash];
+        showMediaUserTab(tabId, scrollId);
+    } else {
+        try {
+            const saved = sessionStorage.getItem(tabStorageKey);
+            if (saved) {
+                showMediaUserTab(saved);
+            }
+        } catch (_) { /* ignore */ }
     }
 })();
