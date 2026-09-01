@@ -226,10 +226,6 @@
         }
     });
 
-    document.getElementById('btnActivateHeader')?.addEventListener('click', () => {
-        document.getElementById('btnActivate')?.click();
-    });
-
     document.getElementById('btnSuspend')?.addEventListener('click', async () => {
         if (!confirm('¿Suspender este usuario? Se cortará el acceso a la biblioteca y se terminarán las sesiones activas.')) return;
         try {
@@ -243,10 +239,6 @@
         } catch (err) {
             toast(err.message || 'Error al suspender');
         }
-    });
-
-    document.getElementById('btnSuspendHeader')?.addEventListener('click', () => {
-        document.getElementById('btnSuspend')?.click();
     });
 
     document.getElementById('btnRemoveServer')?.addEventListener('click', async () => {
@@ -291,13 +283,14 @@
                 }
             }
             if (badge) {
-                badge.className = 'badge fs-5 px-3 py-2 ' + cls;
+                badge.className = 'badge ' + cls;
                 badge.textContent = label;
             }
             if (resultBox) {
-                resultBox.className = 'alert mt-3 mb-0 ' + alertCls;
+                const boxTone = onServer === true ? 'ok' : (onServer === false ? 'bad' : 'unknown');
+                resultBox.className = 'mu-membership-box mu-membership-box--' + boxTone;
             }
-            if (resultLabel) resultLabel.textContent = label + '.';
+            if (resultLabel) resultLabel.textContent = label;
             if (resultHint) resultHint.textContent = (typeof data.message === 'string' && data.message) ? data.message : hint;
             toast(responseMessage(
                 data,
@@ -756,6 +749,13 @@
     document.querySelectorAll('[data-mu-tab]').forEach((el) => {
         el.addEventListener('click', () => {
             showMediaUserTab(el.dataset.muTab, el.dataset.muSubtab || '');
+        });
+    });
+
+    document.querySelectorAll('[data-mu-scroll]').forEach((el) => {
+        el.addEventListener('click', () => {
+            const target = document.getElementById(el.dataset.muScroll);
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
 

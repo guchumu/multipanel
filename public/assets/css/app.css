@@ -878,31 +878,254 @@ button.session-household-badge:disabled {
     --mu-muted: #64748b;
 }
 
-.media-user-hero {
-    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a9e 55%, #3b7dd8 100%);
-    border-radius: 1rem;
-    color: #fff;
-    padding: 1.35rem 1.5rem;
-    box-shadow: 0 0.5rem 1.5rem rgba(30, 58, 95, 0.22);
-}
-
-.media-user-hero .text-muted,
-.media-user-hero .mu-meta {
-    color: rgba(255, 255, 255, 0.72) !important;
+.media-user-identity {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.85rem;
+    padding: 0.85rem 1rem;
+    box-shadow: 0 0.1rem 0.35rem rgba(15, 23, 42, 0.04);
 }
 
 .media-user-avatar {
     width: 3.25rem;
     height: 3.25rem;
     border-radius: 0.85rem;
-    background: rgba(255, 255, 255, 0.18);
-    border: 2px solid rgba(255, 255, 255, 0.28);
+    background: linear-gradient(135deg, #1e3a5f, #3b7dd8);
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.35rem;
     font-weight: 700;
     flex-shrink: 0;
+}
+
+.media-user-avatar--sm {
+    width: 2.75rem;
+    height: 2.75rem;
+    font-size: 1.1rem;
+    border-radius: 0.7rem;
+}
+
+/* Account control panel — priority block */
+.mu-account-panel {
+    background: #fff;
+    border-radius: 1rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 0.35rem 1.25rem rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+}
+
+.mu-account-panel__header {
+    padding: 0.75rem 1.25rem;
+    background: linear-gradient(90deg, rgba(59, 125, 216, 0.1), rgba(59, 125, 216, 0.02));
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.mu-account-panel__kicker {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--mu-accent);
+}
+
+.mu-account-panel > .row {
+    padding: 1.25rem;
+}
+
+.mu-account-panel--active {
+    border-top: 4px solid #198754;
+}
+
+.mu-account-panel--warning {
+    border-top: 4px solid #fd7e14;
+}
+
+.mu-account-panel--suspended,
+.mu-account-panel--expired {
+    border-top: 4px solid #dc3545;
+}
+
+.mu-account-panel--pending {
+    border-top: 4px solid #6c757d;
+}
+
+.mu-status-block {
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.mu-status-icon {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    margin-bottom: 0.65rem;
+}
+
+.mu-status-icon--active {
+    background: rgba(25, 135, 84, 0.12);
+    color: #198754;
+    box-shadow: 0 0 0 6px rgba(25, 135, 84, 0.08);
+}
+
+.mu-status-icon--warning {
+    background: rgba(253, 126, 20, 0.12);
+    color: #fd7e14;
+    box-shadow: 0 0 0 6px rgba(253, 126, 20, 0.08);
+}
+
+.mu-status-icon--suspended,
+.mu-status-icon--expired {
+    background: rgba(220, 53, 69, 0.12);
+    color: #dc3545;
+    box-shadow: 0 0 0 6px rgba(220, 53, 69, 0.08);
+}
+
+.mu-status-icon--pending {
+    background: rgba(108, 117, 125, 0.12);
+    color: #6c757d;
+}
+
+.mu-status-label {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--mu-ink);
+    letter-spacing: -0.02em;
+}
+
+.mu-status-meta {
+    margin-top: 0.35rem;
+}
+
+.mu-status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    width: 100%;
+}
+
+.mu-action-btn {
+    min-width: 7.5rem;
+    font-weight: 650;
+    border-radius: 0.6rem;
+    padding: 0.5rem 1rem;
+}
+
+.mu-expiry-block {
+    background: #f8fafc;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.85rem;
+    padding: 1rem 1.1rem;
+}
+
+.mu-expiry-big {
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--mu-ink);
+    letter-spacing: -0.04em;
+}
+
+.mu-expiry-caption {
+    font-size: 0.9rem;
+    color: var(--mu-muted);
+    margin-top: 0.25rem;
+}
+
+.mu-expiry-input {
+    border-radius: 0.6rem;
+    font-weight: 600;
+}
+
+.mu-day-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.mu-day-chip {
+    border: 2px solid rgba(59, 125, 216, 0.25);
+    background: #fff;
+    color: var(--mu-accent);
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    font-weight: 700;
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.mu-day-chip:hover {
+    background: var(--mu-accent);
+    border-color: var(--mu-accent);
+    color: #fff;
+}
+
+.mu-library-block {
+    background: #f8fafc;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.85rem;
+    padding: 1rem;
+}
+
+.mu-library-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--mu-ink);
+    margin-bottom: 0.75rem;
+}
+
+.mu-membership-box {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+    padding: 0.75rem;
+    border-radius: 0.65rem;
+    font-size: 0.88rem;
+}
+
+.mu-membership-box > i {
+    font-size: 1.35rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.mu-membership-box--ok {
+    background: rgba(25, 135, 84, 0.1);
+    color: #146c43;
+}
+
+.mu-membership-box--ok > i {
+    color: #198754;
+}
+
+.mu-membership-box--bad {
+    background: rgba(220, 53, 69, 0.1);
+    color: #842029;
+}
+
+.mu-membership-box--bad > i {
+    color: #dc3545;
+}
+
+.mu-membership-box--unknown {
+    background: rgba(108, 117, 125, 0.1);
+    color: #495057;
+}
+
+.mu-membership-box--unknown > i {
+    color: #6c757d;
 }
 
 .media-user-stat {
@@ -946,6 +1169,16 @@ button.session-household-badge:disabled {
 .media-user-stat .stat-sub {
     font-size: 0.78rem;
     color: var(--mu-muted);
+}
+
+.media-user-stat--compact .stat-value {
+    font-size: 1rem;
+}
+
+.media-user-stat--compact .stat-icon {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1rem;
 }
 
 .media-user-tabs {
@@ -1011,18 +1244,24 @@ button.session-household-badge:disabled {
     color: var(--mu-accent);
 }
 
-.media-user-membership-alert {
-    border-radius: 0.75rem;
-    border: none;
-}
-
-.media-user-quick-actions .btn {
-    border-radius: 0.55rem;
-}
-
 @media (max-width: 767.98px) {
-    .media-user-hero {
-        padding: 1.1rem 1rem;
+    .mu-account-panel > .row {
+        padding: 1rem;
+    }
+
+    .mu-expiry-big {
+        font-size: 2.35rem;
+    }
+
+    .mu-status-icon {
+        width: 3.75rem;
+        height: 3.75rem;
+        font-size: 1.65rem;
+    }
+
+    .mu-action-btn {
+        flex: 1 1 calc(50% - 0.5rem);
+        min-width: 0;
     }
 
     .media-user-tab-panel {

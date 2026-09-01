@@ -1,12 +1,4 @@
 <?php
-$statusBadgeClass = static function (string $status): string {
-    return match ($status) {
-        'active' => 'bg-success',
-        'suspended' => 'bg-warning text-dark',
-        'pending' => 'bg-secondary',
-        default => 'bg-light text-dark border',
-    };
-};
 $membershipBadge = static function ($onServer): array {
     if ($onServer === null || $onServer === '') {
         return ['label' => 'Sin sync', 'class' => 'bg-light text-dark border', 'hint' => 'Pulsa Forzar sincronización para comprobar si está en el servidor.'];
@@ -17,22 +9,6 @@ $membershipBadge = static function ($onServer): array {
     return ['label' => 'No está en el servidor', 'class' => 'bg-danger', 'hint' => 'Tenía external_id en el panel pero ya no aparece en Plex/Jellyfin.'];
 };
 $mb = $membershipBadge($mediaUser->on_server ?? null);
-$playMethodLabel = static function (string $method): string {
-    return match ($method) {
-        'direct_play' => 'Direct Play',
-        'direct_stream' => 'Direct Stream',
-        'transcode' => 'Transcode',
-        default => ucfirst(str_replace('_', ' ', $method)),
-    };
-};
-$playMethodBadge = static function (string $method): string {
-    return match ($method) {
-        'direct_play' => 'success',
-        'direct_stream' => 'info',
-        'transcode' => 'warning',
-        default => 'secondary',
-    };
-};
 
 $displayName = (string) ($mediaUser->display_name ?? $mediaUser->username);
 $initial = mb_strtoupper(mb_substr(trim($displayName), 0, 1));
@@ -79,6 +55,26 @@ $statusIconBg = match ((string) $mediaUser->status) {
     'pending' => 'secondary',
     default => 'light',
 };
+$statusLabel = match ((string) $mediaUser->status) {
+    'active' => 'Activo',
+    'suspended' => 'Suspendido',
+    'pending' => 'Pendiente',
+    default => ucfirst((string) $mediaUser->status),
+};
+$daysLeft = null;
+if ($expiresLabel !== '') {
+    $expTs = strtotime($expiresLabel);
+    if ($expTs !== false) {
+        $daysLeft = (int) floor(($expTs - strtotime('today')) / 86400);
+    }
+}
+$accountPanelTone = match (true) {
+    (string) $mediaUser->status === 'suspended' => 'suspended',
+    (string) $mediaUser->status === 'pending' => 'pending',
+    $daysLeft !== null && $daysLeft < 0 => 'expired',
+    $daysLeft !== null && $daysLeft <= 14 => 'warning',
+    default => 'active',
+};
 
 ob_start();
 ?>
@@ -89,69 +85,105 @@ ob_start();
         </a>
     </div>
 
-    <div class="media-user-hero mb-4">
-        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
-            <div class="d-flex align-items-start gap-3">
-                <div class="media-user-avatar" aria-hidden="true"><?= e($initial) ?></div>
-                <div>
-                    <h4 class="mb-1 fw-bold"><?= e($displayName) ?></h4>
-                    <p class="mu-meta small mb-2">
-                        <span class="me-2"><i class="bi bi-at me-1"></i><?= e($mediaUser->username) ?></span>
-                        <span class="me-2"><i class="bi bi-envelope me-1"></i><?= e($mediaUser->email ?? '—') ?></span>
-                    </p>
-                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <span class="badge <?= e($statusBadgeClass((string) $mediaUser->status)) ?>"><?= e($mediaUser->status) ?></span>
-                        <span id="membershipBadge" class="badge <?= e($mb['class']) ?>" title="<?= e($mb['hint']) ?>"><?= e($mb['label']) ?></span>
-                        <span class="badge bg-white bg-opacity-25 text-white">
-                            <i class="bi bi-hdd-network me-1"></i><?= e($mediaUser->server_name ?? 'Sin servidor') ?>
-                        </span>
-                    </div>
-                </div>
+    <div class="media-user-identity mb-3">
+        <div class="d-flex align-items-center gap-3">
+            <div class="media-user-avatar media-user-avatar--sm" aria-hidden="true"><?= e($initial) ?></div>
+            <div class="flex-grow-1 min-width-0">
+                <h5 class="mb-0 fw-bold text-truncate"><?= e($displayName) ?></h5>
+                <p class="text-muted small mb-0 text-truncate">
+                    <span class="me-2">@<?= e($mediaUser->username) ?></span>
+                    <span class="me-2">· <?= e($mediaUser->email ?? 'Sin email') ?></span>
+                    <span>· <?= e($mediaUser->server_name ?? 'Sin servidor') ?></span>
+                </p>
             </div>
-            <div class="media-user-quick-actions d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-light btn-sm" id="btnSyncMembership" title="Reconsulta la lista del servidor para este usuario">
-                    <i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca
-                </button>
-                <?php if ($mediaUser->status !== 'active'): ?>
-                <button type="button" class="btn btn-success btn-sm" id="btnActivateHeader"><i class="bi bi-play me-1"></i>Activar</button>
-                <?php endif; ?>
-                <?php if ($mediaUser->status === 'active'): ?>
-                <button type="button" class="btn btn-warning btn-sm" id="btnSuspendHeader"><i class="bi bi-pause me-1"></i>Suspender</button>
-                <?php endif; ?>
-            </div>
+            <span class="badge bg-light text-dark border d-none d-md-inline">#<?= (int) $mediaUser->id ?></span>
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
-                    <div class="stat-icon bg-<?= e($statusIconBg) ?> bg-opacity-10 text-<?= e($statusIconBg) ?>">
+    <section id="mu-account-panel" class="mu-account-panel mu-account-panel--<?= e($accountPanelTone) ?> mb-4" aria-label="Estado de la cuenta">
+        <div class="mu-account-panel__header">
+            <span class="mu-account-panel__kicker"><i class="bi bi-shield-check me-1"></i>Estado de la cuenta</span>
+        </div>
+        <div class="row g-4 align-items-stretch">
+            <div class="col-lg-4">
+                <div class="mu-status-block">
+                    <div class="mu-status-icon mu-status-icon--<?= e($accountPanelTone) ?>">
                         <i class="bi bi-<?= e($statusIcon) ?>"></i>
                     </div>
-                    <div>
-                        <div class="stat-label">Estado</div>
-                        <div class="stat-value text-capitalize"><?= e($mediaUser->status) ?></div>
+                    <div class="mu-status-label"><?= e($statusLabel) ?></div>
+                    <div class="mu-status-meta">
+                        <span id="membershipBadge" class="badge <?= e($mb['class']) ?>" title="<?= e($mb['hint']) ?>"><?= e($mb['label']) ?></span>
+                    </div>
+                    <div class="mu-status-actions mt-3">
+                        <button type="button" class="btn btn-success mu-action-btn" id="btnActivate" <?= $mediaUser->status === 'active' ? 'disabled' : '' ?>>
+                            <i class="bi bi-play-fill me-1"></i>Reactivar
+                        </button>
+                        <button type="button" class="btn btn-warning mu-action-btn" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>>
+                            <i class="bi bi-pause-fill me-1"></i>Pausar
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
-                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
-                        <i class="bi bi-calendar-event"></i>
+
+            <div class="col-lg-5">
+                <div class="mu-expiry-block h-100">
+                    <div class="mu-expiry-head">
+                        <?php if ($expiresLabel === ''): ?>
+                        <div class="mu-expiry-big">∞</div>
+                        <div class="mu-expiry-caption">Sin fecha de caducidad</div>
+                        <?php elseif ($daysLeft !== null && $daysLeft < 0): ?>
+                        <div class="mu-expiry-big text-danger"><?= abs($daysLeft) ?></div>
+                        <div class="mu-expiry-caption">días de retraso · venció el <?= e($expiresDisplay) ?></div>
+                        <?php elseif ($daysLeft !== null): ?>
+                        <div class="mu-expiry-big"><?= $daysLeft ?></div>
+                        <div class="mu-expiry-caption">días restantes · hasta el <?= e($expiresDisplay) ?></div>
+                        <?php else: ?>
+                        <div class="mu-expiry-big"><?= e($expiresDisplay) ?></div>
+                        <div class="mu-expiry-caption">fecha de caducidad</div>
+                        <?php endif; ?>
                     </div>
-                    <div>
-                        <div class="stat-label">Caducidad</div>
-                        <div class="stat-value"><?= e($expiresDisplay) ?></div>
+                    <label class="form-label small fw-semibold mt-3 mb-1" for="expiresAt">Cambiar fecha</label>
+                    <input type="date" id="expiresAt" class="form-control expires-input media-users-expires-input mu-expiry-input"
+                           data-db-status="<?= e((string) $mediaUser->status) ?>"
+                           value="<?= e(expires_date_input($mediaUser->expires_at)) ?>"
+                           title="Vacío = sin caducidad">
+                    <div class="form-text mb-2">Vacío = acceso indefinido</div>
+                    <div class="mu-day-chips">
+                        <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
+                        <button type="button" class="mu-day-chip btn-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
+                        <?php endforeach; ?>
                     </div>
                 </div>
             </div>
+
+            <div class="col-lg-3">
+                <div class="mu-library-block h-100">
+                    <div class="mu-library-title"><i class="bi bi-collection me-1"></i>Biblioteca</div>
+                    <div id="membershipResult" class="mu-membership-box mu-membership-box--<?= (int) ($mediaUser->on_server ?? -1) === 1 ? 'ok' : ((int) ($mediaUser->on_server ?? -1) === 0 ? 'bad' : 'unknown') ?>">
+                        <i class="bi bi-<?= (int) ($mediaUser->on_server ?? -1) === 1 ? 'check-circle-fill' : ((int) ($mediaUser->on_server ?? -1) === 0 ? 'x-circle-fill' : 'question-circle') ?>"></i>
+                        <div>
+                            <strong id="membershipResultLabel"><?= e($mb['label']) ?></strong>
+                            <span id="membershipResultHint" class="d-block small"><?= e($mb['hint']) ?></span>
+                            <?php if (!empty($mediaUser->membership_synced_at)): ?>
+                            <span class="d-block small mt-1 opacity-75">Última comprobación: <?= e($mediaUser->membership_synced_at) ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary w-100 mt-3" id="btnSyncMembership">
+                        <i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary w-100 mt-2 btn-sm" id="btnSyncMembershipControl">
+                        <i class="bi bi-cloud-check me-1"></i>Sincronizar estado
+                    </button>
+                </div>
+            </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
+    </section>
+
+    <div class="row g-2 g-md-3 mb-4">
+        <div class="col-4">
+            <div class="card media-user-stat media-user-stat--compact">
+                <div class="card-body d-flex align-items-center gap-2 py-2 px-3">
                     <div class="stat-icon bg-info bg-opacity-10 text-info">
                         <i class="bi bi-collection-play"></i>
                     </div>
@@ -162,9 +194,9 @@ ob_start();
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="col-4">
+            <div class="card media-user-stat media-user-stat--compact">
+                <div class="card-body d-flex align-items-center gap-2 py-2 px-3">
                     <div class="stat-icon bg-secondary bg-opacity-10 text-secondary">
                         <i class="bi bi-phone"></i>
                     </div>
@@ -175,9 +207,9 @@ ob_start();
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
+        <div class="col-4">
+            <div class="card media-user-stat media-user-stat--compact">
+                <div class="card-body d-flex align-items-center gap-2 py-2 px-3">
                     <div class="stat-icon bg-success bg-opacity-10 text-success">
                         <i class="bi bi-play-circle"></i>
                     </div>
@@ -186,32 +218,6 @@ ob_start();
                         <div class="stat-value"><?= count($nowPlaying) ?></div>
                     </div>
                 </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card media-user-stat">
-                <div class="card-body d-flex align-items-center gap-3 py-3">
-                    <div class="stat-icon bg-dark bg-opacity-10 text-dark">
-                        <i class="bi bi-hash"></i>
-                    </div>
-                    <div>
-                        <div class="stat-label">ID panel</div>
-                        <div class="stat-value">#<?= (int) $mediaUser->id ?></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="membershipResult" class="alert media-user-membership-alert mb-4 <?= (int) ($mediaUser->on_server ?? -1) === 1 ? 'alert-success' : ((int) ($mediaUser->on_server ?? -1) === 0 ? 'alert-danger' : 'alert-secondary') ?>">
-        <div class="d-flex align-items-start gap-2">
-            <i class="bi bi-<?= (int) ($mediaUser->on_server ?? -1) === 1 ? 'check-circle' : ((int) ($mediaUser->on_server ?? -1) === 0 ? 'x-circle' : 'info-circle') ?> fs-5"></i>
-            <div>
-                <strong id="membershipResultLabel"><?= e($mb['label']) ?>.</strong>
-                <span id="membershipResultHint" class="ms-1"><?= e($mb['hint']) ?></span>
-                <?php if (!empty($mediaUser->membership_synced_at)): ?>
-                <span class="d-block small mt-1 opacity-75">Última comprobación: <?= e($mediaUser->membership_synced_at) ?></span>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -229,7 +235,7 @@ ob_start();
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-cuenta-btn" data-bs-toggle="tab" data-bs-target="#tab-cuenta" type="button" role="tab">
-                <i class="bi bi-sliders"></i>Cuenta
+                <i class="bi bi-three-dots"></i>Más opciones
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -324,8 +330,8 @@ ob_start();
             <div class="mt-4 pt-3 border-top">
                 <div class="section-title mb-3"><i class="bi bi-lightning"></i>Accesos rápidos</div>
                 <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-mu-scroll="mu-account-panel"><i class="bi bi-shield-check me-1"></i>Estado de cuenta</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" data-mu-tab="tab-perfil"><i class="bi bi-pencil me-1"></i>Editar perfil</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm" data-mu-tab="tab-cuenta"><i class="bi bi-calendar-plus me-1"></i>Gestionar caducidad</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" data-mu-tab="tab-comunicacion" data-mu-subtab="portal-link"><i class="bi bi-link-45deg me-1"></i>Enlace portal</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" data-mu-tab="tab-comunicacion" data-mu-subtab="stripe"><i class="bi bi-credit-card me-1"></i>Cobro Stripe</button>
                 </div>
@@ -426,35 +432,14 @@ ob_start();
                 </div>
             </div>
 
-            <div class="section-title"><i class="bi bi-calendar-check"></i>Suscripción y caducidad</div>
-            <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                    <label class="form-label small">Fecha expiración</label>
-                    <input type="date" id="expiresAt" class="form-control form-control-sm expires-input media-users-expires-input"
-                           data-db-status="<?= e((string) $mediaUser->status) ?>"
-                           value="<?= e(expires_date_input($mediaUser->expires_at)) ?>"
-                           title="Vacío = sin caducidad">
-                    <div class="form-text">Deja vacío para acceso sin caducidad (indefinido).</div>
-                </div>
-            </div>
-            <div class="mb-4 d-flex flex-wrap gap-2">
-                <span class="small text-muted w-100">Sumar días:</span>
-                <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
-                <button type="button" class="btn btn-sm btn-outline-primary btn-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
-                <?php endforeach; ?>
-            </div>
-
             <div class="section-title"><i class="bi bi-journal-text"></i>Notas privadas</div>
             <textarea id="userNotes" class="form-control form-control-sm mb-4" rows="4" placeholder="Ej: cliente habitual, pagó por Bizum el día 3, tuvo problema de buffering…"><?= e($mediaUser->notes ?? '') ?></textarea>
 
-            <div class="section-title"><i class="bi bi-toggles"></i>Acciones</div>
+            <div class="section-title"><i class="bi bi-tools"></i>Acciones avanzadas</div>
             <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-success btn-sm" id="btnActivate" <?= $mediaUser->status === 'active' ? 'disabled' : '' ?>><i class="bi bi-play me-1"></i>Activar</button>
-                <button type="button" class="btn btn-warning btn-sm" id="btnSuspend" <?= $mediaUser->status === 'suspended' ? 'disabled' : '' ?>><i class="bi bi-pause me-1"></i>Suspender</button>
                 <button type="button" class="btn btn-outline-info btn-sm" id="btnDiscoverIdentity" title="Buscar email/usuario en servidor, clientes o registros previos">
                     <i class="bi bi-search me-1"></i>Buscar email / usuario
                 </button>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncMembershipControl" title="Comprobar si sigue en la biblioteca del servidor"><i class="bi bi-arrow-repeat me-1"></i>Comprobar biblioteca</button>
                 <button type="button" class="btn btn-outline-danger btn-sm" id="btnRemoveServer"><i class="bi bi-person-x me-1"></i>Quitar del servidor</button>
                 <form method="POST" action="/media-users/<?= e($mediaUser->uuid) ?>" class="d-inline"
                       onsubmit="return confirm('¿Eliminar este usuario del panel? No borra la cuenta en Plex/Jellyfin.');">
@@ -465,7 +450,6 @@ ob_start();
                     </button>
                 </form>
             </div>
-            <p class="small text-muted mt-3 mb-0"><?= e($mb['hint']) ?></p>
         </div>
 
         <div class="tab-pane fade" id="tab-actividad" role="tabpanel">
