@@ -41,11 +41,126 @@
                 icon.className = collapsed ? 'bi bi-layout-sidebar-inset' : 'bi bi-layout-sidebar';
             }
         }
+        updateSidebarNativeTitles(collapsed);
+        hideSidebarCollapsedTip();
         try {
             localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
             document.cookie = 'mp_sidebar_collapsed=' + (collapsed ? '1' : '0')
                 + '; path=/; max-age=31536000; SameSite=Lax';
         } catch (_) { /* ignore */ }
+    }
+
+    function isSidebarCollapsed() {
+        return document.documentElement.classList.contains('sidebar-collapsed')
+            || document.body.classList.contains('sidebar-collapsed');
+    }
+
+    let sidebarCollapsedTipEl = null;
+
+    function getSidebarCollapsedTipEl() {
+        if (sidebarCollapsedTipEl) {
+            return sidebarCollapsedTipEl;
+        }
+        sidebarCollapsedTipEl = document.createElement('div');
+        sidebarCollapsedTipEl.id = 'sidebarCollapsedTip';
+        sidebarCollapsedTipEl.className = 'sidebar-collapsed-tip';
+        sidebarCollapsedTipEl.hidden = true;
+        sidebarCollapsedTipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(sidebarCollapsedTipEl);
+        return sidebarCollapsedTipEl;
+    }
+
+    function hideSidebarCollapsedTip() {
+        const tip = sidebarCollapsedTipEl;
+        if (tip) {
+            tip.hidden = true;
+        }
+    }
+
+    function sidebarTipLabel(link) {
+        return link.querySelector('.sidebar-label')?.textContent?.trim()
+            || link.getAttribute('title')
+            || link.dataset.sidebarTipStored
+            || '';
+    }
+
+    function showSidebarCollapsedTip(link) {
+        if (!isSidebarCollapsed()) {
+            return;
+        }
+
+        const label = sidebarTipLabel(link);
+        if (!label) {
+            return;
+        }
+
+        const tip = getSidebarCollapsedTipEl();
+        tip.replaceChildren();
+
+        const icon = link.querySelector('i.bi');
+        if (icon) {
+            const iconClone = icon.cloneNode(true);
+            iconClone.classList.remove('me-2', 'me-1', 'me-3');
+            tip.appendChild(iconClone);
+        }
+
+        const text = document.createElement('span');
+        text.textContent = label;
+        tip.appendChild(text);
+
+        tip.hidden = false;
+
+        const rect = link.getBoundingClientRect();
+        const tipRect = tip.getBoundingClientRect();
+        let top = rect.top + (rect.height / 2) - (tipRect.height / 2);
+        const margin = 8;
+        top = Math.max(margin, Math.min(top, window.innerHeight - tipRect.height - margin));
+        tip.style.top = `${Math.round(top)}px`;
+        tip.style.left = `${Math.round(rect.right + 10)}px`;
+    }
+
+    function updateSidebarNativeTitles(collapsed) {
+        const sidebar = document.querySelector('.sidebar');
+        if (!sidebar) {
+            return;
+        }
+
+        sidebar.querySelectorAll('.nav-link').forEach((link) => {
+            const currentTitle = link.getAttribute('title');
+            if (currentTitle && !link.dataset.sidebarTipStored) {
+                link.dataset.sidebarTipStored = currentTitle;
+            }
+            if (collapsed) {
+                link.removeAttribute('title');
+            } else if (link.dataset.sidebarTipStored) {
+                link.setAttribute('title', link.dataset.sidebarTipStored);
+            }
+        });
+    }
+
+    function initSidebarCollapsedTips() {
+        const sidebar = document.querySelector('.sidebar');
+        if (!sidebar || sidebar.dataset.collapsedTipsBound === '1') {
+            return;
+        }
+        sidebar.dataset.collapsedTipsBound = '1';
+
+        sidebar.querySelectorAll('.nav-link').forEach((link) => {
+            link.addEventListener('mouseenter', () => showSidebarCollapsedTip(link));
+            link.addEventListener('mouseleave', hideSidebarCollapsedTip);
+            link.addEventListener('focus', () => showSidebarCollapsedTip(link));
+            link.addEventListener('blur', hideSidebarCollapsedTip);
+        });
+
+        sidebar.addEventListener('mouseleave', (event) => {
+            if (!sidebar.contains(event.relatedTarget)) {
+                hideSidebarCollapsedTip();
+            }
+        });
+
+        window.addEventListener('scroll', hideSidebarCollapsedTip, true);
+        window.addEventListener('resize', hideSidebarCollapsedTip);
+        updateSidebarNativeTitles(isSidebarCollapsed());
     }
 
     try {
@@ -66,6 +181,8 @@
             applySidebarCollapsed(collapsed);
         });
     }
+
+    initSidebarCollapsedTips();
 
     const offcanvasEl = document.getElementById('sidebarOffcanvas');
     if (offcanvasEl && typeof bootstrap !== 'undefined') {
