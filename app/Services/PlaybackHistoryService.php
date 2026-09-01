@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\Media\PlaybackSessionKey;
 use App\Services\Media\SessionClientIp;
 use Core\Database;
 use Core\Logger;
@@ -33,7 +34,7 @@ final class PlaybackHistoryService
                 continue;
             }
 
-            $key = $this->externalSessionKey($session, $serverId);
+            $key = PlaybackSessionKey::forSession($session, $serverId);
             $activeKeysByServer[$serverId][] = $key;
 
             $mediaUserId = (int) ($session['media_user_id'] ?? 0);
@@ -55,18 +56,14 @@ final class PlaybackHistoryService
                 'device' => $this->nullableString($session['platform'] ?? $session['product'] ?? null, 255),
                 'quality' => $this->nullableString($session['play_method'] ?? null, 20),
                 'media_user_id' => $mediaUserId,
+                'external_session_id' => $key,
             ];
             if ($ip !== '') {
                 $payload['ip_address'] = $ip;
             }
 
             try {
-                $existing = $db->fetchOne(
-                    'SELECT id FROM playback_sessions
-                     WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL
-                     LIMIT 1',
-                    [$serverId, $key]
-                );
+                $existing = $this->findOpenSession($db, $serverId, $session, $key);
                 if ($existing) {
                     $db->update('playback_sessions', $payload, 'id = ?', [(int) $existing['id']]);
                     continue;
@@ -75,7 +72,6 @@ final class PlaybackHistoryService
                 $db->insert('playback_sessions', array_merge($payload, [
                     'tenant_id' => $tenantId,
                     'server_id' => $serverId,
-                    'external_session_id' => $key,
                     'started_at' => $now,
                 ]));
             } catch (\Throwable $e) {
@@ -125,20 +121,23 @@ final class PlaybackHistoryService
 
     /**
      * @param array<string, mixed> $session
+     * @return array{id: int}|null
      */
-    private function externalSessionKey(array $session, int $serverId): string
+    private function findOpenSession(Database $db, int $serverId, array $session, string $canonicalKey): ?array
     {
-        $sessionId = trim((string) ($session['session_id'] ?? ''));
-        if ($sessionId !== '') {
-            return 'sid:' . $serverId . ':' . $sessionId;
+        foreach (PlaybackSessionKey::lookupKeys($session, $serverId) as $key) {
+            $row = $db->fetchOne(
+                'SELECT id FROM playback_sessions
+                 WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL
+                 LIMIT 1',
+                [$serverId, $key]
+            );
+            if ($row !== null) {
+                return ['id' => (int) $row['id']];
+            }
         }
 
-        return 'hash:' . md5(
-            $serverId . '|'
-            . ($session['user'] ?? '') . '|'
-            . ($session['title'] ?? '') . '|'
-            . ($session['player'] ?? '')
-        );
+        return null;
     }
 
     /**

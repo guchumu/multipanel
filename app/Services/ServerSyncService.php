@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Media\PlaybackSessionKey;
 use App\Services\Media\ServerEndpoint;
 use App\Services\Media\SessionClientIp;
 use Core\Cache;
@@ -672,18 +673,10 @@ final class ServerSyncService
         $activeKeys = [];
 
         foreach ($sessions as $session) {
-            $sessionKey = md5(
-                (string) $server->id . '|'
-                . ($session['user'] ?? '') . '|'
-                . ($session['title'] ?? '') . '|'
-                . ($session['player'] ?? '')
-            );
+            $sessionKey = PlaybackSessionKey::forSession($session, (int) $server->id);
             $activeKeys[] = $sessionKey;
 
-            $existing = $db->fetchOne(
-                'SELECT id, country FROM playback_sessions WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL LIMIT 1',
-                [$server->id, $sessionKey]
-            );
+            $existing = $this->findOpenPlaybackSession($db, (int) $server->id, $session, $sessionKey);
 
             $mediaUserId = null;
             $username = trim((string) ($session['user'] ?? ''));
@@ -716,7 +709,9 @@ final class ServerSyncService
             }
 
             if ($existing) {
-                $db->update('playback_sessions', $payload, 'id = ?', [$existing['id']]);
+                $db->update('playback_sessions', array_merge($payload, [
+                    'external_session_id' => $sessionKey,
+                ]), 'id = ?', [$existing['id']]);
                 continue;
             }
 
@@ -744,6 +739,30 @@ final class ServerSyncService
              WHERE server_id = ? AND ended_at IS NULL AND external_session_id NOT IN ({$placeholders})",
             array_merge([$now, $now, $server->id], $activeKeys)
         );
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @return array{id: int, country: ?string}|null
+     */
+    private function findOpenPlaybackSession(Database $db, int $serverId, array $session, string $canonicalKey): ?array
+    {
+        foreach (PlaybackSessionKey::lookupKeys($session, $serverId) as $key) {
+            $row = $db->fetchOne(
+                'SELECT id, country FROM playback_sessions
+                 WHERE server_id = ? AND external_session_id = ? AND ended_at IS NULL
+                 LIMIT 1',
+                [$serverId, $key]
+            );
+            if ($row !== null) {
+                return [
+                    'id' => (int) $row['id'],
+                    'country' => $row['country'] ?? null,
+                ];
+            }
+        }
+
+        return null;
     }
 
     public function refreshStaleServers(int $tenantId, int $limit = 10): int
