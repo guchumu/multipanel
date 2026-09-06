@@ -175,6 +175,19 @@ body {
 }
 
 /* En directo: tarjetas Activity estilo Tautulli (grid 1→2→3→4 cols según ancho) */
+.activity-page {
+    zoom: 0.75;
+}
+
+/* Firefox: zoom no siempre aplica; scale mantiene el mismo efecto visual */
+@supports not (zoom: 1) {
+    .activity-page {
+        transform: scale(0.75);
+        transform-origin: top left;
+        width: 133.333%;
+    }
+}
+
 .session-col {
     display: flex;
 }

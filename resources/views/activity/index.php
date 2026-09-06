@@ -194,6 +194,7 @@ ob_start();
     </div>
 <?php endif; ?>
 </div>
+</div>
 
 <?php
 $content = ob_get_clean();
