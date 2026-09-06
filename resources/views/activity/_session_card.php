@@ -95,7 +95,7 @@ $householdTitle = match ((string) ($session['household_source'] ?? '')) {
     'manual' => 'Marcado manualmente',
     default => $household === 'home' ? 'Casa' : 'Fuera',
 };
-$locationLine = $location !== '' ? $location : strtoupper((string) ($session['server_type'] ?? ''));
+$locationLine = $location !== '' ? strtoupper($location) : strtoupper((string) ($session['server_type'] ?? ''));
 if ($clientIp !== '') {
     $locationLine = ($locationLine !== '' ? $locationLine . ': ' : '') . $clientIp;
 }
@@ -116,7 +116,7 @@ $infoRowsStream = [
     ['Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None', false],
 ];
 $infoRowsFoot = [
-    ['Dónde', $householdLabel . ($locationLine !== '' ? ' · ' . $locationLine : '')],
+    ['Location', ($locationLine !== '' ? $locationLine : '—') . ($householdLabel !== '' ? ' · ' . $householdLabel : '')],
     ['Bandwidth', $bandwidth !== '' ? $bandwidth : ((string) ($session['server_name'] ?? '—'))],
 ];
 ?>

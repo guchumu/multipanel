@@ -446,7 +446,7 @@ final class AdminCriticalAlertService
         $headerLines = [
             AdminMessageFormat::label('Momento', $when),
             AdminMessageFormat::label('Usuario', $username),
-            AdminMessageFormat::label('Motivo Transcode', $motivo),
+            AdminMessageFormat::label('Motivo', $motivo),
         ];
 
         $detailLines = [
@@ -465,68 +465,77 @@ final class AdminCriticalAlertService
             );
         }
 
-        $originalLines = [];
-        if ($srcFile !== '') {
-            $originalLines[] = AdminMessageFormat::label('Fichero', $srcFile);
-        }
-        $originalLines[] = AdminMessageFormat::label('Formato', $srcFormat !== '' ? $srcFormat : '—');
-        $originalLines[] = AdminMessageFormat::label('Resolución', $srcRes !== '' ? $srcRes : '—');
-        $originalLines[] = AdminMessageFormat::label('Vídeo (codec)', $srcVideo !== '' ? $srcVideo : '—');
-        $originalLines[] = AdminMessageFormat::label(
-            'Audio',
-            $srcAudioType !== '' ? $srcAudioType : ($srcAudio !== '' ? $srcAudio : '—')
-        );
-
-        $streamDoingLines = [
-            AdminMessageFormat::label('Método', $streamLine !== '' ? $streamLine : 'Transcode'),
+        // Bloque idéntico a Tautulli / En directo (Product…Subtitle + Location).
+        $tautulliLines = [
+            AdminMessageFormat::label('Product', $product !== '' ? $product : '—'),
+            AdminMessageFormat::label('Player', $player !== '' ? $player : ($platform !== '' ? $platform : '—')),
+            AdminMessageFormat::label('Quality', $quality !== '' ? $quality : '—'),
+            AdminMessageFormat::label('Stream', $streamLine !== '' ? $streamLine : 'Transcode'),
             AdminMessageFormat::label('Container', $container !== '' ? $container : '—'),
             AdminMessageFormat::label(
-                'Vídeo',
-                trim(
-                    ($outVideoDecision !== '' ? ucfirst($outVideoDecision) : 'Transcode')
-                    . ($outVideo !== '' && $outVideo !== '—' ? " → {$outVideo}" : '')
-                    . ($outRes !== '' && $outRes !== '—' ? " {$outRes}" : '')
+                'Video',
+                $videoLine !== '' ? $videoLine : (
+                    trim(
+                        ($outVideoDecision !== '' ? ucfirst($outVideoDecision) : 'Transcode')
+                        . ($outVideo !== '' && $outVideo !== '—' ? " ({$outVideo}" : '')
+                        . ($outRes !== '' && $outRes !== '—' ? " {$outRes}" : '')
+                        . ($outVideo !== '' && $outVideo !== '—' ? ')' : '')
+                    ) ?: 'Transcode'
                 )
             ),
             AdminMessageFormat::label(
                 'Audio',
-                trim(
-                    ($outAudioDecision !== '' ? ucfirst($outAudioDecision) : '—')
-                    . ($outAudio !== '' && $outAudio !== '—' ? " → {$outAudio}" : '')
-                    . ($outChannels !== '' && $outChannels !== '—' ? " {$outChannels}" : '')
+                $audioLine !== '' ? $audioLine : (
+                    trim(
+                        ($outAudioDecision !== '' ? ucfirst($outAudioDecision) : '—')
+                        . ($outAudio !== '' && $outAudio !== '—' ? " ({$outAudio}" : '')
+                        . ($outChannels !== '' && $outChannels !== '—' ? " {$outChannels}" : '')
+                        . ($outAudio !== '' && $outAudio !== '—' ? ')' : '')
+                    ) ?: '—'
                 )
             ),
             AdminMessageFormat::label('Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None'),
         ];
-        if ($videoLine !== '') {
-            $streamDoingLines[] = AdminMessageFormat::label('Vídeo (detalle)', $videoLine);
+        $locationLine = '';
+        if ($location !== '') {
+            $locationLine = strtoupper($location);
         }
-        if ($audioLine !== '') {
-            $streamDoingLines[] = AdminMessageFormat::label('Audio (detalle)', $audioLine);
-        }
-        if ($quality !== '') {
-            $streamDoingLines[] = AdminMessageFormat::label('Quality', $quality);
-        }
-
-        $clientLines = [
-            AdminMessageFormat::label('Product', $product !== '' ? $product : '—'),
-            AdminMessageFormat::label('Player', $player !== '' ? $player : '—'),
-            AdminMessageFormat::label('Platform', $platform !== '' ? $platform : '—'),
-        ];
-        $where = trim(($household !== '' ? $household : '') . ($location !== '' ? ($household !== '' ? ' · ' : '') . $location : ''));
         if ($clientIp !== '') {
-            $where = ($where !== '' ? $where . ': ' : '') . $clientIp;
+            $locationLine = ($locationLine !== '' ? $locationLine . ': ' : '') . $clientIp;
         }
-        if ($where !== '') {
-            $clientLines[] = AdminMessageFormat::label('Dónde', $where);
+        if ($household !== '') {
+            $locationLine = ($locationLine !== '' ? $locationLine . ' · ' : '') . $household;
+        }
+        if ($locationLine !== '') {
+            $tautulliLines[] = AdminMessageFormat::label('Location', $locationLine);
         }
         if ($bandwidth !== '') {
-            $clientLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
+            $tautulliLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
         }
         if ($state !== '' || $progress > 0) {
-            $clientLines[] = AdminMessageFormat::label(
-                'Estado reproducción',
+            $tautulliLines[] = AdminMessageFormat::label(
+                'Progress',
                 trim(($state !== '' ? $state : '') . ($progress > 0 ? " {$progress}%" : ''))
+            );
+        }
+
+        $originalLines = [];
+        if ($srcFile !== '') {
+            $originalLines[] = AdminMessageFormat::label('Fichero', $srcFile);
+        }
+        if ($srcFormat !== '' && $srcFormat !== '—') {
+            $originalLines[] = AdminMessageFormat::label('Formato', $srcFormat);
+        }
+        if ($srcRes !== '' && $srcRes !== '—') {
+            $originalLines[] = AdminMessageFormat::label('Resolución', $srcRes);
+        }
+        if ($srcVideo !== '' && $srcVideo !== '—') {
+            $originalLines[] = AdminMessageFormat::label('Vídeo', $srcVideo);
+        }
+        if ($srcAudioType !== '' || ($srcAudio !== '' && $srcAudio !== '—')) {
+            $originalLines[] = AdminMessageFormat::label(
+                'Audio',
+                $srcAudioType !== '' ? $srcAudioType : $srcAudio
             );
         }
 
@@ -554,9 +563,10 @@ final class AdminCriticalAlertService
             );
         }
         $sections[] = implode("\n", $detailLines);
-        $sections[] = AdminMessageFormat::block('📁 Archivo original', $originalLines);
-        $sections[] = AdminMessageFormat::block('📡 Stream en curso', $streamDoingLines);
-        $sections[] = AdminMessageFormat::block('Cliente', $clientLines);
+        $sections[] = AdminMessageFormat::block('📡 Stream (como Tautulli)', $tautulliLines);
+        if ($originalLines !== []) {
+            $sections[] = AdminMessageFormat::block('📁 Archivo original', $originalLines);
+        }
         $sections[] = AdminMessageFormat::block('Auto-corte', $toggleLines);
 
         // ntfy máx. 3 Actions: priorizar Saltar (pausa); Activar solo si sobra hueco.
