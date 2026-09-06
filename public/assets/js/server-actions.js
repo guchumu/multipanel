@@ -170,6 +170,56 @@
         'Solo limpia de la biblioteca los ítems cuyo archivo YA NO EXISTE (no encontrado).\n' +
         'NO borra ningún archivo del disco ni carpetas.';
 
+    document.querySelectorAll('.btn-scan-all-servers').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            if (!confirm('¿Escanear todas las bibliotecas en TODOS los servidores?')) return;
+            const buttons = document.querySelectorAll('.btn-scan-all-servers, .btn-scan-all, .btn-scan-linked-all');
+            buttons.forEach(b => setBusy(b, true, 'Escaneando…'));
+            showStatus('Iniciando escaneo en todos los servidores…', 'info');
+            try {
+                const data = await postJson('/servers/libraries/scan-all-servers');
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al escanear servidores.'), 'danger');
+                    buttons.forEach(b => setBusy(b, false));
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Escaneo iniciado en todos los servidores.', ''),
+                    'success'
+                );
+                buttons.forEach(b => setBusy(b, false));
+            } catch (e) {
+                showStatus('Error de red al escanear servidores.', 'danger');
+                buttons.forEach(b => setBusy(b, false));
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-empty-trash-all-servers').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            if (!confirm(emptyTrashConfirm + '\n\nSe aplicará a TODOS los servidores Plex.')) return;
+            const buttons = document.querySelectorAll('.btn-empty-trash-all-servers, .btn-empty-trash-all, .btn-empty-trash-library');
+            buttons.forEach(b => setBusy(b, true, 'Limpiando…'));
+            showStatus('Vaciando papelera en todos los Plex (sin borrar archivos)…', 'info');
+            try {
+                const data = await postJson('/servers/libraries/empty-trash-all');
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al vaciar papeleras.'), 'danger');
+                    buttons.forEach(b => setBusy(b, false));
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Papeleras vaciadas. No se ha borrado nada del disco.', ''),
+                    'success'
+                );
+                buttons.forEach(b => setBusy(b, false));
+            } catch (e) {
+                showStatus('Error de red al vaciar papeleras.', 'danger');
+                buttons.forEach(b => setBusy(b, false));
+            }
+        });
+    });
+
     document.querySelectorAll('.btn-empty-trash-all').forEach(btn => {
         btn.addEventListener('click', async function () {
             if (!confirm(emptyTrashConfirm)) return;

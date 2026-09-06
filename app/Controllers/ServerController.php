@@ -674,6 +674,174 @@ class ServerController extends Controller
         return $this->json($result, !empty($result['success']) ? 200 : 422);
     }
 
+    /**
+     * Escanea todas las bibliotecas de todos los servidores del tenant.
+     */
+    public function scanAllLibrariesAllServers(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        \Core\Session::getInstance()->close();
+
+        $servers = $this->servers->allByTenant($tenantId);
+        if ($servers === []) {
+            return $this->json(['success' => false, 'message' => 'No hay servidores.'], 422);
+        }
+
+        $serversOk = 0;
+        $serversFailed = 0;
+        $scanned = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($servers as $server) {
+            try {
+                $media = MediaServerFactory::make($server);
+                $result = $media->refreshAllLibraries();
+                $serverScanned = (int) ($result['scanned'] ?? 0);
+                $serverFailed = (int) ($result['failed'] ?? 0);
+                $scanned += $serverScanned;
+                $failed += $serverFailed;
+                if (!empty($result['success'])) {
+                    $serversOk++;
+                } else {
+                    $serversFailed++;
+                    if (!empty($result['error'])) {
+                        $errors[] = $server->name . ': ' . $result['error'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                $serversFailed++;
+                $errors[] = $server->name . ': ' . $e->getMessage();
+                \Core\Logger::error('server.scan_all_servers item failed', [
+                    'server_id' => $server->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $ok = $serversOk > 0;
+        try {
+            if ($ok) {
+                $this->audit->log('servers.libraries_scanned_all', 'server', null, null, [
+                    'servers_ok' => $serversOk,
+                    'servers_failed' => $serversFailed,
+                    'scanned' => $scanned,
+                    'failed' => $failed,
+                ]);
+            }
+        } catch (\Throwable) {
+            // ignore audit
+        }
+
+        $message = $ok
+            ? sprintf(
+                'Escaneo iniciado en %d servidor(es): %d biblioteca(s).%s',
+                $serversOk,
+                $scanned,
+                $serversFailed > 0 ? " {$serversFailed} servidor(es) con error." : ''
+            )
+            : 'No se pudo iniciar el escaneo en ningún servidor.'
+                . ($errors !== [] ? ' ' . implode(' · ', array_slice($errors, 0, 3)) : '');
+
+        return $this->json([
+            'success' => $ok,
+            'message' => $message,
+            'servers_ok' => $serversOk,
+            'servers_failed' => $serversFailed,
+            'scanned' => $scanned,
+            'failed' => $failed,
+        ], $ok ? 200 : 502);
+    }
+
+    /**
+     * Vacía la papelera Plex en todos los servidores Plex del tenant.
+     * Solo limpia «archivo no encontrado» — no borra del disco.
+     */
+    public function emptyTrashAllServers(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        \Core\Session::getInstance()->close();
+
+        $servers = array_values(array_filter(
+            $this->servers->allByTenant($tenantId),
+            static fn ($s): bool => ($s->type ?? '') === 'plex'
+        ));
+
+        if ($servers === []) {
+            return $this->json([
+                'success' => false,
+                'message' => 'No hay servidores Plex. Vaciar papelera solo aplica a Plex.',
+            ], 422);
+        }
+
+        $serversOk = 0;
+        $serversFailed = 0;
+        $cleaned = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($servers as $server) {
+            try {
+                $media = MediaServerFactory::make($server);
+                if (!method_exists($media, 'emptyTrashAllLibraries')) {
+                    $serversFailed++;
+                    continue;
+                }
+                $result = $media->emptyTrashAllLibraries();
+                $cleaned += (int) ($result['cleaned'] ?? 0);
+                $failed += (int) ($result['failed'] ?? 0);
+                if (!empty($result['success'])) {
+                    $serversOk++;
+                } else {
+                    $serversFailed++;
+                    if (!empty($result['error'])) {
+                        $errors[] = $server->name . ': ' . $result['error'];
+                    }
+                }
+            } catch (\Throwable $e) {
+                $serversFailed++;
+                $errors[] = $server->name . ': ' . $e->getMessage();
+                \Core\Logger::error('server.empty_trash_all_servers item failed', [
+                    'server_id' => $server->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $ok = $serversOk > 0;
+        try {
+            if ($ok) {
+                $this->audit->log('servers.libraries_empty_trash_all', 'server', null, null, [
+                    'servers_ok' => $serversOk,
+                    'servers_failed' => $serversFailed,
+                    'cleaned' => $cleaned,
+                    'failed' => $failed,
+                ]);
+            }
+        } catch (\Throwable) {
+            // ignore
+        }
+
+        $message = $ok
+            ? sprintf(
+                'Papelera vaciada en %d servidor(es) Plex (%d biblioteca(s)). No se ha borrado nada del disco.%s',
+                $serversOk,
+                $cleaned,
+                $serversFailed > 0 ? " {$serversFailed} con error." : ''
+            )
+            : 'No se pudo vaciar la papelera en ningún servidor Plex.'
+                . ($errors !== [] ? ' ' . implode(' · ', array_slice($errors, 0, 3)) : '');
+
+        return $this->json([
+            'success' => $ok,
+            'message' => $message,
+            'servers_ok' => $serversOk,
+            'servers_failed' => $serversFailed,
+            'cleaned' => $cleaned,
+            'failed' => $failed,
+        ], $ok ? 200 : 502);
+    }
+
     public function syncAll(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);

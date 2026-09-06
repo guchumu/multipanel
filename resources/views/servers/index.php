@@ -4,7 +4,17 @@ ob_start();
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="mb-0">Servidores</h4>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button"
+                class="btn btn-outline-secondary btn-empty-trash-all-servers"
+                title="Vacía la papelera en todos los Plex: limpia «no encontrado». No borra archivos del disco.">
+            <i class="bi bi-trash3 me-1"></i>Vaciar papelera Plex
+        </button>
+        <button type="button"
+                class="btn btn-outline-info btn-scan-all-servers"
+                title="Pide a todos los servidores que escaneen todas sus bibliotecas">
+            <i class="bi bi-disc me-1"></i>Escanear todas
+        </button>
         <form method="POST" action="/servers/sync-all" class="d-inline">
             <?= csrf_field() ?>
             <button type="submit" class="btn btn-outline-primary" title="Reconsulta Plex/Jellyfin: importa, actualiza y marca quién ya no está en la biblioteca">
@@ -18,6 +28,10 @@ ob_start();
 <p class="text-muted small mb-3">
     <i class="bi bi-star-fill text-warning me-1"></i>
     Pulsa la estrella para marcar o quitar el servidor por defecto de altas automáticas — uno para <strong>Plex</strong> y otro para <strong>Jellyfin</strong>.
+    <span class="d-none d-md-inline">
+        · <strong>Vaciar papelera</strong> solo limpia ítems no encontrados en Plex (no borra del disco).
+        · <strong>Escanear todas</strong> refresca bibliotecas en todos los servidores.
+    </span>
 </p>
 
 <div class="card border-0 shadow-sm">
@@ -96,12 +110,16 @@ ob_start();
                         <div class="btn-group btn-group-sm">
                             <a href="/servers/<?= e($server->uuid) ?>/edit" class="btn btn-outline-secondary" title="Editar"><i class="bi bi-pencil"></i></a>
                             <button class="btn btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Forzar sincronización: comprobar quién está en la biblioteca"><i class="bi bi-arrow-repeat"></i></button>
+                            <button class="btn btn-outline-info btn-scan-all" data-uuid="<?= e($server->uuid) ?>" title="Escanear todas las bibliotecas"><i class="bi bi-disc"></i></button>
+                            <?php if ($server->type === 'plex'): ?>
+                            <button class="btn btn-outline-secondary btn-empty-trash-all" data-uuid="<?= e($server->uuid) ?>" title="Vaciar papelera Plex (no borra archivos)"><i class="bi bi-trash3"></i></button>
+                            <?php endif; ?>
                             <button class="btn btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>" title="Test conexión"><i class="bi bi-plug"></i></button>
-                            <a href="/servers/<?= e($server->uuid) ?>" class="btn btn-outline-warning" title="Ver debug"><i class="bi bi-bug"></i></a>
+                            <a href="/servers/<?= e($server->uuid) ?>" class="btn btn-outline-warning" title="Ver detalle / debug"><i class="bi bi-bug"></i></a>
                             <form method="POST" action="/servers/<?= e($server->uuid) ?>" class="d-inline" onsubmit="return confirm('¿Eliminar <?= e(addslashes($server->name)) ?>?');">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="_method" value="DELETE">
-                                <button type="submit" class="btn btn-outline-danger" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                <button type="submit" class="btn btn-outline-danger" title="Eliminar servidor del panel"><i class="bi bi-x-lg"></i></button>
                             </form>
                         </div>
                     </td>
@@ -129,12 +147,19 @@ $linkedCount = (int) ($linkedLibraries['linked_count'] ?? 0);
                     El escaneo pide a Plex/Jellyfin refrescar disco/metadatos; no cambia usuarios ni permisos.
                 </p>
             </div>
-            <button type="button"
-                    class="btn btn-sm btn-primary btn-scan-linked-all"
-                    <?= $linkedCount < 1 ? 'disabled' : '' ?>
-                    title="Escanear todas las categorías que existen en 2+ servidores">
-                <i class="bi bi-disc me-1"></i>Escanear todas las categorías vinculadas
-            </button>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary btn-empty-trash-all-servers"
+                        title="Vaciar papelera en todos los Plex (no borra del disco)">
+                    <i class="bi bi-trash3 me-1"></i>Vaciar papelera Plex
+                </button>
+                <button type="button"
+                        class="btn btn-sm btn-primary btn-scan-linked-all"
+                        <?= $linkedCount < 1 ? 'disabled' : '' ?>
+                        title="Escanear todas las categorías que existen en 2+ servidores">
+                    <i class="bi bi-disc me-1"></i>Escanear todas las categorías vinculadas
+                </button>
+            </div>
         </div>
 
         <?php if (empty($linkedGroups)): ?>

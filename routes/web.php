@@ -143,6 +143,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     // Bibliotecas vinculadas (mismo nombre entre servidores) — antes de {uuid}
     $router->post('/servers/libraries/linked/scan', [ServerController::class, 'scanLinkedLibraries'], 'servers.libraries.linked_scan', [CsrfMiddleware::class]);
     $router->post('/servers/libraries/linked/scan/{groupKey}', [ServerController::class, 'scanLinkedLibraryGroup'], 'servers.libraries.linked_scan_group', [CsrfMiddleware::class]);
+    $router->post('/servers/libraries/scan-all-servers', [ServerController::class, 'scanAllLibrariesAllServers'], 'servers.libraries.scan_all_servers', [CsrfMiddleware::class]);
+    $router->post('/servers/libraries/empty-trash-all', [ServerController::class, 'emptyTrashAllServers'], 'servers.libraries.empty_trash_all_servers', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}/edit', [ServerController::class, 'edit'], 'servers.edit');
     $router->put('/servers/{uuid}', [ServerController::class, 'update'], 'servers.update', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');
