@@ -460,9 +460,24 @@ final class AdminCriticalAlertService
             $pauseLines[] = $pause->durationLabel($duration) . ': ' . $url;
         }
 
+        $toggle = new \App\Services\VideoTranscodeAutoKillToggleService();
+        $toggleUrls = $toggle->buildToggleUrls($tenantId);
+        $autoKillOn = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
+        $autoKillState = $toggle->stateLabel($autoKillOn);
+        $toggleLines = [
+            AdminMessageFormat::label('Estado auto-corte', $autoKillState),
+        ];
+        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
+            $toggleLines[] = 'Apagar: ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
+        }
+        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
+            $toggleLines[] = 'Activar: ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
+        }
+
         $sections = [
             '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~10 s.',
             implode("\n", $detailLines),
+            AdminMessageFormat::block('Auto-corte global (tenant)', $toggleLines),
         ];
         if ($pauseLines !== []) {
             $sections[] = AdminMessageFormat::block(
@@ -474,9 +489,17 @@ final class AdminCriticalAlertService
             );
         }
 
+        // ntfy máx. 3 Actions: Activar (atajo ON) + 2 pausas; Apagar y el resto van en el cuerpo.
         $ntfyActions = [];
+        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
+            $ntfyActions[] = [
+                'label' => $toggle->ntfyActionLabel(\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE),
+                'url' => $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE],
+                'clear' => true,
+            ];
+        }
         foreach (\App\Services\VideoTranscodePauseService::NTFY_ACTION_DURATIONS as $duration) {
-            if (empty($pauseUrls[$duration])) {
+            if (count($ntfyActions) >= 3 || empty($pauseUrls[$duration])) {
                 continue;
             }
             $ntfyActions[] = [
@@ -485,7 +508,6 @@ final class AdminCriticalAlertService
                 'clear' => true,
             ];
         }
-        // ntfy máx. 3 Actions: 5h queda como enlace en el cuerpo.
 
         $attach = \App\Services\StreamingActivityService::signedPublicThumbAbsoluteUrl($session);
 

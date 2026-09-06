@@ -10,6 +10,8 @@ use App\Services\AlertSettingsService;
 use App\Services\BillingService;
 use App\Services\ConcurrentStreamLimitService;
 use App\Services\Peticiones\PeticionesConfig;
+use App\Services\StreamLimitSettingsService;
+use App\Services\VideoTranscodeAutoKillToggleService;
 use Core\Database;
 use Core\Logger;
 use DateTimeImmutable;
@@ -68,19 +70,45 @@ final class AdminDigestService
 
         try {
             $payload = $this->buildPayload($tenantId, $tz);
+            $toggle = new VideoTranscodeAutoKillToggleService();
+            $toggleUrls = $toggle->buildToggleUrls($tenantId);
+            $autoKillOn = (new StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
+            $payload['auto_kill_video_transcodes'] = $autoKillOn;
+            $payload['auto_kill_toggle_urls'] = $toggleUrls;
             $message = $this->formatMessage($payload, $today);
+
+            $notifyData = [
+                'level' => 'info',
+                'digest_date' => $today,
+                'whatsapp_kind' => 'digest',
+                'tenant_id' => $tenantId,
+            ];
+            // ntfy: Activar + Apagar como botones (máx. 3; aquí caben ambos).
+            $ntfyActions = [];
+            if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
+                $ntfyActions[] = [
+                    'label' => $toggle->ntfyActionLabel(VideoTranscodeAutoKillToggleService::ACTION_ENABLE),
+                    'url' => $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE],
+                    'clear' => true,
+                ];
+            }
+            if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
+                $ntfyActions[] = [
+                    'label' => $toggle->ntfyActionLabel(VideoTranscodeAutoKillToggleService::ACTION_DISABLE),
+                    'url' => $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE],
+                    'clear' => true,
+                ];
+            }
+            if ($ntfyActions !== []) {
+                $notifyData['ntfy_actions'] = $ntfyActions;
+            }
 
             $results = $this->notifications->notify(
                 'admin.digest',
                 'RESUMEN DIARIO',
                 $message,
                 $channels,
-                [
-                    'level' => 'info',
-                    'digest_date' => $today,
-                    'whatsapp_kind' => 'digest',
-                    'tenant_id' => $tenantId,
-                ],
+                $notifyData,
                 null,
                 $tenantId
             );
@@ -338,10 +366,25 @@ final class AdminDigestService
             $extra[] = AdminMessageFormat::label('Suscripciones overdue', (string) (int) $p['overdue']);
         }
 
+        $autoKillLines = [
+            AdminMessageFormat::label(
+                'Estado auto-corte',
+                !empty($p['auto_kill_video_transcodes']) ? 'ON' : 'OFF'
+            ),
+        ];
+        $toggleUrls = is_array($p['auto_kill_toggle_urls'] ?? null) ? $p['auto_kill_toggle_urls'] : [];
+        if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
+            $autoKillLines[] = 'Activar: ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
+        }
+        if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
+            $autoKillLines[] = 'Apagar: ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
+        }
+
         $text = AdminMessageFormat::compose([
             AdminMessageFormat::title('Caducidades') . "\n" . implode("\n", $caducidades),
             AdminMessageFormat::title('Servidores') . "\n" . implode("\n", $servidores),
             $extra !== [] ? AdminMessageFormat::title('Actividad') . "\n" . implode("\n", $extra) : '',
+            AdminMessageFormat::title('Auto-corte vídeo Transcode') . "\n" . implode("\n", $autoKillLines),
         ]);
         // WhatsApp/Telegram: mantener mensaje manejable.
         if (mb_strlen($text) > 3500) {

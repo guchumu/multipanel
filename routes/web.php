@@ -43,6 +43,7 @@ use App\Controllers\PortalLoginLinkController;
 use App\Controllers\SessionKillLinkController;
 use App\Controllers\PeticionesController;
 use App\Controllers\VideoTranscodePauseController;
+use App\Controllers\VideoTranscodeAutoKillToggleController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
 use App\Controllers\Portal\PortalPaymentController;
@@ -73,6 +74,7 @@ $router->get('/u/{code}', [PortalLoginLinkController::class, 'enter'], 'portal.m
 $router->get('/k/{code}', [SessionKillLinkController::class, 'kill'], 'session_kill.link');
 $router->get('/activity/public-thumb/{uuid}', [ActivityController::class, 'publicThumb'], 'activity.public_thumb');
 $router->get('/activity/transcode-pause/{token}', [VideoTranscodePauseController::class, 'pause'], 'activity.transcode_pause');
+$router->get('/activity/auto-kill-video-transcodes/{token}', [VideoTranscodeAutoKillToggleController::class, 'toggle'], 'activity.auto_kill_video_transcodes_token');
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);
