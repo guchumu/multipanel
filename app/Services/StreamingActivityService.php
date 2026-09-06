@@ -208,6 +208,24 @@ final class StreamingActivityService
         return $ok;
     }
 
+    /**
+     * True si la sesión está transcodificando vídeo (no solo audio).
+     *
+     * @param array<string, mixed> $session
+     */
+    public static function isVideoTranscodeSession(array $session): bool
+    {
+        $video = strtolower(trim((string) ($session['video_decision'] ?? '')));
+        if ($video === 'transcode') {
+            return true;
+        }
+
+        $info = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+        $line = strtolower(trim((string) ($info['video'] ?? $session['video_label'] ?? '')));
+
+        return $line !== '' && str_contains($line, 'transcode');
+    }
+
     /** @return array{body: string, content_type: string}|null */
     public function fetchArtwork(Server $server, ?string $artPath = null, ?string $itemId = null): ?array
     {

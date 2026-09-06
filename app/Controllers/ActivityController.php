@@ -237,7 +237,7 @@ SVG;
             return $this->json(['success' => false, 'message' => 'Servidor no encontrado.'], 404);
         }
 
-        $reason = $message !== '' ? $message : 'Reproducción detenida desde MultiPanel';
+        $reason = $message !== '' ? $message : $this->stopMessages->defaultBody($tenantId);
         $ok = $this->activity->terminateSession($server, $sessionId, $reason);
 
         return $this->json([
@@ -246,6 +246,77 @@ SVG;
                 ? ($message !== '' ? 'Reproducción detenida y mensaje enviado.' : 'Reproducción detenida.')
                 : 'No se pudo detener la reproducción.',
         ], $ok ? 200 : 500);
+    }
+
+    /**
+     * Corta solo sesiones con transcode de vídeo (no audio-only).
+     * Usa el mensaje al detener predeterminado.
+     */
+    public function killVideoTranscodes(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverFilter = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $message = trim((string) ($request->input('message') ?? ''));
+        if ($message === '') {
+            $message = $this->stopMessages->defaultBody($tenantId);
+        }
+
+        $snapshot = $this->activity->getSnapshot($tenantId, $serverFilter);
+        $targets = [];
+        foreach ($snapshot['sessions'] as $session) {
+            if (!StreamingActivityService::isVideoTranscodeSession($session)) {
+                continue;
+            }
+            if (empty($session['can_kill']) || empty($session['session_id']) || empty($session['server_id'])) {
+                continue;
+            }
+            $targets[] = $session;
+        }
+
+        if ($targets === []) {
+            return $this->json([
+                'success' => true,
+                'killed' => 0,
+                'failed' => 0,
+                'message' => 'No hay transcodes de vídeo activos para cortar.',
+            ]);
+        }
+
+        $killed = 0;
+        $failed = 0;
+        foreach ($targets as $session) {
+            $server = Server::find((int) $session['server_id']);
+            if ($server === null || (int) $server->tenant_id !== $tenantId) {
+                $failed++;
+                continue;
+            }
+            $ok = $this->activity->terminateSession(
+                $server,
+                (string) $session['session_id'],
+                $message
+            );
+            if ($ok) {
+                $killed++;
+            } else {
+                $failed++;
+            }
+        }
+
+        return $this->json([
+            'success' => $killed > 0 || $failed === 0,
+            'killed' => $killed,
+            'failed' => $failed,
+            'message' => $failed === 0
+                ? sprintf(
+                    'Cortados %d transcode(s) de vídeo. Mensaje predefinido enviado. Los de solo audio no se tocan.',
+                    $killed
+                )
+                : sprintf(
+                    'Cortados %d · fallidos %d. Mensaje predefinido usado en los que se cortaron.',
+                    $killed,
+                    $failed
+                ),
+        ], $killed > 0 || $failed === 0 ? 200 : 502);
     }
 
     public function sessionKind(Request $request): Response

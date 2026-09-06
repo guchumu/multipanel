@@ -83,6 +83,27 @@ final class PlaybackStopMessageService
         return array_map(static fn (array $row): array => self::normalizeRow($row), $rows);
     }
 
+    /** Cuerpo del mensaje marcado como predeterminado (o el primero disponible). */
+    public function defaultBody(int $tenantId): string
+    {
+        foreach ($this->listForTenant($tenantId) as $row) {
+            if ((int) ($row['is_default'] ?? 0) === 1) {
+                $body = trim((string) ($row['body'] ?? ''));
+                if ($body !== '') {
+                    return $body;
+                }
+            }
+        }
+        foreach ($this->listForTenant($tenantId) as $row) {
+            $body = trim((string) ($row['body'] ?? ''));
+            if ($body !== '') {
+                return $body;
+            }
+        }
+
+        return 'Reproducción detenida desde MultiPanel';
+    }
+
     /**
      * @return array{id:int,tenant_id:int,title:string,body:string,is_default:int,sort_order:int,created_at:?string,updated_at:?string}|null
      */

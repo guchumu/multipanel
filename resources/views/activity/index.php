@@ -44,7 +44,13 @@ ob_start();
             <?php endif; ?>
         </small>
     </div>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <button type="button"
+                class="btn btn-warning btn-sm"
+                id="btn-kill-video-transcodes"
+                title="Corta solo transcodes de vídeo y envía el mensaje al detener predeterminado. No toca solo-audio ni Direct Play.">
+            <i class="bi bi-cpu me-1"></i>Cortar transcodes vídeo
+        </button>
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
             <i class="bi bi-exclamation-octagon me-1"></i>Límites
         </a>
@@ -310,6 +316,56 @@ document.getElementById('refresh-btn').addEventListener('click', refreshSessions
 setInterval(refreshSessions, 10000);
 
 window.MP_REFRESH_SESSIONS = refreshSessions;
+
+(function bindKillVideoTranscodes() {
+    const btn = document.getElementById('btn-kill-video-transcodes');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        if (!confirm(
+            '¿Cortar todos los TRANSCODES DE VÍDEO' + (viewMode === 'server' ? ' de este servidor' : '') + '?\n\n' +
+            '• Solo vídeo en transcode\n' +
+            '• No toca Direct Play ni solo-audio\n' +
+            '• Se envía automáticamente el mensaje al detener predeterminado'
+        )) {
+            return;
+        }
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            alert('No hay token CSRF. Recarga la página.');
+            return;
+        }
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cortando…';
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const body = { _token: csrf };
+            if (params.get('server_id')) {
+                body.server_id = Number(params.get('server_id'));
+            }
+            const res = await fetch('/activity/kill-video-transcodes', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            alert(data.message || (data.success === false ? 'No se pudo cortar.' : 'Hecho.'));
+            if (typeof window.MP_REFRESH_SESSIONS === 'function') {
+                window.MP_REFRESH_SESSIONS();
+            }
+        } catch (err) {
+            alert('Error de red al cortar transcodes.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+})();
 </script>
 JS;
 include base_path('resources/views/layouts/app.php');
