@@ -1176,7 +1176,7 @@ final class PlexService
 
         $reason = trim((string) $reason);
         if ($reason === '') {
-            $reason = 'Acceso suspendido desde MultiPanel';
+            $reason = \App\Services\PlaybackStopMessageService::DEFAULT_BODY;
         }
 
         // Preferir Session.id real: el UI/caché puede seguir mandando sessionKey.
@@ -1198,13 +1198,19 @@ final class PlexService
     private function requestTerminate(string $sessionId, string $reason): bool
     {
         try {
+            $query = [
+                'sessionId' => $sessionId,
+                'reason' => $reason,
+            ];
+            // La documentación de Plex incluye el token en query; algunos PMS lo exigen ahí.
+            if ($this->server->token) {
+                $query['X-Plex-Token'] = $this->server->token;
+            }
+
             $response = $this->client->get('/status/sessions/terminate', [
                 'http_errors' => false,
                 'headers' => $this->authHeaders(),
-                'query' => [
-                    'sessionId' => $sessionId,
-                    'reason' => $reason,
-                ],
+                'query' => $query,
             ]);
 
             $code = $response->getStatusCode();

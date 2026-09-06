@@ -210,11 +210,11 @@ $stopMessagesJson = json_encode(
 if ($stopMessagesJson === false) {
     $stopMessagesJson = '[]';
 }
-$scripts = <<<JS
-<script>
-const viewMode = '{$viewMode}';
-const apiUrl = '/activity/api{$serverFilter}';
-window.MP_STOP_MESSAGES = {$stopMessagesJson};
+$scripts = '<script>'
+    . 'const viewMode = ' . json_encode($viewMode, JSON_UNESCAPED_UNICODE) . ';'
+    . 'const apiUrl = ' . json_encode('/activity/api' . $serverFilter, JSON_UNESCAPED_UNICODE) . ';'
+    . 'window.MP_STOP_MESSAGES = ' . $stopMessagesJson . ';'
+    . <<<'JS'
 const cards = window.MPSessionCards || {};
 const sessionCardHtml = cards.sessionCardHtml || (() => '');
 const emptyHtml = cards.emptyHtml || ((m) => m);
@@ -257,6 +257,22 @@ function restoreSessionUiState() {
     });
 }
 
+function syncAutoKillToggle(on) {
+    const toggle = document.getElementById('auto-kill-video-transcodes');
+    const status = document.getElementById('auto-kill-video-status');
+    // No pisar el estado mientras hay un POST en curso.
+    if (toggle && toggle.disabled) {
+        return;
+    }
+    if (toggle) {
+        toggle.checked = !!on;
+    }
+    if (status) {
+        status.textContent = on ? 'ON' : 'OFF';
+        status.className = 'badge ' + (on ? 'bg-success' : 'bg-secondary');
+    }
+}
+
 function updateStats(data) {
     const total = data.total_count ?? 0;
     document.getElementById('session-count').textContent = total + ' streams totales';
@@ -265,10 +281,14 @@ function updateStats(data) {
     const badgeTotal = document.getElementById('badge-total');
     if (badgeTotal) badgeTotal.textContent = total;
 
+    if (typeof data.auto_kill_video_transcodes === 'boolean') {
+        syncAutoKillToggle(data.auto_kill_video_transcodes);
+    }
+
     (data.server_stats || []).forEach(stat => {
-        const el = document.querySelector(`[data-stat-server="\${stat.id}"]`);
+        const el = document.querySelector(`[data-stat-server="${stat.id}"]`);
         if (el) el.textContent = stat.count;
-        const badge = document.querySelector(`.badge-server[data-server-id="\${stat.id}"]`);
+        const badge = document.querySelector(`.badge-server[data-server-id="${stat.id}"]`);
         if (badge) badge.textContent = stat.count;
     });
 }
@@ -277,11 +297,11 @@ function renderFlat(sessions) {
     const container = document.getElementById('sessions-container');
     captureSessionUiState();
     if (!sessions.length) {
-        container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid"><div class="col-12">\${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
+        container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid"><div class="col-12">${emptyHtml('No hay reproducciones activas en este servidor')}</div></div>`;
         restoreSessionUiState();
         return;
     }
-    container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid">\${sessions.map(sessionCardHtml).join('')}</div>`;
+    container.innerHTML = `<div class="row g-2 g-xl-3" id="sessions-grid">${sessions.map(sessionCardHtml).join('')}</div>`;
     restoreSessionUiState();
 }
 
@@ -289,19 +309,19 @@ function renderGrouped(grouped) {
     const container = document.getElementById('sessions-container');
     captureSessionUiState();
     if (!grouped.length) {
-        container.innerHTML = `<div id="sessions-grouped">\${emptyHtml('No hay reproducciones activas')}</div>`;
+        container.innerHTML = `<div id="sessions-grouped">${emptyHtml('No hay reproducciones activas')}</div>`;
         return;
     }
 
-    container.innerHTML = `<div id="sessions-grouped">\${grouped.map(group => `
-        <div class="mb-3 server-group" data-server-id="\${group.server_id}">
+    container.innerHTML = `<div id="sessions-grouped">${grouped.map(group => `
+        <div class="mb-3 server-group" data-server-id="${group.server_id}">
             <div class="d-flex align-items-center gap-2 mb-2">
-                <h5 class="mb-0 fs-6">\${escapeHtml(group.server_name)}</h5>
-                <span class="badge bg-\${group.server_type === 'plex' ? 'warning' : 'info'}">\${escapeHtml((group.server_type || '').toUpperCase())}</span>
-                <span class="badge bg-primary group-count">\${group.sessions.length} streams</span>
-                <a href="/activity?server_id=\${group.server_id}" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
+                <h5 class="mb-0 fs-6">${escapeHtml(group.server_name)}</h5>
+                <span class="badge bg-${group.server_type === 'plex' ? 'warning' : 'info'}">${escapeHtml((group.server_type || '').toUpperCase())}</span>
+                <span class="badge bg-primary group-count">${group.sessions.length} streams</span>
+                <a href="/activity?server_id=${group.server_id}" class="btn btn-sm btn-outline-secondary ms-auto">Ver solo este</a>
             </div>
-            <div class="row g-2 g-xl-3">\${group.sessions.map(sessionCardHtml).join('')}</div>
+            <div class="row g-2 g-xl-3">${group.sessions.map(sessionCardHtml).join('')}</div>
         </div>`).join('')}</div>`;
     restoreSessionUiState();
 }
@@ -383,59 +403,45 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
 
 (function bindAutoKillVideoTranscodes() {
     const toggle = document.getElementById('auto-kill-video-transcodes');
-    const status = document.getElementById('auto-kill-video-status');
     if (!toggle) return;
 
-    const syncStatus = (on) => {
-        if (!status) return;
-        status.textContent = on ? 'ON' : 'OFF';
-        status.className = 'badge ' + (on ? 'bg-success' : 'bg-secondary');
-    };
-    syncStatus(toggle.checked);
+    syncAutoKillToggle(toggle.checked);
 
     toggle.addEventListener('change', async () => {
+        const desired = !!toggle.checked;
         const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
         if (!csrf) {
             alert('No hay token CSRF. Recarga la página.');
-            toggle.checked = !toggle.checked;
-            syncStatus(toggle.checked);
+            syncAutoKillToggle(!desired);
             return;
         }
         toggle.disabled = true;
         try {
-            const body = new URLSearchParams({
-                _token: csrf,
-                enabled: toggle.checked ? '1' : '0',
-            });
+            const body = new URLSearchParams();
+            body.set('_token', csrf);
+            body.set('enabled', desired ? '1' : '0');
             const res = await fetch('/activity/auto-kill-video-transcodes', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                     'X-Csrf-Token': csrf,
                 },
-                body,
+                body: body.toString(),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || data.success === false || data.error) {
-                toggle.checked = !toggle.checked;
-                syncStatus(toggle.checked);
-                alert(data.message || 'No se pudo guardar.');
+                syncAutoKillToggle(!desired);
+                alert(data.message || ('No se pudo guardar (HTTP ' + res.status + ').'));
                 return;
             }
-            if (typeof data.enabled === 'boolean') {
-                toggle.checked = data.enabled;
-            }
-            syncStatus(toggle.checked);
-            alert(data.message || (toggle.checked ? 'Auto-corte activado.' : 'Auto-corte desactivado.'));
-            if (typeof window.MP_REFRESH_SESSIONS === 'function') {
-                window.MP_REFRESH_SESSIONS();
-            }
+            const enabled = typeof data.enabled === 'boolean' ? data.enabled : desired;
+            syncAutoKillToggle(enabled);
+            alert(data.message || (enabled ? 'Auto-corte activado.' : 'Auto-corte desactivado.'));
         } catch (err) {
-            toggle.checked = !toggle.checked;
-            syncStatus(toggle.checked);
+            syncAutoKillToggle(!desired);
             alert('Error de red al guardar el auto-corte.');
         } finally {
             toggle.disabled = false;

@@ -86,6 +86,9 @@ final class PlaybackStopMessageService
     /** Cuerpo del mensaje marcado como predeterminado (aviso de ajustes mal configurados). */
     public function defaultBody(int $tenantId): string
     {
+        self::ensureTable();
+        $this->ensureDefaultSeed($tenantId);
+
         foreach ($this->listForTenant($tenantId) as $row) {
             if ((int) ($row['is_default'] ?? 0) === 1) {
                 $body = trim((string) ($row['body'] ?? ''));
@@ -94,6 +97,21 @@ final class PlaybackStopMessageService
                 }
             }
         }
+
+        // Preferir el canónico de producto aunque otro registro exista sin marcar.
+        $canonical = Database::getInstance()->fetchOne(
+            'SELECT `body` FROM `playback_stop_messages`
+             WHERE `tenant_id` = ? AND `title` = ?
+             ORDER BY `id` ASC LIMIT 1',
+            [$tenantId, self::DEFAULT_TITLE]
+        );
+        if ($canonical !== null) {
+            $body = trim((string) ($canonical['body'] ?? ''));
+            if ($body !== '') {
+                return $body;
+            }
+        }
+
         foreach ($this->listForTenant($tenantId) as $row) {
             $body = trim((string) ($row['body'] ?? ''));
             if ($body !== '') {
@@ -101,7 +119,6 @@ final class PlaybackStopMessageService
             }
         }
 
-        // Nunca sustituir por un genérico: el predeterminado del producto es el de ajustes.
         return self::DEFAULT_BODY;
     }
 

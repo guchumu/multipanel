@@ -224,16 +224,41 @@ final class StreamLimitSettingsService
     private function get(int $tenantId, string $key): ?string
     {
         $row = Database::getInstance()->fetchOne(
-            'SELECT value FROM settings WHERE (tenant_id = ? OR tenant_id IS NULL) AND `group` = ? AND `key` = ? ORDER BY tenant_id DESC LIMIT 1',
+            'SELECT value FROM settings WHERE tenant_id = ? AND `group` = ? AND `key` = ? LIMIT 1',
             [$tenantId, self::GROUP, $key]
         );
 
-        return $row ? (string) $row['value'] : null;
+        if ($row) {
+            return (string) $row['value'];
+        }
+
+        // Fallback legado: filas globales (tenant_id NULL).
+        $legacy = Database::getInstance()->fetchOne(
+            'SELECT value FROM settings WHERE tenant_id IS NULL AND `group` = ? AND `key` = ? LIMIT 1',
+            [self::GROUP, $key]
+        );
+
+        return $legacy ? (string) $legacy['value'] : null;
     }
 
     private function set(int $tenantId, string $key, string $value, string $type): void
     {
         $db = Database::getInstance();
+
+        // Upsert atómico: evita carreras y fallos silenciosos si el SELECT previo no ve la fila.
+        $db->query(
+            'INSERT INTO `settings` (`tenant_id`, `group`, `key`, `value`, `type`)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `type` = VALUES(`type`)',
+            [$tenantId, self::GROUP, $key, $value, $type]
+        );
+
+        // Si el UNIQUE no incluye tenant (esquema antiguo), forzar update/insert clásico.
+        $stored = $this->get($tenantId, $key);
+        if ($stored === $value) {
+            return;
+        }
+
         $existing = $db->fetchOne(
             'SELECT id FROM settings WHERE tenant_id = ? AND `group` = ? AND `key` = ?',
             [$tenantId, self::GROUP, $key]
@@ -249,6 +274,13 @@ final class StreamLimitSettingsService
                 'value' => $value,
                 'type' => $type,
             ]);
+        }
+
+        $stored = $this->get($tenantId, $key);
+        if ($stored !== $value) {
+            throw new \RuntimeException(
+                "No se pudo persistir settings.{$key} (esperado={$value}, leído=" . var_export($stored, true) . ')'
+            );
         }
     }
 }

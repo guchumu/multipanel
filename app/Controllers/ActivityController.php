@@ -49,7 +49,7 @@ class ActivityController extends Controller
             'totalCount' => $snapshot['total_count'],
             'currentServerId' => $serverId,
             'stopMessages' => $this->stopMessages->listForTenant($tenantId),
-            'autoKillVideoTranscodes' => $streamSettings->isAutoKillVideoTranscodesEnabled($tenantId),
+            'autoKillVideoTranscodes' => (bool) $streamSettings->isAutoKillVideoTranscodesEnabled($tenantId),
         ]);
     }
 
@@ -227,39 +227,68 @@ SVG;
 
     /**
      * Activa/desactiva el auto-corte de transcodes de vídeo (cron streams).
-     * Al activar, ejecuta un pase inmediato además del cron.
+     * Solo persiste el flag; el corte inmediato es el botón «Cortar ahora» / cron.
      */
     public function setAutoKillVideoTranscodes(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $raw = $request->input('enabled');
-        if (is_bool($raw)) {
-            $enabled = $raw;
-        } else {
-            $enabled = in_array(strtolower(trim((string) $raw)), ['1', 'true', 'yes', 'on'], true);
+        $enabled = $this->parseEnabledFlag($request);
+
+        $settings = new \App\Services\StreamLimitSettingsService();
+        try {
+            $settings->setAutoKillVideoTranscodesEnabled($tenantId, $enabled);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'success' => false,
+                'enabled' => $settings->isAutoKillVideoTranscodesEnabled($tenantId),
+                'message' => 'No se pudo guardar el auto-corte: ' . $e->getMessage(),
+            ], 500);
         }
 
-        (new \App\Services\StreamLimitSettingsService())->setAutoKillVideoTranscodesEnabled($tenantId, $enabled);
-
-        $killed = 0;
-        if ($enabled) {
-            $result = $this->activity->autoKillVideoTranscodesIfEnabled($tenantId, null);
-            $killed = (int) ($result['killed'] ?? 0);
-        }
-
-        $message = $enabled
-            ? 'Auto-corte ACTIVADO. El cron streams cortará solo cuando Vídeo diga Transcode.'
-            : 'Auto-corte desactivado.';
-        if ($enabled && $killed > 0) {
-            $message .= " Cortadas ahora: {$killed}.";
+        $persisted = $settings->isAutoKillVideoTranscodesEnabled($tenantId);
+        if ($persisted !== $enabled) {
+            return $this->json([
+                'success' => false,
+                'enabled' => $persisted,
+                'message' => 'El valor no se persistió correctamente. Recarga e inténtalo de nuevo.',
+            ], 500);
         }
 
         return $this->json([
             'success' => true,
-            'enabled' => $enabled,
-            'killed' => $killed,
-            'message' => $message,
+            'enabled' => $persisted,
+            'message' => $persisted
+                ? 'Auto-corte ACTIVADO. El cron streams cortará solo cuando Vídeo diga Transcode.'
+                : 'Auto-corte desactivado.',
         ]);
+    }
+
+    /** Interpreta enabled desde form, JSON o cuerpo crudo (1/0/true/false/on/off). */
+    private function parseEnabledFlag(Request $request): bool
+    {
+        $raw = $request->input('enabled');
+        if ($raw === null || $raw === '') {
+            $body = $request->rawBody();
+            if ($body !== '') {
+                parse_str($body, $parsed);
+                if (is_array($parsed) && array_key_exists('enabled', $parsed)) {
+                    $raw = $parsed['enabled'];
+                } else {
+                    $json = json_decode($body, true);
+                    if (is_array($json) && array_key_exists('enabled', $json)) {
+                        $raw = $json['enabled'];
+                    }
+                }
+            }
+        }
+
+        if (is_bool($raw)) {
+            return $raw;
+        }
+
+        $normalized = strtolower(trim((string) $raw));
+
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
     }
 
     public function kill(Request $request): Response
@@ -278,14 +307,20 @@ SVG;
             return $this->json(['success' => false, 'message' => 'Servidor no encontrado.'], 404);
         }
 
+        // Vacío = siempre el predeterminado de producto (nunca cortar en silencio).
         $reason = $message !== '' ? $message : $this->stopMessages->defaultBody($tenantId);
+        if (trim($reason) === '') {
+            $reason = PlaybackStopMessageService::DEFAULT_BODY;
+        }
+
         $ok = $this->activity->terminateSession($server, $sessionId, $reason);
 
         return $this->json([
             'success' => $ok,
             'message' => $ok
-                ? ($message !== '' ? 'Reproducción detenida y mensaje enviado.' : 'Reproducción detenida.')
+                ? 'Reproducción detenida y mensaje enviado.'
                 : 'No se pudo detener la reproducción.',
+            'message_sent' => $ok ? $reason : null,
         ], $ok ? 200 : 500);
     }
 

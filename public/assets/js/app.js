@@ -285,8 +285,8 @@
       <select class="form-select form-select-sm mb-2" id="killModalPreset" aria-label="Mensaje predefinido">
         <option value="">Personalizado / sin mensaje</option>
       </select>
-      <label class="form-label small mb-1" for="killModalMessage">Mensaje al usuario (opcional)</label>
-      <textarea class="form-control form-control-sm" id="killModalMessage" rows="3" maxlength="500" placeholder="Mensaje al usuario (opcional)"></textarea>
+      <label class="form-label small mb-1" for="killModalMessage">Mensaje al usuario</label>
+      <textarea class="form-control form-control-sm" id="killModalMessage" rows="3" maxlength="500" placeholder="Se enviará el mensaje predeterminado si lo dejas vacío"></textarea>
     </div>
     <div class="modal-footer py-2">
       <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
@@ -302,23 +302,24 @@
         const textarea = modalEl.querySelector('#killModalMessage');
         presetSelect.addEventListener('change', () => {
             if (!presetSelect.value) {
-                textarea.value = '';
+                textarea.value = resolveDefaultStopMessage();
                 return;
             }
             const messages = window.MP_STOP_MESSAGES || [];
             const preset = messages.find(m => String(m.id) === String(presetSelect.value));
-            textarea.value = preset ? String(preset.body || '') : '';
+            textarea.value = preset ? String(preset.body || '') : resolveDefaultStopMessage();
         });
 
         modalEl.querySelector('#killModalConfirm').addEventListener('click', async () => {
             const btn = modalEl.querySelector('#killModalConfirm');
             const serverId = modalEl.querySelector('#killModalServerId').value;
             const sessionId = modalEl.querySelector('#killModalSessionId').value;
-            const message = (textarea.value || '').trim();
-            const confirmText = message
-                ? '¿Detener esta reproducción y enviar el mensaje al usuario?'
-                : '¿Detener esta reproducción?';
-            if (!confirm(confirmText)) return;
+            let message = (textarea.value || '').trim();
+            if (!message) {
+                message = resolveDefaultStopMessage();
+                textarea.value = message;
+            }
+            if (!confirm('¿Detener esta reproducción y enviar el mensaje al usuario?')) return;
 
             btn.disabled = true;
             const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
@@ -338,12 +339,12 @@
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': csrf,
                         'X-Csrf-Token': csrf,
                     },
-                    body,
+                    body: body.toString(),
                 });
                 const data = await res.json().catch(() => ({}));
                 if (data.success) {
@@ -370,19 +371,50 @@
         return modalEl;
     }
 
+    const FALLBACK_STOP_BODY = 'Ajustes de configuración mal configurados. Para evitar cortes revise la configuración obligatoria o contacte con soporte.';
+
+    function resolveDefaultStopMessage() {
+        const messages = window.MP_STOP_MESSAGES || [];
+        for (const m of messages) {
+            if (Number(m.is_default) === 1 && String(m.body || '').trim()) {
+                return String(m.body).trim();
+            }
+        }
+        if (messages.length && String(messages[0].body || '').trim()) {
+            return String(messages[0].body).trim();
+        }
+        return FALLBACK_STOP_BODY;
+    }
+
     function fillKillPresets(select) {
         const messages = window.MP_STOP_MESSAGES || [];
-        let html = '<option value="">Personalizado / sin mensaje</option>';
+        let html = '<option value="">Usar predeterminado</option>';
+        let defaultId = '';
         let defaultBody = '';
         messages.forEach(m => {
             const isDef = Number(m.is_default) === 1;
-            if (isDef) defaultBody = String(m.body || '');
+            const body = String(m.body || '');
+            if (isDef && body.trim()) {
+                defaultId = String(m.id);
+                defaultBody = body;
+            }
             html += `<option value="${m.id}"${isDef ? ' selected' : ''}>${escapeAttr(m.title)}${isDef ? ' ★' : ''}</option>`;
         });
         if (!defaultBody && messages.length) {
+            defaultId = String(messages[0].id);
             defaultBody = String(messages[0].body || '');
+            html = html.replace(
+                `value="${defaultId}"`,
+                `value="${defaultId}" selected`
+            );
+        }
+        if (!defaultBody) {
+            defaultBody = FALLBACK_STOP_BODY;
         }
         select.innerHTML = html;
+        if (defaultId) {
+            select.value = defaultId;
+        }
         return defaultBody;
     }
 

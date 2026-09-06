@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Media;
 
 use App\Models\Server;
+use App\Services\PlaybackStopMessageService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Core\Logger;
@@ -438,10 +439,14 @@ final class JellyfinService
         }
 
         $reason = trim((string) $reason);
-        if ($reason !== '') {
-            // Best-effort: mostrar aviso antes de cortar (no bloquea el stop).
-            $this->sendSessionMessage($sessionId, 'Reproducción detenida', $reason);
+        if ($reason === '') {
+            $reason = PlaybackStopMessageService::DEFAULT_BODY;
         }
+
+        // Mostrar aviso antes de cortar; sin pausa el stop llega antes de que el cliente pinte el mensaje.
+        $header = PlaybackStopMessageService::DEFAULT_TITLE;
+        $this->sendSessionMessage($sessionId, $header, $reason, 10000);
+        usleep(700000);
 
         try {
             $response = $this->client->post("/Sessions/{$sessionId}/Playing/Stop", [
