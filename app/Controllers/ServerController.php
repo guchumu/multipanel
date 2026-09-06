@@ -500,6 +500,155 @@ class ServerController extends Controller
     }
 
     /**
+     * Vacía la papelera Plex de una biblioteca: limpia ítems «archivo no encontrado».
+     * No borra archivos del disco.
+     */
+    public function emptyTrashLibrary(Request $request, string $uuid, string $externalId): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['success' => false, 'error' => 'Servidor no encontrado', 'message' => 'Servidor no encontrado.'], 404);
+        }
+
+        if ($server->type !== 'plex') {
+            return $this->json([
+                'success' => false,
+                'message' => 'Vaciar papelera solo está disponible en servidores Plex (limpia «no encontrado», no borra archivos).',
+            ], 422);
+        }
+
+        $externalId = trim(urldecode($externalId));
+        if ($externalId === '') {
+            return $this->json(['success' => false, 'message' => 'Biblioteca no válida.'], 422);
+        }
+
+        $db = \Core\Database::getInstance();
+        $library = $db->fetchOne(
+            'SELECT id, external_id, name FROM libraries WHERE server_id = ? AND external_id = ? LIMIT 1',
+            [$server->id, $externalId]
+        );
+        if ($library === null) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Biblioteca no encontrada en el panel. Usa «Forzar sincronización» primero.',
+            ], 404);
+        }
+
+        try {
+            $media = MediaServerFactory::make($server);
+            if (!method_exists($media, 'emptyTrashLibrary')) {
+                return $this->json(['success' => false, 'message' => 'Operación no disponible en este servidor.'], 422);
+            }
+
+            $ok = $media->emptyTrashLibrary($externalId);
+            if ($ok) {
+                try {
+                    $this->audit->log('server.library_empty_trash', 'server', (int) $server->id, null, [
+                        'external_id' => $externalId,
+                        'library' => $library['name'] ?? null,
+                    ]);
+                } catch (\Throwable $auditError) {
+                    \Core\Logger::warning('server.library_empty_trash audit failed', ['error' => $auditError->getMessage()]);
+                }
+            }
+
+            return $this->json([
+                'success' => $ok,
+                'message' => $ok
+                    ? sprintf(
+                        'Papelera vaciada en «%s»: se limpiaron de la biblioteca los archivos no encontrados. No se ha borrado nada del disco.',
+                        (string) ($library['name'] ?? $externalId)
+                    )
+                    : 'No se pudo vaciar la papelera en Plex.',
+            ], $ok ? 200 : 502);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('server.empty_trash_library failed', [
+                'uuid' => $uuid,
+                'external_id' => $externalId,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->json([
+                'success' => false,
+                'message' => 'Error al vaciar la papelera: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Vacía la papelera de todas las bibliotecas Plex del servidor.
+     * Solo limpia metadatos de archivos no encontrados — no borra del disco.
+     */
+    public function emptyTrashAllLibraries(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['success' => false, 'error' => 'Servidor no encontrado', 'message' => 'Servidor no encontrado.'], 404);
+        }
+
+        if ($server->type !== 'plex') {
+            return $this->json([
+                'success' => false,
+                'message' => 'Vaciar papelera solo está disponible en servidores Plex.',
+            ], 422);
+        }
+
+        try {
+            $media = MediaServerFactory::make($server);
+            if (!method_exists($media, 'emptyTrashAllLibraries')) {
+                return $this->json(['success' => false, 'message' => 'Operación no disponible en este servidor.'], 422);
+            }
+
+            $result = $media->emptyTrashAllLibraries();
+            $ok = !empty($result['success']);
+
+            if ($ok) {
+                try {
+                    $this->audit->log('server.libraries_empty_trash', 'server', (int) $server->id, null, [
+                        'cleaned' => $result['cleaned'] ?? null,
+                        'failed' => $result['failed'] ?? null,
+                    ]);
+                } catch (\Throwable $auditError) {
+                    \Core\Logger::warning('server.libraries_empty_trash audit failed', ['error' => $auditError->getMessage()]);
+                }
+            }
+
+            $message = $ok
+                ? sprintf(
+                    'Papelera vaciada en %d biblioteca(s) Plex. Solo se limpian ítems no encontrados; no se borra nada del disco.',
+                    (int) ($result['cleaned'] ?? 0)
+                )
+                : sprintf(
+                    'No se pudo vaciar la papelera.%s',
+                    !empty($result['error']) ? ' ' . $result['error'] : ''
+                );
+
+            if ($ok && (int) ($result['failed'] ?? 0) > 0) {
+                $message = sprintf(
+                    'Papelera: %d biblioteca(s) OK, %d con error. No se ha borrado nada del disco.',
+                    (int) ($result['cleaned'] ?? 0),
+                    (int) ($result['failed'] ?? 0)
+                );
+            }
+
+            return $this->json([
+                'success' => $ok,
+                'message' => $message,
+                'cleaned' => (int) ($result['cleaned'] ?? 0),
+                'failed' => (int) ($result['failed'] ?? 0),
+            ], $ok ? 200 : 502);
+        } catch (\Throwable $e) {
+            \Core\Logger::error('server.empty_trash_all_libraries failed', [
+                'uuid' => $uuid,
+                'error' => $e->getMessage(),
+            ]);
+            return $this->json([
+                'success' => false,
+                'message' => 'Error al vaciar la papelera: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Escanea todas las categorías vinculadas (mismo nombre en ≥2 servidores).
      */
     public function scanLinkedLibraries(Request $request): Response

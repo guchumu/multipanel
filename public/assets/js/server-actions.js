@@ -165,6 +165,69 @@
         });
     });
 
+    const emptyTrashConfirm =
+        '¿Vaciar la papelera de Plex?\n\n' +
+        'Solo limpia de la biblioteca los ítems cuyo archivo YA NO EXISTE (no encontrado).\n' +
+        'NO borra ningún archivo del disco ni carpetas.';
+
+    document.querySelectorAll('.btn-empty-trash-all').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            if (!confirm(emptyTrashConfirm)) return;
+            const uuid = this.dataset.uuid;
+            const buttons = document.querySelectorAll('.btn-empty-trash-all, .btn-empty-trash-library');
+            buttons.forEach(b => setBusy(b, true, 'Limpiando…'));
+            showStatus('Vaciando papelera Plex (solo «no encontrado», sin borrar archivos)…', 'info');
+            try {
+                const data = await postJson(`/servers/${uuid}/libraries/empty-trash`);
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al vaciar la papelera.'), 'danger');
+                    buttons.forEach(b => setBusy(b, false));
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Papelera vaciada. No se ha borrado nada del disco.', ''),
+                    'success'
+                );
+                buttons.forEach(b => setBusy(b, false));
+            } catch (e) {
+                showStatus('Error de red al vaciar la papelera.', 'danger');
+                buttons.forEach(b => setBusy(b, false));
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-empty-trash-library').forEach(btn => {
+        btn.addEventListener('click', async function () {
+            if (!confirm(emptyTrashConfirm)) return;
+            const uuid = this.dataset.uuid;
+            const externalId = this.dataset.externalId;
+            if (!externalId) {
+                showStatus('Biblioteca sin ID externo.', 'danger');
+                return;
+            }
+            setBusy(this, true, 'Limpiando…');
+            showStatus('Vaciando papelera de esta biblioteca (sin borrar archivos)…', 'info');
+            try {
+                const data = await postJson(
+                    `/servers/${uuid}/libraries/${encodeURIComponent(externalId)}/empty-trash`
+                );
+                if (!data.__httpOk || data.success === false) {
+                    showStatus(responseMessage(data, '', 'Error al vaciar la papelera.'), 'danger');
+                    setBusy(this, false);
+                    return;
+                }
+                showStatus(
+                    responseMessage(data, 'Papelera vaciada. No se ha borrado nada del disco.', ''),
+                    'success'
+                );
+                setBusy(this, false);
+            } catch (e) {
+                showStatus('Error de red al vaciar la papelera.', 'danger');
+                setBusy(this, false);
+            }
+        });
+    });
+
     document.querySelectorAll('.btn-scan-linked-all').forEach(btn => {
         btn.addEventListener('click', async function () {
             const buttons = document.querySelectorAll('.btn-scan-linked-all, .btn-scan-linked-group');

@@ -323,6 +323,73 @@ final class PlexService
     }
 
     /**
+     * Vacía la papelera de una sección Plex (quita de la biblioteca ítems cuyo archivo ya no existe).
+     * No borra archivos del disco — solo limpia metadatos huérfanos en Plex.
+     * PUT /library/sections/{id}/emptyTrash
+     */
+    public function emptyTrashLibrary(string|int $sectionId): bool
+    {
+        if ($this->lastError !== null) {
+            return false;
+        }
+
+        try {
+            $this->client->put('/library/sections/' . rawurlencode((string) $sectionId) . '/emptyTrash', [
+                'headers' => $this->authHeaders(),
+            ]);
+            return true;
+        } catch (GuzzleException $e) {
+            $this->lastError = $e->getMessage();
+            Logger::error('Plex empty trash failed', [
+                'server_id' => $this->server->id,
+                'section_id' => $sectionId,
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Vacía la papelera de todas las bibliotecas Plex (solo limpia «no encontrado», no borra archivos).
+     *
+     * @return array{success: bool, cleaned: int, failed: int, error?: string}
+     */
+    public function emptyTrashAllLibraries(): array
+    {
+        $libraries = $this->getLibraries();
+        if ($libraries === []) {
+            return [
+                'success' => false,
+                'cleaned' => 0,
+                'failed' => 0,
+                'error' => $this->lastError ?? 'No se encontraron bibliotecas en Plex.',
+            ];
+        }
+
+        $cleaned = 0;
+        $failed = 0;
+        foreach ($libraries as $library) {
+            $sectionId = (string) ($library['external_id'] ?? '');
+            if ($sectionId === '') {
+                $failed++;
+                continue;
+            }
+            if ($this->emptyTrashLibrary($sectionId)) {
+                $cleaned++;
+            } else {
+                $failed++;
+            }
+        }
+
+        return [
+            'success' => $cleaned > 0,
+            'cleaned' => $cleaned,
+            'failed' => $failed,
+            'error' => $cleaned === 0 ? ($this->lastError ?? 'No se pudo vaciar ninguna papelera.') : null,
+        ];
+    }
+
+    /**
      * Trigger a library section scan on the Plex Media Server.
      * POST /library/sections/{id}/refresh
      */

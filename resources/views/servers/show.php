@@ -73,12 +73,25 @@
                 <h6 class="mb-0">Bibliotecas</h6>
                 <p class="text-muted small mb-0">
                     Escanea en <?= e(strtoupper($server->type)) ?> (disco/metadatos). No modifica usuarios ni permisos.
+                    <?php if ($server->type === 'plex'): ?>
+                    «Vaciar papelera» solo limpia en Plex los ítems cuyo archivo ya no existe — <strong>no borra archivos</strong>.
+                    <?php endif; ?>
                     «Forzar sincronización» solo actualiza la copia en el panel.
                 </p>
             </div>
-            <button type="button" class="btn btn-sm btn-primary btn-scan-all" data-uuid="<?= e($server->uuid) ?>">
-                <i class="bi bi-disc me-1"></i>Escanear todas
-            </button>
+            <div class="d-flex flex-wrap gap-2">
+                <?php if ($server->type === 'plex' && !empty($libraries)): ?>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary btn-empty-trash-all"
+                        data-uuid="<?= e($server->uuid) ?>"
+                        title="Limpia en Plex los archivos no encontrados. No borra nada del disco.">
+                    <i class="bi bi-trash3 me-1"></i>Vaciar papelera
+                </button>
+                <?php endif; ?>
+                <button type="button" class="btn btn-sm btn-primary btn-scan-all" data-uuid="<?= e($server->uuid) ?>">
+                    <i class="bi bi-disc me-1"></i>Escanear todas
+                </button>
+            </div>
         </div>
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
@@ -104,7 +117,16 @@
                         <td class="fw-medium"><?= e($library['name'] ?? '') ?></td>
                         <td><span class="badge bg-secondary"><?= e($library['type'] ?? '-') ?></span></td>
                         <td class="small text-muted d-none d-md-table-cell"><code><?= e($library['external_id'] ?? '') ?></code></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
+                            <?php if ($server->type === 'plex'): ?>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary btn-empty-trash-library"
+                                    data-uuid="<?= e($server->uuid) ?>"
+                                    data-external-id="<?= e($library['external_id'] ?? '') ?>"
+                                    title="Vaciar papelera de esta biblioteca: limpia «no encontrado». No borra archivos.">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                            <?php endif; ?>
                             <button type="button"
                                     class="btn btn-sm btn-outline-info btn-scan-library"
                                     data-uuid="<?= e($server->uuid) ?>"
