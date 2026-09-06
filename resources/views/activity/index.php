@@ -33,6 +33,7 @@ $renderSessionCard = static function (array $session) use ($playMethodLabel, $pl
 
 ob_start();
 ?>
+<div class="activity-page">
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h4 class="mb-0">En directo</h4>
