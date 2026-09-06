@@ -7,7 +7,6 @@
     function setBusy(btn, busy, label) {
         if (!btn) return;
         btn.disabled = busy;
-        const icon = btn.querySelector('i');
         if (busy) {
             btn.dataset.originalHtml = btn.innerHTML;
             btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span>${label}`;
@@ -22,13 +21,22 @@
         if (!box) {
             box = document.createElement('div');
             box.id = 'server-action-status';
-            box.className = 'alert alert-info py-2 small mb-3';
+            box.setAttribute('role', 'status');
+            box.setAttribute('aria-live', 'polite');
             const anchor = document.querySelector('.app-content') || document.body;
             anchor.prepend(box);
         }
         box.className = `alert alert-${type || 'info'} py-2 small mb-3`;
+        box.style.position = 'sticky';
+        box.style.top = '0';
+        box.style.zIndex = '1020';
         box.textContent = message;
         box.classList.remove('d-none');
+        try {
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) {
+            /* ignore */
+        }
     }
 
     function csrfToken() {
@@ -60,6 +68,9 @@
         const data = await res.json().catch(() => ({}));
         data.__httpOk = res.ok;
         data.__status = res.status;
+        if (!res.ok && typeof data.message !== 'string') {
+            data.message = `Error HTTP ${res.status}. Recarga la página e inténtalo de nuevo.`;
+        }
         return data;
     }
 
@@ -82,6 +93,28 @@
             return data.error;
         }
         return data?.success === false || data?.__httpOk === false ? fallbackFail : fallbackOk;
+    }
+
+    function emptyTrashDetail(data, fallbackOk) {
+        const base = responseMessage(data, fallbackOk, '');
+        const parts = [];
+        if (typeof data?.servers_ok === 'number') {
+            parts.push(`${data.servers_ok} servidor(es)`);
+        }
+        if (typeof data?.cleaned === 'number') {
+            parts.push(`${data.cleaned} biblioteca(s)`);
+        }
+        if (typeof data?.servers_failed === 'number' && data.servers_failed > 0) {
+            parts.push(`${data.servers_failed} servidor(es) con error`);
+        } else if (typeof data?.failed === 'number' && data.failed > 0) {
+            parts.push(`${data.failed} con error`);
+        }
+        if (parts.length === 0) {
+            return base;
+        }
+        // Evitar duplicar si el backend ya incluye los números en el mensaje.
+        const alreadyDetailed = /\d+\s+servidor|\d+\s+biblioteca/i.test(base);
+        return alreadyDetailed ? base : `${base} (${parts.join(', ')}).`;
     }
 
     document.querySelectorAll('.btn-sync').forEach(btn => {
@@ -209,7 +242,7 @@
                     return;
                 }
                 showStatus(
-                    responseMessage(data, 'Papeleras vaciadas. No se ha borrado nada del disco.', ''),
+                    emptyTrashDetail(data, 'Papeleras vaciadas. No se ha borrado nada del disco.'),
                     'success'
                 );
                 buttons.forEach(b => setBusy(b, false));
@@ -224,6 +257,10 @@
         btn.addEventListener('click', async function () {
             if (!confirm(emptyTrashConfirm)) return;
             const uuid = this.dataset.uuid;
+            if (!uuid) {
+                showStatus('Servidor sin UUID.', 'danger');
+                return;
+            }
             const buttons = document.querySelectorAll('.btn-empty-trash-all, .btn-empty-trash-library');
             buttons.forEach(b => setBusy(b, true, 'Limpiando…'));
             showStatus('Vaciando papelera Plex (solo «no encontrado», sin borrar archivos)…', 'info');
@@ -235,7 +272,7 @@
                     return;
                 }
                 showStatus(
-                    responseMessage(data, 'Papelera vaciada. No se ha borrado nada del disco.', ''),
+                    emptyTrashDetail(data, 'Papelera vaciada. No se ha borrado nada del disco.'),
                     'success'
                 );
                 buttons.forEach(b => setBusy(b, false));

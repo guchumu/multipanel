@@ -34,6 +34,8 @@ ob_start();
     </span>
 </p>
 
+<div id="server-action-status" class="alert d-none py-2 small mb-3" role="status" aria-live="polite"></div>
+
 <div class="card border-0 shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
@@ -112,7 +114,7 @@ ob_start();
                             <button class="btn btn-outline-primary btn-sync" data-uuid="<?= e($server->uuid) ?>" title="Forzar sincronización: comprobar quién está en la biblioteca"><i class="bi bi-arrow-repeat"></i></button>
                             <button class="btn btn-outline-info btn-scan-all" data-uuid="<?= e($server->uuid) ?>" title="Escanear todas las bibliotecas"><i class="bi bi-disc"></i></button>
                             <?php if ($server->type === 'plex'): ?>
-                            <button class="btn btn-outline-secondary btn-empty-trash-all" data-uuid="<?= e($server->uuid) ?>" title="Vaciar papelera Plex (no borra archivos)"><i class="bi bi-trash3"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-empty-trash-all" data-uuid="<?= e($server->uuid) ?>" title="Vaciar papelera Plex (no borra archivos)"><i class="bi bi-trash3"></i></button>
                             <?php endif; ?>
                             <button class="btn btn-outline-success btn-test" data-uuid="<?= e($server->uuid) ?>" title="Test conexión"><i class="bi bi-plug"></i></button>
                             <a href="/servers/<?= e($server->uuid) ?>" class="btn btn-outline-warning" title="Ver detalle / debug"><i class="bi bi-bug"></i></a>
@@ -225,7 +227,7 @@ $linkedCount = (int) ($linkedLibraries['linked_count'] ?? 0);
 
 <?php
 $content = ob_get_clean();
-$scripts = <<<'JS'
-<script src="/assets/js/server-actions.js"></script>
-JS;
+$scripts = '<script src="' . e(asset('js/server-actions.js')) . '?v='
+    . (@filemtime(public_path('assets/js/server-actions.js')) ?: '1')
+    . '"></script>';
 include base_path('resources/views/layouts/app.php');

@@ -822,15 +822,16 @@ class ServerController extends Controller
             // ignore
         }
 
+        $errorSuffix = $errors !== [] ? ' ' . implode(' · ', array_slice($errors, 0, 3)) : '';
         $message = $ok
             ? sprintf(
-                'Papelera vaciada en %d servidor(es) Plex (%d biblioteca(s)). No se ha borrado nada del disco.%s',
+                'Papelera vaciada en %d servidor(es) Plex (%d biblioteca(s)). No se ha borrado nada del disco.%s%s',
                 $serversOk,
                 $cleaned,
-                $serversFailed > 0 ? " {$serversFailed} con error." : ''
+                $serversFailed > 0 ? " {$serversFailed} con error." : '',
+                $serversFailed > 0 ? $errorSuffix : ''
             )
-            : 'No se pudo vaciar la papelera en ningún servidor Plex.'
-                . ($errors !== [] ? ' ' . implode(' · ', array_slice($errors, 0, 3)) : '');
+            : 'No se pudo vaciar la papelera en ningún servidor Plex.' . $errorSuffix;
 
         return $this->json([
             'success' => $ok,
@@ -839,6 +840,7 @@ class ServerController extends Controller
             'servers_failed' => $serversFailed,
             'cleaned' => $cleaned,
             'failed' => $failed,
+            'errors' => $errors,
         ], $ok ? 200 : 502);
     }
 

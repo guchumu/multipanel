@@ -258,6 +258,7 @@ final class PlexService
 
             return $libraries;
         } catch (GuzzleException $e) {
+            $this->lastError = $e->getMessage();
             Logger::error('Plex get libraries failed', ['server_id' => $this->server->id, 'error' => $e->getMessage()]);
             return [];
         }
@@ -352,7 +353,7 @@ final class PlexService
     /**
      * Vacía la papelera de todas las bibliotecas Plex (solo limpia «no encontrado», no borra archivos).
      *
-     * @return array{success: bool, cleaned: int, failed: int, error?: string}
+     * @return array{success: bool, cleaned: int, failed: int, error?: string|null}
      */
     public function emptyTrashAllLibraries(): array
     {
@@ -368,16 +369,20 @@ final class PlexService
 
         $cleaned = 0;
         $failed = 0;
+        $lastFail = null;
         foreach ($libraries as $library) {
             $sectionId = (string) ($library['external_id'] ?? '');
             if ($sectionId === '') {
                 $failed++;
                 continue;
             }
+            // Un fallo en una sección no debe impedir intentar el resto.
+            $this->lastError = null;
             if ($this->emptyTrashLibrary($sectionId)) {
                 $cleaned++;
             } else {
                 $failed++;
+                $lastFail = $this->lastError;
             }
         }
 
@@ -385,7 +390,7 @@ final class PlexService
             'success' => $cleaned > 0,
             'cleaned' => $cleaned,
             'failed' => $failed,
-            'error' => $cleaned === 0 ? ($this->lastError ?? 'No se pudo vaciar ninguna papelera.') : null,
+            'error' => $cleaned === 0 ? ($lastFail ?? 'No se pudo vaciar ninguna papelera.') : null,
         ];
     }
 

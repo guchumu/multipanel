@@ -31,6 +31,7 @@
 </div>
 <?php endif; ?>
 
+<div id="server-action-status" class="alert d-none py-2 small mb-3" role="status" aria-live="polite"></div>
 <div class="row g-4">
     <div class="col-md-4">
         <div class="card border-0 shadow-sm">
@@ -150,7 +151,7 @@
 
 <?php
 $content = ob_get_clean();
-$scripts = <<<'JS'
-<script src="/assets/js/server-actions.js"></script>
-JS;
+$scripts = '<script src="' . e(asset('js/server-actions.js')) . '?v='
+    . (@filemtime(public_path('assets/js/server-actions.js')) ?: '1')
+    . '"></script>';
 include base_path('resources/views/layouts/app.php');
