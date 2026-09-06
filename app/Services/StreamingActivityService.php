@@ -209,21 +209,70 @@ final class StreamingActivityService
     }
 
     /**
-     * True si la sesión está transcodificando vídeo (no solo audio).
+     * True solo si el vídeo está en «transcode».
+     * No corta Direct Play, Direct Stream (vídeo copy) ni solo-audio.
      *
      * @param array<string, mixed> $session
      */
     public static function isVideoTranscodeSession(array $session): bool
     {
-        $video = strtolower(trim((string) ($session['video_decision'] ?? '')));
-        if ($video === 'transcode') {
-            return true;
+        return strtolower(trim((string) ($session['video_decision'] ?? ''))) === 'transcode';
+    }
+
+    /**
+     * Si el auto-corte está activo: corta vídeo en transcode y envía mensaje predeterminado.
+     *
+     * @return array{killed: int, failed: int, skipped: int}
+     */
+    public function autoKillVideoTranscodesIfEnabled(int $tenantId, ?array $sessions = null): array
+    {
+        $settings = new StreamLimitSettingsService();
+        if (!$settings->isAutoKillVideoTranscodesEnabled($tenantId)) {
+            return ['killed' => 0, 'failed' => 0, 'skipped' => 0];
         }
 
-        $info = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
-        $line = strtolower(trim((string) ($info['video'] ?? $session['video_label'] ?? '')));
+        if ($sessions === null) {
+            $sessions = $this->getSnapshot($tenantId)['sessions'] ?? [];
+        }
 
-        return $line !== '' && str_contains($line, 'transcode');
+        $message = (new PlaybackStopMessageService())->defaultBody($tenantId);
+        $killed = 0;
+        $failed = 0;
+        $skipped = 0;
+
+        foreach ($sessions as $session) {
+            if (!self::isVideoTranscodeSession($session)) {
+                continue;
+            }
+            $sessionId = trim((string) ($session['session_id'] ?? ''));
+            $serverId = (int) ($session['server_id'] ?? 0);
+            if ($sessionId === '' || $serverId <= 0) {
+                $skipped++;
+                continue;
+            }
+
+            $debounceKey = 'auto_kill_vtrans_' . $serverId . '_' . sha1($sessionId);
+            if (Cache::get($debounceKey)) {
+                $skipped++;
+                continue;
+            }
+
+            $server = Server::find($serverId);
+            if ($server === null || (int) $server->tenant_id !== $tenantId) {
+                $failed++;
+                continue;
+            }
+
+            $ok = $this->terminateSession($server, $sessionId, $message);
+            if ($ok) {
+                $killed++;
+                Cache::set($debounceKey, 1, 120);
+            } else {
+                $failed++;
+            }
+        }
+
+        return ['killed' => $killed, 'failed' => $failed, 'skipped' => $skipped];
     }
 
     /** @return array{body: string, content_type: string}|null */

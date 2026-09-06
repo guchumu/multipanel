@@ -45,11 +45,19 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams corta automáticamente las sesiones cuyo vídeo dice Transcode (no audio ni Direct Play).">
+            <input class="form-check-input" type="checkbox" role="switch"
+                   id="auto-kill-video-transcodes"
+                   <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>
+            <label class="form-check-label small" for="auto-kill-video-transcodes">
+                Auto-corte <strong>vídeo Transcode</strong>
+            </label>
+        </div>
         <button type="button"
                 class="btn btn-warning btn-sm"
                 id="btn-kill-video-transcodes"
-                title="Corta solo transcodes de vídeo y envía el mensaje al detener predeterminado. No toca solo-audio ni Direct Play.">
-            <i class="bi bi-cpu me-1"></i>Cortar transcodes vídeo
+                title="Corta ahora solo transcodes de vídeo y envía el mensaje predeterminado.">
+            <i class="bi bi-cpu me-1"></i>Cortar ahora
         </button>
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
             <i class="bi bi-exclamation-octagon me-1"></i>Límites
@@ -323,9 +331,9 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
     btn.addEventListener('click', async () => {
         if (!confirm(
             '¿Cortar todos los TRANSCODES DE VÍDEO' + (viewMode === 'server' ? ' de este servidor' : '') + '?\n\n' +
-            '• Solo vídeo en transcode\n' +
+            '• Solo cuando el vídeo dice Transcode\n' +
             '• No toca Direct Play ni solo-audio\n' +
-            '• Se envía automáticamente el mensaje al detener predeterminado'
+            '• Se envía el mensaje al detener predeterminado'
         )) {
             return;
         }
@@ -363,6 +371,50 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
         } finally {
             btn.disabled = false;
             btn.innerHTML = original;
+        }
+    });
+})();
+
+(function bindAutoKillVideoTranscodes() {
+    const toggle = document.getElementById('auto-kill-video-transcodes');
+    if (!toggle) return;
+    toggle.addEventListener('change', async () => {
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            alert('No hay token CSRF. Recarga la página.');
+            toggle.checked = !toggle.checked;
+            return;
+        }
+        toggle.disabled = true;
+        try {
+            const res = await fetch('/activity/auto-kill-video-transcodes', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                },
+                body: JSON.stringify({ _token: csrf, enabled: toggle.checked }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false) {
+                toggle.checked = !toggle.checked;
+                alert(data.message || 'No se pudo guardar.');
+                return;
+            }
+            // Feedback breve sin alert molesto
+            const label = toggle.closest('.form-check')?.querySelector('label');
+            if (label) {
+                const prev = label.dataset.prevTitle || label.title || '';
+                label.dataset.prevTitle = prev;
+                label.title = data.message || '';
+            }
+        } catch (err) {
+            toggle.checked = !toggle.checked;
+            alert('Error de red al guardar el auto-corte.');
+        } finally {
+            toggle.disabled = false;
         }
     });
 })();

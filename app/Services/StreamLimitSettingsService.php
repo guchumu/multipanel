@@ -11,7 +11,7 @@ use Core\Database;
  *
  * Group: streams
  * Keys: enforcement_enabled, default_max_streams, default_max_away_streams,
- * kill_message, count_mode, sandbox_alerts
+ * kill_message, count_mode, sandbox_alerts, auto_kill_video_transcodes
  */
 final class StreamLimitSettingsService
 {
@@ -43,6 +43,19 @@ final class StreamLimitSettingsService
     public function setEnforcementEnabled(int $tenantId, bool $enabled): void
     {
         $this->set($tenantId, 'enforcement_enabled', $enabled ? '1' : '0', 'boolean');
+    }
+
+    /** Auto-corta sesiones cuyo vídeo está en «transcode» (no audio-only ni Direct Play). */
+    public function isAutoKillVideoTranscodesEnabled(int $tenantId): bool
+    {
+        $value = $this->get($tenantId, 'auto_kill_video_transcodes');
+
+        return $value === '1' || $value === 'true' || $value === 'yes';
+    }
+
+    public function setAutoKillVideoTranscodesEnabled(int $tenantId, bool $enabled): void
+    {
+        $this->set($tenantId, 'auto_kill_video_transcodes', $enabled ? '1' : '0', 'boolean');
     }
 
     public function getDefaultMaxStreams(int $tenantId): int
@@ -194,7 +207,7 @@ final class StreamLimitSettingsService
         return max(1, min(50, (int) $maxStreams));
     }
 
-    /** @return array{enforcement_enabled: bool, default_max_streams: int, default_max_away_streams: int, kill_message: string, count_mode: string, sandbox_alerts: bool} */
+    /** @return array{enforcement_enabled: bool, default_max_streams: int, default_max_away_streams: int, kill_message: string, count_mode: string, sandbox_alerts: bool, auto_kill_video_transcodes: bool} */
     public function all(int $tenantId): array
     {
         return [
@@ -204,6 +217,7 @@ final class StreamLimitSettingsService
             'kill_message' => (string) ($this->get($tenantId, 'kill_message') ?? ''),
             'count_mode' => $this->getCountMode($tenantId),
             'sandbox_alerts' => $this->sandboxAlertsEnabled($tenantId),
+            'auto_kill_video_transcodes' => $this->isAutoKillVideoTranscodesEnabled($tenantId),
         ];
     }
 

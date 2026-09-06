@@ -131,6 +131,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/activity/thumbs-debug', [ActivityController::class, 'thumbsDebug'], 'activity.thumbs_debug');
     $router->post('/activity/kill', [ActivityController::class, 'kill'], 'activity.kill', [CsrfMiddleware::class]);
     $router->post('/activity/kill-video-transcodes', [ActivityController::class, 'killVideoTranscodes'], 'activity.kill_video_transcodes', [CsrfMiddleware::class]);
+    $router->post('/activity/auto-kill-video-transcodes', [ActivityController::class, 'setAutoKillVideoTranscodes'], 'activity.auto_kill_video_transcodes', [CsrfMiddleware::class]);
     $router->post('/activity/session-kind', [ActivityController::class, 'sessionKind'], 'activity.session_kind', [CsrfMiddleware::class]);
 
     // Servers

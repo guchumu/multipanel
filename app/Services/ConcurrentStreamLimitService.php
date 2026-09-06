@@ -565,10 +565,20 @@ final class ConcurrentStreamLimitService
         } catch (\Throwable) {
         }
 
+        $autoVideo = ['killed' => 0, 'failed' => 0, 'skipped' => 0];
+        try {
+            $autoVideo = (new StreamingActivityService())->autoKillVideoTranscodesIfEnabled(
+                $tenantId,
+                $snapshot['sessions'] ?? []
+            );
+        } catch (\Throwable) {
+        }
+
         return [
             'checked' => (int) ($snapshot['total_count'] ?? count($snapshot['sessions'] ?? [])),
-            'killed' => (int) ($snapshot['stream_limit_killed'] ?? 0),
+            'killed' => (int) ($snapshot['stream_limit_killed'] ?? 0) + (int) ($autoVideo['killed'] ?? 0),
             'violations' => (int) ($snapshot['stream_limit_violations'] ?? 0),
+            'video_transcode_killed' => (int) ($autoVideo['killed'] ?? 0),
         ];
     }
 

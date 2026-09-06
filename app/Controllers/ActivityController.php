@@ -38,6 +38,7 @@ class ActivityController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
+        $streamSettings = new \App\Services\StreamLimitSettingsService();
 
         return $this->view('activity.index', [
             'title' => 'En directo',
@@ -48,6 +49,7 @@ class ActivityController extends Controller
             'totalCount' => $snapshot['total_count'],
             'currentServerId' => $serverId,
             'stopMessages' => $this->stopMessages->listForTenant($tenantId),
+            'autoKillVideoTranscodes' => $streamSettings->isAutoKillVideoTranscodesEnabled($tenantId),
         ]);
     }
 
@@ -63,6 +65,7 @@ class ActivityController extends Controller
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
         // Overview reutiliza el mismo snapshot cacheado (TTL 15s).
         $overview = $this->load->getActivityOverview($tenantId);
+        $autoKill = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
 
         return $this->json([
             'sessions' => $snapshot['sessions'],
@@ -70,6 +73,7 @@ class ActivityController extends Controller
             'server_stats' => $snapshot['server_stats'],
             'count' => $snapshot['filtered_count'],
             'total_count' => $snapshot['total_count'],
+            'auto_kill_video_transcodes' => $autoKill,
             'summary' => [
                 'total_streams' => $overview['total_streams'],
                 'total_transcodes' => $overview['total_transcodes'],
@@ -219,6 +223,24 @@ SVG;
         }
 
         return $this->json(['report' => $report], 200);
+    }
+
+    /**
+     * Activa/desactiva el auto-corte de transcodes de vídeo (cron streams).
+     */
+    public function setAutoKillVideoTranscodes(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $enabled = filter_var($request->input('enabled'), FILTER_VALIDATE_BOOLEAN);
+        (new \App\Services\StreamLimitSettingsService())->setAutoKillVideoTranscodesEnabled($tenantId, $enabled);
+
+        return $this->json([
+            'success' => true,
+            'enabled' => $enabled,
+            'message' => $enabled
+                ? 'Auto-corte de transcodes de vídeo ACTIVADO. Solo corta cuando el vídeo dice Transcode.'
+                : 'Auto-corte de transcodes de vídeo desactivado.',
+        ]);
     }
 
     public function kill(Request $request): Response

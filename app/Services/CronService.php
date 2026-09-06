@@ -168,9 +168,10 @@ final class CronService
             }
             $stats = (new ConcurrentStreamLimitService())->runForTenant($tenantId);
             $out(sprintf(
-                '  Checked sessions: %d, killed: %d, violations logged: %d',
+                '  Checked sessions: %d, killed: %d (vídeo transcode: %d), violations logged: %d',
                 $stats['checked'],
                 $stats['killed'],
+                (int) ($stats['video_transcode_killed'] ?? 0),
                 $stats['violations']
             ));
         } catch (\Throwable $e) {
