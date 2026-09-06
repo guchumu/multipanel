@@ -57,7 +57,7 @@ final class MediaUserEndpointServiceTest extends TestCase
         ], ['203.0.113.10']));
     }
 
-    public function testFireStickAndTvAreHomeEvenOnWan(): void
+    public function testFireStickAndTvFollowHomeIpNotDeviceType(): void
     {
         $svc = new MediaUserEndpointService();
         $this->assertSame('tv', MediaUserEndpointService::classifyDeviceClass([
@@ -65,16 +65,33 @@ final class MediaUserEndpointServiceTest extends TestCase
             'platform' => 'Fire TV',
             'player' => 'Living Room',
         ]));
-        $this->assertSame('home', $svc->classifyPlayback([
+        // WAN sin IP de hogar marcada ⇒ fuera, aunque sea tele/Fire Stick.
+        $this->assertSame('away', $svc->classifyPlayback([
             'location' => 'wan',
             'public_ip' => '8.8.8.8',
             'product' => 'Plex for Amazon Fire TV',
             'platform' => 'Fire TV',
         ]));
-        $this->assertSame('home', $svc->classifyPlayback([
+        $this->assertSame('away', $svc->classifyPlayback([
             'product' => 'Plex for Apple TV',
             'platform' => 'tvOS',
             'location' => 'wan',
+            'public_ip' => '198.51.100.20',
+        ]));
+        // Misma IP de hogar marcada ⇒ hogar (tele en casa).
+        $this->assertSame('home', $svc->classifyPlayback([
+            'location' => 'wan',
+            'public_ip' => '203.0.113.10',
+            'client_ip' => '203.0.113.10',
+            'product' => 'Plex for Amazon Fire TV',
+            'platform' => 'Fire TV',
+        ], ['203.0.113.10']));
+        // LAN del servidor ⇒ hogar (misma red que el Plex/Jellyfin).
+        $this->assertSame('home', $svc->classifyPlayback([
+            'product' => 'Plex for Apple TV',
+            'platform' => 'tvOS',
+            'location' => 'lan',
+            'client_ip' => '192.168.1.50',
         ]));
     }
 
@@ -119,43 +136,49 @@ final class MediaUserEndpointServiceTest extends TestCase
         ]));
     }
 
-    public function testTvIpMakesSameBatchMobileHome(): void
+    public function testFriendTvOnDifferentIpIsAwayWhileHomeTvIsHome(): void
     {
         $svc = new MediaUserEndpointService();
-        $tv = [
+        $homeIp = '203.0.113.44';
+        $homeTv = [
+            'media_user_id' => 7,
+            'product' => 'Plex for Samsung',
+            'platform' => 'Tizen',
+            'public_ip' => $homeIp,
+            'client_ip' => $homeIp,
+            'location' => 'wan',
+        ];
+        $friendFireStick = [
             'media_user_id' => 7,
             'product' => 'Plex for Amazon Fire TV',
             'platform' => 'Fire TV',
-            'public_ip' => '203.0.113.44',
-            'client_ip' => '203.0.113.44',
+            'public_ip' => '198.51.100.99',
+            'client_ip' => '198.51.100.99',
             'location' => 'wan',
         ];
-        $phone = [
+        $phoneAtHome = [
             'media_user_id' => 7,
             'product' => 'Plex for iOS',
             'platform' => 'iOS',
             'player' => 'iPhone',
-            'public_ip' => '203.0.113.44',
-            'client_ip' => '203.0.113.44',
+            'public_ip' => $homeIp,
+            'client_ip' => $homeIp,
             'location' => 'wan',
         ];
-        $homeIps = $svc->mergeSessionHomeIps([$phone, $tv], []);
 
-        $this->assertSame(['203.0.113.44'], $homeIps[7]);
-        $this->assertSame('home', $svc->classifyPlayback($phone, $homeIps[7]));
-        $meta = $svc->classifyPlaybackMeta($phone, $homeIps[7]);
-        $this->assertSame('home_ip', $meta['source']);
-        $this->assertSame('mobile', $meta['device_class']);
+        // Una tele en WAN ya no siembra IP de hogar por ser TV.
+        $homeIps = $svc->mergeSessionHomeIps([$homeTv, $friendFireStick, $phoneAtHome], []);
+        $this->assertArrayNotHasKey(7, $homeIps);
 
-        $phoneOnLan = [
-            'media_user_id' => 7,
-            'product' => 'Plex for iOS',
-            'platform' => 'iOS',
-            'player' => 'iPhone',
-            'client_ip' => '192.168.1.40',
-            'location' => 'lan',
-        ];
-        $this->assertSame('home', $svc->classifyPlayback($phoneOnLan, $homeIps[7]));
+        $knownHome = [$homeIp];
+        $this->assertSame('home', $svc->classifyPlayback($homeTv, $knownHome));
+        $this->assertSame('away', $svc->classifyPlayback($friendFireStick, $knownHome));
+        $this->assertSame('home', $svc->classifyPlayback($phoneAtHome, $knownHome));
+
+        $friendMeta = $svc->classifyPlaybackMeta($friendFireStick, $knownHome);
+        $this->assertSame('away', $friendMeta['kind']);
+        $this->assertSame('wan', $friendMeta['source']);
+        $this->assertSame('tv', $friendMeta['device_class']);
     }
 
     public function testHomeIpOverridesMobileAwayDeviceClass(): void

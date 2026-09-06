@@ -86,11 +86,12 @@ $household = (($session['household'] ?? '') === 'home') ? 'home' : 'away';
 $householdLabel = $household === 'home' ? 'Casa' : 'Fuera';
 $householdClass = $household === 'home' ? 'bg-success' : 'bg-warning text-dark';
 $householdTitle = match ((string) ($session['household_source'] ?? '')) {
-    'device_tv' => 'Tele / Fire Stick',
+    'device_tv' => 'Tele / Fire Stick (legado)',
     'device_mobile' => 'Móvil / tablet',
     'lan' => 'Misma red que el servidor',
-    'home_ip' => 'IP marcada como hogar',
+    'home_ip' => 'Misma IP de hogar',
     'away_ip' => 'IP marcada como fuera',
+    'wan' => 'IP distinta (fuera)',
     'manual' => 'Marcado manualmente',
     default => $household === 'home' ? 'Casa' : 'Fuera',
 };

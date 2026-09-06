@@ -92,13 +92,13 @@ ob_start();
             <div class="card-body">
                 <h6 class="mb-2">Cómo funciona</h6>
                 <ul class="small text-muted mb-3 ps-3">
-                    <li>Casa = Fire Stick y tele. Su IP queda marcada como hogar.</li>
-                    <li>Un móvil o tablet en esa misma IP también cuenta como casa.</li>
-                    <li>Fuera = móvil/tablet u otro dispositivo en una IP que no es del hogar.</li>
-                    <li>PC/navegador: LAN o IP marcada Hogar = casa.</li>
+                    <li>Hogar = misma IP de casa (máx. las reproducciones “en casa” que configures).</li>
+                    <li>Dos teles, tele+móvil o dos móviles en esa IP = hogar. Una tele en casa de amigos (otra IP) = fuera.</li>
+                    <li>No cuenta como hogar solo por ser Fire Stick o tele: manda la IP / red.</li>
+                    <li>Marca Hogar en la ficha del usuario (o en En directo) para fijar la IP de casa.</li>
+                    <li>LAN del servidor también cuenta como hogar (misma red local).</li>
                     <li>El corte no arranca solo: tú lo activas aquí.</li>
-                    <li>Sandbox: te llega el momento exacto y el motivo.</li>
-                    <li>Cron <code>streams</code> o <code>all</code> — mejor cada 1–2 min para no llegar tarde.</li>
+                    <li>Cron <code>streams</code> o <code>all</code> — mejor cada 1–2 min.</li>
                 </ul>
                 <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-exclamation-octagon me-1"></i>Ver incumplimientos

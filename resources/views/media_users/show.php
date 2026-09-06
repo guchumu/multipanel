@@ -49,12 +49,6 @@ $statusIcon = match ((string) $mediaUser->status) {
     'pending' => 'hourglass-split',
     default => 'person',
 };
-$statusIconBg = match ((string) $mediaUser->status) {
-    'active' => 'success',
-    'suspended' => 'warning',
-    'pending' => 'secondary',
-    default => 'light',
-};
 $statusLabel = match ((string) $mediaUser->status) {
     'active' => 'Activo',
     'suspended' => 'Suspendido',
@@ -454,7 +448,7 @@ ob_start();
 
         <div class="tab-pane fade" id="tab-actividad" role="tabpanel">
             <div class="section-title"><i class="bi bi-router"></i>IPs y dispositivos</div>
-            <p class="small text-muted mb-3">Al marcar hogar o fuera se aplica a toda la IP: un iPhone en la misma IP que la tele también cuenta como hogar.</p>
+            <p class="small text-muted mb-3">Hogar = misma IP. Al marcar hogar/fuera se aplica a toda la IP: tele y móvil en esa red cuentan igual. Una tele en otra IP (casa de amigos) cuenta como fuera.</p>
             <div class="table-responsive mb-4">
                 <table class="table table-sm mb-0 align-middle">
                     <thead class="table-light">
