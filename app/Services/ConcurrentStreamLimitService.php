@@ -565,13 +565,17 @@ final class ConcurrentStreamLimitService
         } catch (\Throwable) {
         }
 
-        $autoVideo = ['killed' => 0, 'failed' => 0, 'skipped' => 0];
+        $autoVideo = ['killed' => 0, 'failed' => 0, 'skipped' => 0, 'matched' => 0, 'enabled' => false];
         try {
             $autoVideo = (new StreamingActivityService())->autoKillVideoTranscodesIfEnabled(
                 $tenantId,
                 $snapshot['sessions'] ?? []
             );
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            Logger::error('Auto-kill video transcodes failed', [
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return [

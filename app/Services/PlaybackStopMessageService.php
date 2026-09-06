@@ -83,7 +83,7 @@ final class PlaybackStopMessageService
         return array_map(static fn (array $row): array => self::normalizeRow($row), $rows);
     }
 
-    /** Cuerpo del mensaje marcado como predeterminado (o el primero disponible). */
+    /** Cuerpo del mensaje marcado como predeterminado (aviso de ajustes mal configurados). */
     public function defaultBody(int $tenantId): string
     {
         foreach ($this->listForTenant($tenantId) as $row) {
@@ -101,7 +101,8 @@ final class PlaybackStopMessageService
             }
         }
 
-        return 'Reproducción detenida desde MultiPanel';
+        // Nunca sustituir por un genérico: el predeterminado del producto es el de ajustes.
+        return self::DEFAULT_BODY;
     }
 
     /**
@@ -237,32 +238,56 @@ final class PlaybackStopMessageService
             }
         }
 
+        // Si se borró el canónico (o no queda ninguno), volver a sembrarlo.
+        $this->ensureDefaultSeed($tenantId);
+
         return true;
     }
 
     /**
-     * Seed the default message when the tenant has none.
+     * Asegura el mensaje canónico «Configuración mal configurada» y que haya un predeterminado.
+     * Si se borró de la BD, lo vuelve a crear y lo marca como predeterminado.
      */
     public function ensureDefaultSeed(int $tenantId): void
     {
         self::ensureTable();
 
-        $count = Database::getInstance()->fetchOne(
-            'SELECT COUNT(*) AS c FROM `playback_stop_messages` WHERE `tenant_id` = ?',
-            [$tenantId]
+        $db = Database::getInstance();
+        $canonical = $db->fetchOne(
+            'SELECT `id`, `is_default` FROM `playback_stop_messages`
+             WHERE `tenant_id` = ? AND (`title` = ? OR `body` = ?)
+             ORDER BY `id` ASC LIMIT 1',
+            [$tenantId, self::DEFAULT_TITLE, self::DEFAULT_BODY]
         );
 
-        if ((int) ($count['c'] ?? 0) > 0) {
+        if ($canonical === null) {
+            $db->query(
+                'UPDATE `playback_stop_messages` SET `is_default` = 0 WHERE `tenant_id` = ?',
+                [$tenantId]
+            );
+            $db->insert('playback_stop_messages', [
+                'tenant_id' => $tenantId,
+                'title' => self::DEFAULT_TITLE,
+                'body' => self::DEFAULT_BODY,
+                'is_default' => 1,
+                'sort_order' => 0,
+            ]);
+
             return;
         }
 
-        Database::getInstance()->insert('playback_stop_messages', [
-            'tenant_id' => $tenantId,
-            'title' => self::DEFAULT_TITLE,
-            'body' => self::DEFAULT_BODY,
-            'is_default' => 1,
-            'sort_order' => 0,
-        ]);
+        $hasDefault = $db->fetchOne(
+            'SELECT `id` FROM `playback_stop_messages`
+             WHERE `tenant_id` = ? AND `is_default` = 1 LIMIT 1',
+            [$tenantId]
+        );
+
+        if ($hasDefault === null) {
+            $db->query(
+                'UPDATE `playback_stop_messages` SET `is_default` = 1 WHERE `id` = ? AND `tenant_id` = ?',
+                [(int) $canonical['id'], $tenantId]
+            );
+        }
     }
 
     private static function tableExists(): bool

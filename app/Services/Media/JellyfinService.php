@@ -278,19 +278,20 @@ final class JellyfinService
                     $item,
                 );
 
-                // Decisiones resumen (compat UI antigua): copy vs codec destino.
-                $videoDecision = $playMethod === 'direct_play'
-                    ? 'copy'
-                    : (string) ($transcodingArr['VideoCodec'] ?? (!empty($transcodingArr['IsVideoDirect']) ? 'copy' : 'transcode'));
-                $audioDecision = $playMethod === 'direct_play'
-                    ? 'copy'
-                    : (string) ($transcodingArr['AudioCodec'] ?? (!empty($transcodingArr['IsAudioDirect']) ? 'copy' : 'transcode'));
-                if (!empty($transcodingArr['IsVideoDirect'])) {
-                    $videoDecision = 'copy';
-                }
-                if (!empty($transcodingArr['IsAudioDirect'])) {
-                    $audioDecision = 'copy';
-                }
+                // Mismos valores que SessionStreamInfo / Plex: directplay|copy|transcode.
+                // (Antes se guardaba el codec destino — "h264" — y el auto-corte no coincidía.)
+                $isVideoDirect = $transcodingArr === null || !empty($transcodingArr['IsVideoDirect']);
+                $isAudioDirect = $transcodingArr === null || !empty($transcodingArr['IsAudioDirect']);
+                $videoDecision = match (true) {
+                    $playMethod === 'direct_play' => 'directplay',
+                    $isVideoDirect => 'copy',
+                    default => 'transcode',
+                };
+                $audioDecision = match (true) {
+                    $playMethod === 'direct_play' => 'directplay',
+                    $isAudioDirect => 'copy',
+                    default => 'transcode',
+                };
 
                 $clientIp = SessionClientIp::fromRemoteEndPoint(
                     isset($session['RemoteEndPoint']) ? (string) $session['RemoteEndPoint'] : null

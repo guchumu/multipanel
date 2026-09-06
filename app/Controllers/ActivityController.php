@@ -227,19 +227,38 @@ SVG;
 
     /**
      * Activa/desactiva el auto-corte de transcodes de vídeo (cron streams).
+     * Al activar, ejecuta un pase inmediato además del cron.
      */
     public function setAutoKillVideoTranscodes(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $enabled = filter_var($request->input('enabled'), FILTER_VALIDATE_BOOLEAN);
+        $raw = $request->input('enabled');
+        if (is_bool($raw)) {
+            $enabled = $raw;
+        } else {
+            $enabled = in_array(strtolower(trim((string) $raw)), ['1', 'true', 'yes', 'on'], true);
+        }
+
         (new \App\Services\StreamLimitSettingsService())->setAutoKillVideoTranscodesEnabled($tenantId, $enabled);
+
+        $killed = 0;
+        if ($enabled) {
+            $result = $this->activity->autoKillVideoTranscodesIfEnabled($tenantId, null);
+            $killed = (int) ($result['killed'] ?? 0);
+        }
+
+        $message = $enabled
+            ? 'Auto-corte ACTIVADO. El cron streams cortará solo cuando Vídeo diga Transcode.'
+            : 'Auto-corte desactivado.';
+        if ($enabled && $killed > 0) {
+            $message .= " Cortadas ahora: {$killed}.";
+        }
 
         return $this->json([
             'success' => true,
             'enabled' => $enabled,
-            'message' => $enabled
-                ? 'Auto-corte de transcodes de vídeo ACTIVADO. Solo corta cuando el vídeo dice Transcode.'
-                : 'Auto-corte de transcodes de vídeo desactivado.',
+            'killed' => $killed,
+            'message' => $message,
         ]);
     }
 
@@ -279,66 +298,38 @@ SVG;
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverFilter = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $message = trim((string) ($request->input('message') ?? ''));
-        if ($message === '') {
-            $message = $this->stopMessages->defaultBody($tenantId);
-        }
 
-        $snapshot = $this->activity->getSnapshot($tenantId, $serverFilter);
-        $targets = [];
-        foreach ($snapshot['sessions'] as $session) {
-            if (!StreamingActivityService::isVideoTranscodeSession($session)) {
-                continue;
-            }
-            if (empty($session['can_kill']) || empty($session['session_id']) || empty($session['server_id'])) {
-                continue;
-            }
-            $targets[] = $session;
-        }
+        $result = $this->activity->killVideoTranscodes(
+            $tenantId,
+            $serverFilter,
+            $message !== '' ? $message : null
+        );
+        $killed = (int) ($result['killed'] ?? 0);
+        $failed = (int) ($result['failed'] ?? 0);
+        $matched = (int) ($result['matched'] ?? 0);
 
-        if ($targets === []) {
+        if ($matched === 0) {
             return $this->json([
                 'success' => true,
                 'killed' => 0,
                 'failed' => 0,
-                'message' => 'No hay transcodes de vídeo activos para cortar.',
+                'matched' => 0,
+                'message' => 'No hay sesiones con Vídeo = Transcode para cortar.',
             ]);
-        }
-
-        $killed = 0;
-        $failed = 0;
-        foreach ($targets as $session) {
-            $server = Server::find((int) $session['server_id']);
-            if ($server === null || (int) $server->tenant_id !== $tenantId) {
-                $failed++;
-                continue;
-            }
-            $ok = $this->activity->terminateSession(
-                $server,
-                (string) $session['session_id'],
-                $message
-            );
-            if ($ok) {
-                $killed++;
-            } else {
-                $failed++;
-            }
         }
 
         return $this->json([
             'success' => $killed > 0 || $failed === 0,
             'killed' => $killed,
             'failed' => $failed,
-            'message' => $failed === 0
+            'matched' => $matched,
+            'message' => $killed > 0
                 ? sprintf(
-                    'Cortados %d transcode(s) de vídeo. Mensaje predefinido enviado. Los de solo audio no se tocan.',
+                    'Cortados %d transcode(s) de vídeo. Mensaje predefinido enviado.',
                     $killed
-                )
-                : sprintf(
-                    'Cortados %d · fallidos %d. Mensaje predefinido usado en los que se cortaron.',
-                    $killed,
-                    $failed
-                ),
-        ], $killed > 0 || $failed === 0 ? 200 : 502);
+                ) . ($failed > 0 ? " Fallidos: {$failed}." : '')
+                : sprintf('No se pudo cortar ninguna sesión (%d fallo(s)).', $failed),
+        ], ($killed > 0 || $failed === 0) ? 200 : 502);
     }
 
     public function sessionKind(Request $request): Response

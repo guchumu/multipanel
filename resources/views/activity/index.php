@@ -51,6 +51,7 @@ ob_start();
                    <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>
             <label class="form-check-label small" for="auto-kill-video-transcodes">
                 Auto-corte <strong>vídeo Transcode</strong>
+                <span id="auto-kill-video-status" class="badge <?= !empty($autoKillVideoTranscodes) ? 'bg-success' : 'bg-secondary' ?>"><?= !empty($autoKillVideoTranscodes) ? 'ON' : 'OFF' ?></span>
             </label>
         </div>
         <button type="button"
@@ -347,22 +348,27 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Cortando…';
         try {
             const params = new URLSearchParams(window.location.search);
-            const body = { _token: csrf };
+            const body = new URLSearchParams({ _token: csrf });
             if (params.get('server_id')) {
-                body.server_id = Number(params.get('server_id'));
+                body.set('server_id', params.get('server_id'));
             }
             const res = await fetch('/activity/kill-video-transcodes', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
+                    'X-Csrf-Token': csrf,
                 },
-                body: JSON.stringify(body),
+                body,
             });
             const data = await res.json().catch(() => ({}));
-            alert(data.message || (data.success === false ? 'No se pudo cortar.' : 'Hecho.'));
+            if (!res.ok || data.success === false || data.error) {
+                alert(data.message || 'No se pudo cortar.');
+            } else {
+                alert(data.message || 'Hecho.');
+            }
             if (typeof window.MP_REFRESH_SESSIONS === 'function') {
                 window.MP_REFRESH_SESSIONS();
             }
@@ -377,41 +383,59 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
 
 (function bindAutoKillVideoTranscodes() {
     const toggle = document.getElementById('auto-kill-video-transcodes');
+    const status = document.getElementById('auto-kill-video-status');
     if (!toggle) return;
+
+    const syncStatus = (on) => {
+        if (!status) return;
+        status.textContent = on ? 'ON' : 'OFF';
+        status.className = 'badge ' + (on ? 'bg-success' : 'bg-secondary');
+    };
+    syncStatus(toggle.checked);
+
     toggle.addEventListener('change', async () => {
         const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
         if (!csrf) {
             alert('No hay token CSRF. Recarga la página.');
             toggle.checked = !toggle.checked;
+            syncStatus(toggle.checked);
             return;
         }
         toggle.disabled = true;
         try {
+            const body = new URLSearchParams({
+                _token: csrf,
+                enabled: toggle.checked ? '1' : '0',
+            });
             const res = await fetch('/activity/auto-kill-video-transcodes', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
+                    'X-Csrf-Token': csrf,
                 },
-                body: JSON.stringify({ _token: csrf, enabled: toggle.checked }),
+                body,
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok || data.success === false) {
+            if (!res.ok || data.success === false || data.error) {
                 toggle.checked = !toggle.checked;
+                syncStatus(toggle.checked);
                 alert(data.message || 'No se pudo guardar.');
                 return;
             }
-            // Feedback breve sin alert molesto
-            const label = toggle.closest('.form-check')?.querySelector('label');
-            if (label) {
-                const prev = label.dataset.prevTitle || label.title || '';
-                label.dataset.prevTitle = prev;
-                label.title = data.message || '';
+            if (typeof data.enabled === 'boolean') {
+                toggle.checked = data.enabled;
+            }
+            syncStatus(toggle.checked);
+            alert(data.message || (toggle.checked ? 'Auto-corte activado.' : 'Auto-corte desactivado.'));
+            if (typeof window.MP_REFRESH_SESSIONS === 'function') {
+                window.MP_REFRESH_SESSIONS();
             }
         } catch (err) {
             toggle.checked = !toggle.checked;
+            syncStatus(toggle.checked);
             alert('Error de red al guardar el auto-corte.');
         } finally {
             toggle.disabled = false;

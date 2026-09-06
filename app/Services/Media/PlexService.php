@@ -550,9 +550,6 @@ final class PlexService
         }
 
         $transcode = is_array($session['TranscodeSession'] ?? null) ? $session['TranscodeSession'] : null;
-        $videoDecision = $transcode ? (string) ($transcode['videoDecision'] ?? '') : 'copy';
-        $audioDecision = $transcode ? (string) ($transcode['audioDecision'] ?? '') : 'copy';
-        $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
 
         $viewOffset = (int) ($session['viewOffset'] ?? 0);
         $duration = (int) ($session['duration'] ?? 0);
@@ -581,6 +578,7 @@ final class PlexService
             $mediaList = [];
         }
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreams($mediaList);
+        [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
         $streamInfo = SessionStreamInfo::fromPlex(
             $playMethod,
             $transcode,
@@ -649,9 +647,6 @@ final class PlexService
         $transcode = $transcodeNode instanceof \SimpleXMLElement
             ? SessionStreamInfo::simpleXmlAttributes($transcodeNode)
             : null;
-        $videoDecision = $transcode ? (string) ($transcode['videoDecision'] ?? '') : 'copy';
-        $audioDecision = $transcode ? (string) ($transcode['audioDecision'] ?? '') : 'copy';
-        $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
 
         $viewOffset = (int) ($session['viewOffset'] ?? 0);
         $duration = (int) ($session['duration'] ?? 0);
@@ -674,6 +669,7 @@ final class PlexService
             : [];
 
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreamsFromXml($session);
+        [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
         $streamInfo = SessionStreamInfo::fromPlex(
             $playMethod,
             $transcode,
@@ -820,13 +816,61 @@ final class PlexService
         return str_starts_with($path, '/') ? $path : '/' . $path;
     }
 
+    /**
+     * @param array<string, mixed>|null $transcode
+     * @param array<string, mixed> $videoStream
+     * @param array<string, mixed> $audioStream
+     * @return array{0: string, 1: string, 2: string} [videoDecision, audioDecision, playMethod]
+     */
+    private function resolvePlexDecisions(?array $transcode, array $videoStream, array $audioStream): array
+    {
+        $videoDecision = strtolower(trim((string) (
+            $transcode['videoDecision']
+            ?? $videoStream['decision']
+            ?? ($transcode === null ? 'copy' : '')
+        )));
+        $audioDecision = strtolower(trim((string) (
+            $transcode['audioDecision']
+            ?? $audioStream['decision']
+            ?? ($transcode === null ? 'copy' : '')
+        )));
+
+        if ($videoDecision === 'direct play' || $videoDecision === 'directplay') {
+            $videoDecision = 'directplay';
+        } elseif ($videoDecision === 'direct stream' || $videoDecision === 'directstream') {
+            $videoDecision = 'copy';
+        }
+        if ($audioDecision === 'direct play' || $audioDecision === 'directplay') {
+            $audioDecision = 'directplay';
+        } elseif ($audioDecision === 'direct stream' || $audioDecision === 'directstream') {
+            $audioDecision = 'copy';
+        }
+
+        if ($videoDecision === '') {
+            $videoDecision = $transcode === null ? 'copy' : 'copy';
+        }
+        if ($audioDecision === '') {
+            $audioDecision = $transcode === null ? 'copy' : 'copy';
+        }
+
+        $playMethod = $this->resolvePlexPlayMethod($transcode !== null, $videoDecision, $audioDecision);
+
+        return [$videoDecision, $audioDecision, $playMethod];
+    }
+
     private function resolvePlexPlayMethod(bool $hasTranscode, string $videoDecision, string $audioDecision): string
     {
-        if (!$hasTranscode || ($videoDecision === 'copy' && $audioDecision === 'copy')) {
+        // Vídeo en transcode ⇒ Transcode (aunque el audio vaya en copy).
+        if ($videoDecision === 'transcode') {
+            return 'transcode';
+        }
+
+        if (!$hasTranscode) {
             return 'direct_play';
         }
 
-        if ($videoDecision === 'copy' || $audioDecision === 'copy') {
+        // Remux / audio-only: hay TranscodeSession pero el vídeo no se re-encoda.
+        if ($videoDecision === 'copy' || $videoDecision === 'directplay') {
             return 'direct_stream';
         }
 

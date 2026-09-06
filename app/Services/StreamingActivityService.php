@@ -209,29 +209,89 @@ final class StreamingActivityService
     }
 
     /**
-     * True solo si el vídeo está en «transcode».
-     * No corta Direct Play, Direct Stream (vídeo copy) ni solo-audio.
+     * True solo si la línea Video es Transcode (lo que ve el usuario en En directo).
+     * No corta Direct Play / Direct Stream / copy, ni «Converting» del contenedor, ni solo-audio.
      *
      * @param array<string, mixed> $session
      */
     public static function isVideoTranscodeSession(array $session): bool
     {
-        return strtolower(trim((string) ($session['video_decision'] ?? ''))) === 'transcode';
+        $decision = strtolower(trim((string) ($session['video_decision'] ?? '')));
+        if ($decision === 'transcode') {
+            return true;
+        }
+
+        // Jellyfin a veces guarda el codec ("h264") en video_decision; Plex a veces deja
+        // video_decision vacío y rellena stream_info.video. Confiar en la línea Video.
+        $info = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+        $line = strtolower(trim((string) ($info['video'] ?? $session['video_label'] ?? '')));
+        if ($line === '') {
+            return false;
+        }
+
+        // Solo al inicio: "Transcode (...)", nunca "Converting" (contenedor).
+        return str_starts_with($line, 'transcode');
     }
 
     /**
-     * Si el auto-corte está activo: corta vídeo en transcode y envía mensaje predeterminado.
+     * Corta ahora todas las sesiones con vídeo en Transcode.
      *
-     * @return array{killed: int, failed: int, skipped: int}
+     * @return array{killed: int, failed: int, matched: int}
+     */
+    public function killVideoTranscodes(int $tenantId, ?int $serverId = null, ?string $message = null): array
+    {
+        Cache::forget('activity_snapshot_' . $tenantId);
+        $sessions = $this->getSnapshot($tenantId, $serverId)['sessions'] ?? [];
+        $message = trim((string) $message);
+        if ($message === '') {
+            $message = (new PlaybackStopMessageService())->defaultBody($tenantId);
+        }
+
+        $matched = 0;
+        $killed = 0;
+        $failed = 0;
+
+        foreach ($sessions as $session) {
+            if (!self::isVideoTranscodeSession($session)) {
+                continue;
+            }
+            $matched++;
+            $sessionId = trim((string) ($session['session_id'] ?? ''));
+            $sid = (int) ($session['server_id'] ?? 0);
+            if ($sessionId === '' || $sid <= 0) {
+                $failed++;
+                continue;
+            }
+            $server = Server::find($sid);
+            if ($server === null || (int) $server->tenant_id !== $tenantId) {
+                $failed++;
+                continue;
+            }
+            if ($this->terminateSession($server, $sessionId, $message)) {
+                $killed++;
+            } else {
+                $failed++;
+            }
+        }
+
+        return ['killed' => $killed, 'failed' => $failed, 'matched' => $matched];
+    }
+
+    /**
+     * Si el auto-corte está activo (cron streams): corta vídeo Transcode con mensaje predeterminado.
+     *
+     * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
+     * @return array{killed: int, failed: int, skipped: int, matched: int, enabled: bool}
      */
     public function autoKillVideoTranscodesIfEnabled(int $tenantId, ?array $sessions = null): array
     {
         $settings = new StreamLimitSettingsService();
         if (!$settings->isAutoKillVideoTranscodesEnabled($tenantId)) {
-            return ['killed' => 0, 'failed' => 0, 'skipped' => 0];
+            return ['killed' => 0, 'failed' => 0, 'skipped' => 0, 'matched' => 0, 'enabled' => false];
         }
 
         if ($sessions === null) {
+            Cache::forget('activity_snapshot_' . $tenantId);
             $sessions = $this->getSnapshot($tenantId)['sessions'] ?? [];
         }
 
@@ -239,11 +299,13 @@ final class StreamingActivityService
         $killed = 0;
         $failed = 0;
         $skipped = 0;
+        $matched = 0;
 
         foreach ($sessions as $session) {
             if (!self::isVideoTranscodeSession($session)) {
                 continue;
             }
+            $matched++;
             $sessionId = trim((string) ($session['session_id'] ?? ''));
             $serverId = (int) ($session['server_id'] ?? 0);
             if ($sessionId === '' || $serverId <= 0) {
@@ -272,7 +334,13 @@ final class StreamingActivityService
             }
         }
 
-        return ['killed' => $killed, 'failed' => $failed, 'skipped' => $skipped];
+        return [
+            'killed' => $killed,
+            'failed' => $failed,
+            'skipped' => $skipped,
+            'matched' => $matched,
+            'enabled' => true,
+        ];
     }
 
     /** @return array{body: string, content_type: string}|null */
