@@ -270,7 +270,15 @@ final class StreamingActivityService
                 $failed++;
                 continue;
             }
-            if ($this->terminateVideoTranscodeSession($tenantId, $server, $session, $sessionId, $message, true)) {
+            if ($this->terminateVideoTranscodeSession(
+                $tenantId,
+                $server,
+                $session,
+                $sessionId,
+                $message,
+                true,
+                $this->playbackCounts($sessions, $session)
+            )) {
                 $killed++;
             } else {
                 $failed++;
@@ -299,6 +307,7 @@ final class StreamingActivityService
         }
 
         $message = (new PlaybackStopMessageService())->defaultBody($tenantId);
+        $pause = new VideoTranscodePauseService();
         $killed = 0;
         $failed = 0;
         $skipped = 0;
@@ -312,6 +321,11 @@ final class StreamingActivityService
             $sessionId = trim((string) ($session['session_id'] ?? ''));
             $serverId = (int) ($session['server_id'] ?? 0);
             if ($sessionId === '' || $serverId <= 0) {
+                $skipped++;
+                continue;
+            }
+
+            if ($pause->isPaused($tenantId, $session)) {
                 $skipped++;
                 continue;
             }
@@ -337,9 +351,14 @@ final class StreamingActivityService
                 $session,
                 $sessionId,
                 $message,
+                true,
+                $this->playbackCounts($sessions, $session),
                 true
             );
-            if ($ok) {
+            if ($ok === null) {
+                // Pausado durante la ventana de ~10 s: no cuenta como fallo.
+                $skipped++;
+            } elseif ($ok) {
                 $killed++;
             } else {
                 $failed++;
@@ -360,6 +379,8 @@ final class StreamingActivityService
      * mensaje al reproductor / preparar corte → ~10 s → terminar sesión.
      *
      * @param array<string, mixed> $session
+     * @param array{user_active?: int, total_active?: int} $counts
+     * @return bool|null true=cortada, false=fallo, null=omitida por pausa (solo auto)
      */
     private function terminateVideoTranscodeSession(
         int $tenantId,
@@ -368,7 +389,9 @@ final class StreamingActivityService
         string $sessionId,
         string $message,
         bool $notifyAdmin,
-    ): bool {
+        array $counts = [],
+        bool $respectPause = false,
+    ): ?bool {
         if ($notifyAdmin) {
             $username = trim((string) ($session['user'] ?? '')) ?: 'desconocido';
             $title = trim((string) ($session['title'] ?? '')) ?: 'Sin título';
@@ -380,7 +403,9 @@ final class StreamingActivityService
                     $username,
                     $title,
                     $serverName,
-                    $fp
+                    $fp,
+                    $session,
+                    $counts
                 );
             } catch (\Throwable $e) {
                 Logger::warning('Video transcode admin notify failed', [
@@ -392,12 +417,76 @@ final class StreamingActivityService
         }
 
         $media = MediaServerFactory::make($server);
-        // Plex muestra el motivo al cortar; Jellyfin ya espera ~10 s tras el mensaje en terminateSession.
-        if ($media instanceof PlexService) {
-            usleep(10_000_000);
+        // Ventana ~10 s tras el aviso admin: mensaje al cliente y posibilidad de pausar desde ntfy.
+        if ($media instanceof JellyfinService) {
+            $text = trim($message) !== '' ? $message : PlaybackStopMessageService::DEFAULT_BODY;
+            $media->sendSessionMessage(
+                $sessionId,
+                PlaybackStopMessageService::DEFAULT_TITLE,
+                $text,
+                10000
+            );
+        }
+        usleep(10_000_000);
+
+        if ($respectPause && (new VideoTranscodePauseService())->isPaused($tenantId, $session)) {
+            Logger::info('Video transcode kill aborted: user paused', [
+                'tenant_id' => $tenantId,
+                'session_id' => $sessionId,
+                'user' => (string) ($session['user'] ?? ''),
+            ]);
+
+            return null;
+        }
+
+        if ($media instanceof JellyfinService) {
+            $ok = $media->terminateSession($sessionId, $message, false);
+            if ($ok) {
+                Cache::forget('activity_snapshot_' . $tenantId);
+            }
+
+            return $ok;
         }
 
         return $this->terminateSession($server, $sessionId, $message);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $sessions
+     * @param array<string, mixed> $session
+     * @return array{user_active: int, total_active: int}
+     */
+    private function playbackCounts(array $sessions, array $session): array
+    {
+        $total = count($sessions);
+        $username = mb_strtolower(trim((string) ($session['user'] ?? '')));
+        $mediaUserId = (int) ($session['media_user_id'] ?? 0);
+        $userId = trim((string) ($session['user_id'] ?? ''));
+        $userActive = 0;
+
+        foreach ($sessions as $s) {
+            if (!is_array($s)) {
+                continue;
+            }
+            if ($mediaUserId > 0) {
+                if ((int) ($s['media_user_id'] ?? 0) === $mediaUserId) {
+                    $userActive++;
+                }
+                continue;
+            }
+            if ($userId !== '') {
+                if (trim((string) ($s['user_id'] ?? '')) === $userId
+                    && (int) ($s['server_id'] ?? 0) === (int) ($session['server_id'] ?? 0)) {
+                    $userActive++;
+                }
+                continue;
+            }
+            if ($username !== '' && mb_strtolower(trim((string) ($s['user'] ?? ''))) === $username) {
+                $userActive++;
+            }
+        }
+
+        return ['user_active' => $userActive, 'total_active' => $total];
     }
 
     /** @return array{body: string, content_type: string}|null */
@@ -490,6 +579,113 @@ final class StreamingActivityService
         }
 
         return $decoded;
+    }
+
+    /**
+     * URL pública firmada (sin login) para que ntfy descargue la carátula.
+     * No expone el token de Plex/Jellyfin: el panel hace de proxy.
+     *
+     * @param array<string, mixed> $session
+     */
+    public static function signedPublicThumbAbsoluteUrl(array $session, int $ttlSeconds = 900): ?string
+    {
+        $relative = self::signedPublicThumbPath($session, $ttlSeconds);
+        if ($relative === null) {
+            return null;
+        }
+
+        $base = self::publicBaseUrl();
+        if ($base === null) {
+            return null;
+        }
+
+        return $base . $relative;
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     */
+    public static function signedPublicThumbPath(array $session, int $ttlSeconds = 900): ?string
+    {
+        $uuid = trim((string) ($session['server_uuid'] ?? ''));
+        if ($uuid === '') {
+            return null;
+        }
+
+        $artPath = trim((string) ($session['art_path'] ?? ''));
+        $itemId = trim((string) ($session['item_id'] ?? ''));
+        if ($artPath === '' && $itemId === '') {
+            return null;
+        }
+
+        $ttlSeconds = max(60, min(3600, $ttlSeconds));
+        $exp = time() + $ttlSeconds;
+        $p = $artPath !== '' ? self::encodeThumbParam($artPath) : '';
+        $item = $artPath === '' ? $itemId : '';
+        $sig = self::signThumb($uuid, $p, $item, $exp);
+
+        $query = ['exp' => (string) $exp, 'sig' => $sig];
+        if ($p !== '') {
+            $query['p'] = $p;
+        }
+        if ($item !== '') {
+            $query['item'] = $item;
+        }
+
+        return '/activity/public-thumb/' . rawurlencode($uuid) . '?' . http_build_query($query);
+    }
+
+    public static function verifyThumbSignature(
+        string $uuid,
+        string $p,
+        string $item,
+        int $exp,
+        string $sig,
+    ): bool {
+        if ($uuid === '' || $sig === '' || $exp < time()) {
+            return false;
+        }
+        if ($p === '' && $item === '') {
+            return false;
+        }
+
+        $expected = self::signThumb($uuid, $p, $item, $exp);
+
+        return hash_equals($expected, $sig);
+    }
+
+    private static function signThumb(string $uuid, string $p, string $item, int $exp): string
+    {
+        $payload = $uuid . '|' . $p . '|' . $item . '|' . $exp;
+        $key = (string) (env('APP_KEY', '') ?: config('app.key', 'multipanel-secret'));
+
+        return hash_hmac('sha256', $payload, $key);
+    }
+
+    private static function publicBaseUrl(): ?string
+    {
+        $configured = rtrim((string) config('app.url', env('APP_URL', '')), '/');
+        $configuredLooksLocal = $configured === ''
+            || str_contains($configured, 'localhost')
+            || str_contains($configured, '127.0.0.1');
+
+        $host = (string) ($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? '');
+        $host = trim(explode(',', $host)[0]);
+
+        if ($host !== '' && $configuredLooksLocal) {
+            $proto = (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+            $https = strtolower($proto) === 'https'
+                || (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || ((string) ($_SERVER['SERVER_PORT'] ?? '') === '443');
+
+            return ($https ? 'https' : 'http') . '://' . $host;
+        }
+
+        if ($configured !== '' && preg_match('#^https?://#i', $configured)) {
+            return $configured;
+        }
+
+        return null;
     }
 
     private function decisionLabel(string $decision): string

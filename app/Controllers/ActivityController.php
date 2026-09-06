@@ -97,6 +97,33 @@ class ActivityController extends Controller
         // retendría el lock de sesión y se servirían en serie.
         \Core\Session::getInstance()->close();
 
+        return $this->serveThumb($request, $server);
+    }
+
+    /**
+     * Carátula pública firmada (HMAC + exp) para ntfy Attach — sin login de admin.
+     */
+    public function publicThumb(Request $request, string $uuid): Response
+    {
+        $exp = (int) $request->input('exp', 0);
+        $sig = (string) $request->input('sig', '');
+        $p = (string) $request->input('p', '');
+        $item = (string) $request->input('item', '');
+
+        if (!StreamingActivityService::verifyThumbSignature($uuid, $p, $item, $exp, $sig)) {
+            return $this->thumbPlaceholder('Firma inválida o caducada', 403);
+        }
+
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->thumbPlaceholder('Servidor no encontrado', 404);
+        }
+
+        return $this->serveThumb($request, $server);
+    }
+
+    private function serveThumb(Request $request, Server $server): Response
+    {
         // Preferir ?p= (base64url). Mantener ?path= por compatibilidad.
         $artPath = StreamingActivityService::decodeThumbParam((string) $request->input('p', '')) ?? '';
         if ($artPath === '') {
@@ -113,7 +140,7 @@ class ActivityController extends Controller
 
         return new Response($artwork['body'], 200, [
             'Content-Type' => $artwork['content_type'],
-            'Cache-Control' => 'private, max-age=300',
+            'Cache-Control' => 'public, max-age=300',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

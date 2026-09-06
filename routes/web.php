@@ -42,6 +42,7 @@ use App\Controllers\PaymentLinkController;
 use App\Controllers\PortalLoginLinkController;
 use App\Controllers\SessionKillLinkController;
 use App\Controllers\PeticionesController;
+use App\Controllers\VideoTranscodePauseController;
 use App\Controllers\Portal\PortalController;
 use App\Controllers\Portal\PortalTicketController;
 use App\Controllers\Portal\PortalPaymentController;
@@ -70,6 +71,8 @@ $router->get('/api/docs/openapi.json', [DocsController::class, 'openapi'], 'docs
 $router->get('/p/{code}', [PaymentLinkController::class, 'show'], 'payment_link.show');
 $router->get('/u/{code}', [PortalLoginLinkController::class, 'enter'], 'portal.magic');
 $router->get('/k/{code}', [SessionKillLinkController::class, 'kill'], 'session_kill.link');
+$router->get('/activity/public-thumb/{uuid}', [ActivityController::class, 'publicThumb'], 'activity.public_thumb');
+$router->get('/activity/transcode-pause/{token}', [VideoTranscodePauseController::class, 'pause'], 'activity.transcode_pause');
 
 // Payment webhooks (public)
 $router->post('/webhooks/payment/{gateway}', [PortalPaymentController::class, 'webhook']);

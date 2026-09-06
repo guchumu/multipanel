@@ -62,12 +62,27 @@ final class NtfyChannel implements NotificationChannelInterface
             $headers['Tags'] = $tags;
         }
 
+        $attach = trim((string) ($data['ntfy_attach'] ?? ''));
+        if ($attach !== '' && preg_match('#^https?://#i', $attach)) {
+            $headers['Attach'] = mb_substr($attach, 0, 2000);
+            $headers['Filename'] = 'cover.jpg';
+        }
+
+        $actions = $this->formatActions($data['ntfy_actions'] ?? null);
+        if ($actions !== '') {
+            $headers['Actions'] = $actions;
+        }
+
+        $click = trim((string) ($data['ntfy_click'] ?? ''));
+        if ($click !== '' && preg_match('#^https?://#i', $click)) {
+            $headers['Click'] = mb_substr($click, 0, 2000);
+        }
+
         try {
             $this->client->post($url, [
                 'headers' => $headers,
                 'body' => $body,
             ]);
-
             return true;
         } catch (GuzzleException $e) {
             Logger::error('ntfy notification failed', [
@@ -129,5 +144,36 @@ final class NtfyChannel implements NotificationChannelInterface
         $tags = array_values(array_filter($tags, static fn (string $t): bool => $t !== ''));
 
         return implode(',', array_slice($tags, 0, 3));
+    }
+
+    /**
+     * Formato ntfy Actions (máx. 3): "view, Label, https://..., clear=true; ..."
+     *
+     * @param mixed $actions
+     */
+    private function formatActions(mixed $actions): string
+    {
+        if (!is_array($actions) || $actions === []) {
+            return '';
+        }
+
+        $parts = [];
+        foreach (array_slice($actions, 0, 3) as $action) {
+            if (!is_array($action)) {
+                continue;
+            }
+            $label = trim((string) ($action['label'] ?? ''));
+            $url = trim((string) ($action['url'] ?? ''));
+            if ($label === '' || $url === '' || !preg_match('#^https?://#i', $url)) {
+                continue;
+            }
+            // Comas en label/url romperían el formato; sanitizar.
+            $label = str_replace([',', ';'], ['', ''], $label);
+            $url = str_replace([',', ';'], ['%2C', '%3B'], $url);
+            $clear = !empty($action['clear']) ? ', clear=true' : '';
+            $parts[] = 'view, ' . mb_substr($label, 0, 40) . ', ' . $url . $clear;
+        }
+
+        return implode('; ', $parts);
     }
 }

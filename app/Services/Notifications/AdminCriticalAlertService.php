@@ -369,7 +369,10 @@ final class AdminCriticalAlertService
 
     /**
      * Aviso al cortar una sesión con Vídeo = Transcode (auto-corte o «Cortar ahora»).
+     * En ntfy: carátula (Attach), detalle completo de la tarjeta y botones de pausa temporal.
      *
+     * @param array<string, mixed> $session
+     * @param array{user_active?: int, total_active?: int} $meta
      * @return array{ok: bool, skipped: bool, reason: string, channels: array<int, string>}
      */
     public function notifyVideoTranscodeKill(
@@ -378,32 +381,133 @@ final class AdminCriticalAlertService
         string $title,
         string $serverName,
         string $fingerprint,
+        array $session = [],
+        array $meta = [],
     ): array {
         $username = trim($username) !== '' ? trim($username) : 'desconocido';
         $title = trim($title) !== '' ? trim($title) : 'Sin título';
         $serverName = trim($serverName) !== '' ? trim($serverName) : 'servidor ?';
         $when = WhatsAppAdminText::nowMadridLong();
 
+        $subtitle = trim((string) ($session['subtitle'] ?? ''));
+        $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+        $quality = trim((string) ($streamInfo['quality'] ?? ''));
+        $streamLine = trim((string) ($streamInfo['stream'] ?? ''));
+        $container = trim((string) ($streamInfo['container'] ?? ''));
+        $videoLine = trim((string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? ''));
+        $audioLine = trim((string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? ''));
+        $subtitleLine = trim((string) ($streamInfo['subtitle'] ?? ''));
+        $product = trim((string) ($session['product'] ?? ''));
+        $player = trim((string) ($session['player'] ?? ''));
+        $platform = trim((string) ($session['platform'] ?? ''));
+        $location = trim((string) ($session['location'] ?? ''));
+        $clientIp = trim((string) ($session['client_ip'] ?? ''));
+        $bandwidth = trim((string) ($session['bandwidth'] ?? ''));
+        $household = (($session['household'] ?? '') === 'home') ? 'Casa' : ((($session['household'] ?? '') === 'away') ? 'Fuera' : '');
+        $progress = max(0, min(100, (int) ($session['progress'] ?? 0)));
+        $state = trim((string) ($session['state'] ?? ''));
+        $userActive = max(0, (int) ($meta['user_active'] ?? 0));
+        $totalActive = max(0, (int) ($meta['total_active'] ?? 0));
+
+        $detailLines = [
+            AdminMessageFormat::label('Momento', $when),
+            AdminMessageFormat::label('Usuario', $username),
+            AdminMessageFormat::label('Título', $title),
+        ];
+        if ($subtitle !== '') {
+            $detailLines[] = AdminMessageFormat::label('Episodio', $subtitle);
+        }
+        $detailLines[] = AdminMessageFormat::label('Servidor', $serverName);
+        if ($userActive > 0 || $totalActive > 0) {
+            $detailLines[] = AdminMessageFormat::label(
+                'Reproducciones',
+                ($userActive > 0 ? "usuario {$userActive}" : '')
+                . ($userActive > 0 && $totalActive > 0 ? ' · ' : '')
+                . ($totalActive > 0 ? "total {$totalActive}" : '')
+            );
+        }
+        $detailLines[] = AdminMessageFormat::label('Product', $product !== '' ? $product : '—');
+        $detailLines[] = AdminMessageFormat::label('Player', $player !== '' ? $player : '—');
+        $detailLines[] = AdminMessageFormat::label('Platform', $platform !== '' ? $platform : '—');
+        $detailLines[] = AdminMessageFormat::label('Quality', $quality !== '' ? $quality : '—');
+        $detailLines[] = AdminMessageFormat::label('Stream', $streamLine !== '' ? $streamLine : '—');
+        $detailLines[] = AdminMessageFormat::label('Container', $container !== '' ? $container : '—');
+        $detailLines[] = AdminMessageFormat::label('Video', $videoLine !== '' ? $videoLine : 'Transcode');
+        $detailLines[] = AdminMessageFormat::label('Audio', $audioLine !== '' ? $audioLine : '—');
+        $detailLines[] = AdminMessageFormat::label('Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None');
+        $where = trim(($household !== '' ? $household : '') . ($location !== '' ? ($household !== '' ? ' · ' : '') . $location : ''));
+        if ($clientIp !== '') {
+            $where = ($where !== '' ? $where . ': ' : '') . $clientIp;
+        }
+        if ($where !== '') {
+            $detailLines[] = AdminMessageFormat::label('Dónde', $where);
+        }
+        if ($bandwidth !== '') {
+            $detailLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
+        }
+        if ($state !== '' || $progress > 0) {
+            $detailLines[] = AdminMessageFormat::label(
+                'Estado',
+                trim(($state !== '' ? $state : '') . ($progress > 0 ? " {$progress}%" : ''))
+            );
+        }
+        $detailLines[] = AdminMessageFormat::label('Motivo', 'Vídeo Transcode');
+
+        $pause = new \App\Services\VideoTranscodePauseService();
+        $pauseUrls = $session !== [] ? $pause->buildPauseUrls($tenantId, $session) : [];
+        $pauseLines = [];
+        foreach ($pauseUrls as $duration => $url) {
+            $pauseLines[] = $pause->durationLabel($duration) . ': ' . $url;
+        }
+
+        $sections = [
+            '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~10 s.',
+            implode("\n", $detailLines),
+        ];
+        if ($pauseLines !== []) {
+            $sections[] = AdminMessageFormat::block(
+                'Pausar auto-corte (solo vídeo Transcode)',
+                array_merge(
+                    ['Botones ntfy o enlaces (sin login):'],
+                    $pauseLines
+                )
+            );
+        }
+
+        $ntfyActions = [];
+        foreach (\App\Services\VideoTranscodePauseService::NTFY_ACTION_DURATIONS as $duration) {
+            if (empty($pauseUrls[$duration])) {
+                continue;
+            }
+            $ntfyActions[] = [
+                'label' => $pause->ntfyActionLabel($duration),
+                'url' => $pauseUrls[$duration],
+                'clear' => true,
+            ];
+        }
+        // ntfy máx. 3 Actions: 5h queda como enlace en el cuerpo.
+
+        $attach = \App\Services\StreamingActivityService::signedPublicThumbAbsoluteUrl($session);
+
+        $data = [
+            'whatsapp_kind' => 'cut',
+        ];
+        if ($attach !== null) {
+            $data['ntfy_attach'] = $attach;
+        }
+        if ($ntfyActions !== []) {
+            $data['ntfy_actions'] = $ntfyActions;
+        }
+
         return $this->notify(
             $tenantId,
             'video_transcode_kill:' . $fingerprint,
             'CORTE: vídeo Transcode',
-            AdminMessageFormat::compose([
-                '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~10 s.',
-                implode("\n", [
-                    AdminMessageFormat::label('Momento', $when),
-                    AdminMessageFormat::label('Usuario', $username),
-                    AdminMessageFormat::label('Título', $title),
-                    AdminMessageFormat::label('Servidor', $serverName),
-                    AdminMessageFormat::label('Motivo', 'Vídeo Transcode'),
-                ]),
-            ]),
+            AdminMessageFormat::compose($sections),
             [
                 // El debounce por sesión (cache auto_kill_vtrans_*) evita spam entre ticks de cron.
                 'debounce_minutes' => 0,
-                'data' => [
-                    'whatsapp_kind' => 'cut',
-                ],
+                'data' => $data,
             ]
         );
     }
