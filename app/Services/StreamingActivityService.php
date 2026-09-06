@@ -237,7 +237,7 @@ final class StreamingActivityService
 
     /**
      * Corta ahora todas las sesiones con vídeo en Transcode.
-     * Avisa al admin, envía el mensaje al detener y corta tras ~10 s.
+     * Avisa al admin, envía el mensaje al detener y corta tras ~30 s.
      *
      * @return array{killed: int, failed: int, matched: int}
      */
@@ -289,7 +289,7 @@ final class StreamingActivityService
     }
 
     /**
-     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~10 s → corta.
+     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~30 s → corta.
      *
      * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
      * @return array{killed: int, failed: int, skipped: int, matched: int, enabled: bool}
@@ -356,7 +356,7 @@ final class StreamingActivityService
                 true
             );
             if ($ok === null) {
-                // Pausado durante la ventana de ~10 s: no cuenta como fallo.
+                // Pausado durante la ventana de ~30 s: no cuenta como fallo.
                 $skipped++;
             } elseif ($ok) {
                 $killed++;
@@ -376,7 +376,7 @@ final class StreamingActivityService
 
     /**
      * Orden: avisar admin (Telegram/WhatsApp/ntfy/email según canales críticos) →
-     * mensaje al reproductor / preparar corte → ~10 s → terminar sesión.
+     * mensaje al reproductor / preparar corte → ~30 s → terminar sesión.
      *
      * @param array<string, mixed> $session
      * @param array{user_active?: int, total_active?: int} $counts
@@ -417,17 +417,17 @@ final class StreamingActivityService
         }
 
         $media = MediaServerFactory::make($server);
-        // Ventana ~10 s tras el aviso admin: mensaje al cliente y posibilidad de pausar desde ntfy.
+        // Ventana ~30 s tras el aviso admin: mensaje al cliente y posibilidad de saltar desde ntfy.
         if ($media instanceof JellyfinService) {
             $text = trim($message) !== '' ? $message : PlaybackStopMessageService::DEFAULT_BODY;
             $media->sendSessionMessage(
                 $sessionId,
                 PlaybackStopMessageService::DEFAULT_TITLE,
                 $text,
-                10000
+                30000
             );
         }
-        usleep(10_000_000);
+        usleep(30_000_000);
 
         if ($respectPause && (new VideoTranscodePauseService())->isPaused($tenantId, $session)) {
             Logger::info('Video transcode kill aborted: user paused', [

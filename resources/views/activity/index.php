@@ -45,7 +45,7 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~10 s) y corta las sesiones cuyo vídeo dice Transcode. Desde ntfy puedes pausar el auto-corte 1h / 3h / 5h / hasta medianoche (no afecta a límites de streams).">
+        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~30 s) y corta las sesiones cuyo vídeo dice Transcode. Desde ntfy puedes saltar el auto-corte 1h / 3h / 5h / hasta medianoche (no afecta a límites de streams).">
             <input class="form-check-input" type="checkbox" role="switch"
                    id="auto-kill-video-transcodes"
                    <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>
@@ -57,7 +57,7 @@ ob_start();
         <button type="button"
                 class="btn btn-warning btn-sm"
                 id="btn-kill-video-transcodes"
-                title="Avisa al admin, espera ~10 s y corta solo transcodes de vídeo con el mensaje predeterminado.">
+                title="Avisa al admin, espera ~30 s y corta solo transcodes de vídeo con el mensaje predeterminado.">
             <i class="bi bi-cpu me-1"></i>Cortar ahora
         </button>
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">

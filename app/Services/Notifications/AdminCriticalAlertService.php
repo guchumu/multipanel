@@ -369,7 +369,7 @@ final class AdminCriticalAlertService
 
     /**
      * Aviso al cortar una sesión con Vídeo = Transcode (auto-corte o «Cortar ahora»).
-     * En ntfy: carátula (Attach), detalle completo de la tarjeta y botones de pausa temporal.
+     * En ntfy: carátula, archivo original vs stream en curso, y saltar (pausa) arriba tras el usuario.
      *
      * @param array<string, mixed> $session
      * @param array{user_active?: int, total_active?: int} $meta
@@ -391,12 +391,15 @@ final class AdminCriticalAlertService
 
         $subtitle = trim((string) ($session['subtitle'] ?? ''));
         $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+
         $quality = trim((string) ($streamInfo['quality'] ?? ''));
-        $streamLine = trim((string) ($streamInfo['stream'] ?? ''));
-        $container = trim((string) ($streamInfo['container'] ?? ''));
+        $streamLine = trim((string) ($output['stream'] ?? $streamInfo['stream'] ?? ''));
+        $container = trim((string) ($output['container'] ?? $streamInfo['container'] ?? ''));
         $videoLine = trim((string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? ''));
         $audioLine = trim((string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? ''));
-        $subtitleLine = trim((string) ($streamInfo['subtitle'] ?? ''));
+        $subtitleLine = trim((string) ($output['subtitle'] ?? $streamInfo['subtitle'] ?? ''));
         $product = trim((string) ($session['product'] ?? ''));
         $player = trim((string) ($session['player'] ?? ''));
         $platform = trim((string) ($session['platform'] ?? ''));
@@ -409,9 +412,41 @@ final class AdminCriticalAlertService
         $userActive = max(0, (int) ($meta['user_active'] ?? 0));
         $totalActive = max(0, (int) ($meta['total_active'] ?? 0));
 
-        $detailLines = [
+        $srcFile = trim((string) ($source['file'] ?? ''));
+        $srcFormat = trim((string) ($source['format'] ?? ''));
+        $srcRes = trim((string) ($source['resolution'] ?? ''));
+        $srcVideo = trim((string) ($source['video_codec'] ?? ''));
+        $srcAudio = trim((string) ($source['audio_codec'] ?? ''));
+        $srcChannels = trim((string) ($source['audio_channels'] ?? ''));
+        $srcLang = trim((string) ($source['audio_lang'] ?? ''));
+        $srcAudioType = trim(implode(' ', array_filter([$srcLang !== '—' ? $srcLang : '', $srcAudio !== '—' ? $srcAudio : '', $srcChannels !== '—' ? $srcChannels : ''])));
+
+        $outVideoDecision = trim((string) ($output['video_decision'] ?? $session['video_decision'] ?? 'transcode'));
+        $outAudioDecision = trim((string) ($output['audio_decision'] ?? $session['audio_decision'] ?? ''));
+        $outRes = trim((string) ($output['resolution'] ?? ''));
+        $outVideo = trim((string) ($output['video_codec'] ?? ''));
+        $outAudio = trim((string) ($output['audio_codec'] ?? ''));
+        $outChannels = trim((string) ($output['audio_channels'] ?? ''));
+
+        $pause = new \App\Services\VideoTranscodePauseService();
+        $pauseUrls = $session !== [] ? $pause->buildPauseUrls($tenantId, $session) : [];
+        $pauseLines = [];
+        foreach ($pauseUrls as $duration => $url) {
+            $pauseLines[] = $pause->durationLabel($duration) . ': ' . $url;
+        }
+
+        $toggle = new \App\Services\VideoTranscodeAutoKillToggleService();
+        $toggleUrls = $toggle->buildToggleUrls($tenantId);
+        $autoKillOn = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
+        $autoKillState = $toggle->stateLabel($autoKillOn);
+
+        // Cabecera: contexto mínimo; el bloque Saltar va justo después del usuario.
+        $headerLines = [
             AdminMessageFormat::label('Momento', $when),
             AdminMessageFormat::label('Usuario', $username),
+        ];
+
+        $detailLines = [
             AdminMessageFormat::label('Título', $title),
         ];
         if ($subtitle !== '') {
@@ -426,44 +461,72 @@ final class AdminCriticalAlertService
                 . ($totalActive > 0 ? "total {$totalActive}" : '')
             );
         }
-        $detailLines[] = AdminMessageFormat::label('Product', $product !== '' ? $product : '—');
-        $detailLines[] = AdminMessageFormat::label('Player', $player !== '' ? $player : '—');
-        $detailLines[] = AdminMessageFormat::label('Platform', $platform !== '' ? $platform : '—');
-        $detailLines[] = AdminMessageFormat::label('Quality', $quality !== '' ? $quality : '—');
-        $detailLines[] = AdminMessageFormat::label('Stream', $streamLine !== '' ? $streamLine : '—');
-        $detailLines[] = AdminMessageFormat::label('Container', $container !== '' ? $container : '—');
-        $detailLines[] = AdminMessageFormat::label('Video', $videoLine !== '' ? $videoLine : 'Transcode');
-        $detailLines[] = AdminMessageFormat::label('Audio', $audioLine !== '' ? $audioLine : '—');
-        $detailLines[] = AdminMessageFormat::label('Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None');
+
+        $originalLines = [];
+        if ($srcFile !== '') {
+            $originalLines[] = AdminMessageFormat::label('Fichero', $srcFile);
+        }
+        $originalLines[] = AdminMessageFormat::label('Formato', $srcFormat !== '' ? $srcFormat : '—');
+        $originalLines[] = AdminMessageFormat::label('Resolución', $srcRes !== '' ? $srcRes : '—');
+        $originalLines[] = AdminMessageFormat::label('Vídeo (codec)', $srcVideo !== '' ? $srcVideo : '—');
+        $originalLines[] = AdminMessageFormat::label(
+            'Audio',
+            $srcAudioType !== '' ? $srcAudioType : ($srcAudio !== '' ? $srcAudio : '—')
+        );
+
+        $streamDoingLines = [
+            AdminMessageFormat::label('Método', $streamLine !== '' ? $streamLine : 'Transcode'),
+            AdminMessageFormat::label('Container', $container !== '' ? $container : '—'),
+            AdminMessageFormat::label(
+                'Vídeo',
+                trim(
+                    ($outVideoDecision !== '' ? ucfirst($outVideoDecision) : 'Transcode')
+                    . ($outVideo !== '' && $outVideo !== '—' ? " → {$outVideo}" : '')
+                    . ($outRes !== '' && $outRes !== '—' ? " {$outRes}" : '')
+                )
+            ),
+            AdminMessageFormat::label(
+                'Audio',
+                trim(
+                    ($outAudioDecision !== '' ? ucfirst($outAudioDecision) : '—')
+                    . ($outAudio !== '' && $outAudio !== '—' ? " → {$outAudio}" : '')
+                    . ($outChannels !== '' && $outChannels !== '—' ? " {$outChannels}" : '')
+                )
+            ),
+            AdminMessageFormat::label('Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None'),
+        ];
+        if ($videoLine !== '') {
+            $streamDoingLines[] = AdminMessageFormat::label('Vídeo (detalle)', $videoLine);
+        }
+        if ($audioLine !== '') {
+            $streamDoingLines[] = AdminMessageFormat::label('Audio (detalle)', $audioLine);
+        }
+        if ($quality !== '') {
+            $streamDoingLines[] = AdminMessageFormat::label('Quality', $quality);
+        }
+
+        $clientLines = [
+            AdminMessageFormat::label('Product', $product !== '' ? $product : '—'),
+            AdminMessageFormat::label('Player', $player !== '' ? $player : '—'),
+            AdminMessageFormat::label('Platform', $platform !== '' ? $platform : '—'),
+        ];
         $where = trim(($household !== '' ? $household : '') . ($location !== '' ? ($household !== '' ? ' · ' : '') . $location : ''));
         if ($clientIp !== '') {
             $where = ($where !== '' ? $where . ': ' : '') . $clientIp;
         }
         if ($where !== '') {
-            $detailLines[] = AdminMessageFormat::label('Dónde', $where);
+            $clientLines[] = AdminMessageFormat::label('Dónde', $where);
         }
         if ($bandwidth !== '') {
-            $detailLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
+            $clientLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
         }
         if ($state !== '' || $progress > 0) {
-            $detailLines[] = AdminMessageFormat::label(
-                'Estado',
+            $clientLines[] = AdminMessageFormat::label(
+                'Estado reproducción',
                 trim(($state !== '' ? $state : '') . ($progress > 0 ? " {$progress}%" : ''))
             );
         }
-        $detailLines[] = AdminMessageFormat::label('Motivo', 'Vídeo Transcode');
 
-        $pause = new \App\Services\VideoTranscodePauseService();
-        $pauseUrls = $session !== [] ? $pause->buildPauseUrls($tenantId, $session) : [];
-        $pauseLines = [];
-        foreach ($pauseUrls as $duration => $url) {
-            $pauseLines[] = $pause->durationLabel($duration) . ': ' . $url;
-        }
-
-        $toggle = new \App\Services\VideoTranscodeAutoKillToggleService();
-        $toggleUrls = $toggle->buildToggleUrls($tenantId);
-        $autoKillOn = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
-        $autoKillState = $toggle->stateLabel($autoKillOn);
         $toggleLines = [
             AdminMessageFormat::label('Estado auto-corte', $autoKillState),
         ];
@@ -475,29 +538,26 @@ final class AdminCriticalAlertService
         }
 
         $sections = [
-            '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~10 s.',
-            implode("\n", $detailLines),
-            AdminMessageFormat::block('Auto-corte global (tenant)', $toggleLines),
+            '✂️ Vídeo = Transcode. Tienes ~30 s para saltar el corte antes de cortar la emisión.',
+            implode("\n", $headerLines),
         ];
         if ($pauseLines !== []) {
             $sections[] = AdminMessageFormat::block(
-                'Pausar auto-corte (solo vídeo Transcode)',
+                '⏭ Saltar este corte',
                 array_merge(
-                    ['Botones ntfy o enlaces (sin login):'],
+                    ['Pulsa YA si quieres permitirlo (pausa auto-corte Transcode):'],
                     $pauseLines
                 )
             );
         }
+        $sections[] = implode("\n", $detailLines);
+        $sections[] = AdminMessageFormat::block('📁 Archivo original', $originalLines);
+        $sections[] = AdminMessageFormat::block('📡 Stream en curso (qué está haciendo)', $streamDoingLines);
+        $sections[] = AdminMessageFormat::block('Cliente', $clientLines);
+        $sections[] = AdminMessageFormat::block('Auto-corte global (tenant)', $toggleLines);
 
-        // ntfy máx. 3 Actions: Activar (atajo ON) + 2 pausas; Apagar y el resto van en el cuerpo.
+        // ntfy máx. 3 Actions: priorizar Saltar (pausa); Activar solo si sobra hueco.
         $ntfyActions = [];
-        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
-            $ntfyActions[] = [
-                'label' => $toggle->ntfyActionLabel(\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE),
-                'url' => $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE],
-                'clear' => true,
-            ];
-        }
         foreach (\App\Services\VideoTranscodePauseService::NTFY_ACTION_DURATIONS as $duration) {
             if (count($ntfyActions) >= 3 || empty($pauseUrls[$duration])) {
                 continue;
@@ -505,6 +565,14 @@ final class AdminCriticalAlertService
             $ntfyActions[] = [
                 'label' => $pause->ntfyActionLabel($duration),
                 'url' => $pauseUrls[$duration],
+                'clear' => true,
+            ];
+        }
+        if (count($ntfyActions) < 3
+            && !empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
+            $ntfyActions[] = [
+                'label' => $toggle->ntfyActionLabel(\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE),
+                'url' => $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE],
                 'clear' => true,
             ];
         }

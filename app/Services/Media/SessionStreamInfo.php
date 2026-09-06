@@ -24,7 +24,27 @@ final class SessionStreamInfo
      *     video: string,
      *     audio: string,
      *     subtitle: string,
-     *     throttled: bool
+     *     throttled: bool,
+     *     source: array{
+     *         file: string,
+     *         format: string,
+     *         resolution: string,
+     *         video_codec: string,
+     *         audio_codec: string,
+     *         audio_channels: string,
+     *         audio_lang: string
+     *     },
+     *     output: array{
+     *         stream: string,
+     *         container: string,
+     *         video_decision: string,
+     *         audio_decision: string,
+     *         resolution: string,
+     *         video_codec: string,
+     *         audio_codec: string,
+     *         audio_channels: string,
+     *         subtitle: string
+     *     }
      * }
      */
     public static function fromPlex(
@@ -140,6 +160,7 @@ final class SessionStreamInfo
         );
 
         $subtitle = self::formatSubtitleLine($subtitleDecision, $subtitleStream);
+        $sourceFile = self::plexSourceFileName($media);
 
         return [
             'quality' => $quality !== '' ? $quality : '—',
@@ -149,6 +170,26 @@ final class SessionStreamInfo
             'audio' => $audio,
             'subtitle' => $subtitle,
             'throttled' => $throttled,
+            'source' => [
+                'file' => $sourceFile,
+                'format' => $sourceContainer !== '' ? $sourceContainer : '—',
+                'resolution' => $sourceRes !== '' ? $sourceRes : '—',
+                'video_codec' => $sourceVideoCodec !== '' ? $sourceVideoCodec : '—',
+                'audio_codec' => $sourceAudioCodec !== '' ? $sourceAudioCodec : '—',
+                'audio_channels' => $sourceChannels !== '' ? $sourceChannels : '—',
+                'audio_lang' => $audioLang !== '' ? $audioLang : '—',
+            ],
+            'output' => [
+                'stream' => $stream !== '' ? $stream : '—',
+                'container' => $container !== '' ? $container : '—',
+                'video_decision' => $videoDecision !== '' ? $videoDecision : '—',
+                'audio_decision' => $audioDecision !== '' ? $audioDecision : '—',
+                'resolution' => ($videoDecision === 'transcode' && $destRes !== '' ? $destRes : $sourceRes) ?: '—',
+                'video_codec' => ($videoDecision === 'transcode' ? $destVideoCodec : $sourceVideoCodec) ?: '—',
+                'audio_codec' => ($audioDecision === 'transcode' ? $destAudioCodec : $sourceAudioCodec) ?: '—',
+                'audio_channels' => ($audioDecision === 'transcode' ? $destChannels : $sourceChannels) ?: '—',
+                'subtitle' => $subtitle !== '' ? $subtitle : 'None',
+            ],
         ];
     }
 
@@ -163,7 +204,27 @@ final class SessionStreamInfo
      *     video: string,
      *     audio: string,
      *     subtitle: string,
-     *     throttled: bool
+     *     throttled: bool,
+     *     source: array{
+     *         file: string,
+     *         format: string,
+     *         resolution: string,
+     *         video_codec: string,
+     *         audio_codec: string,
+     *         audio_channels: string,
+     *         audio_lang: string
+     *     },
+     *     output: array{
+     *         stream: string,
+     *         container: string,
+     *         video_decision: string,
+     *         audio_decision: string,
+     *         resolution: string,
+     *         video_codec: string,
+     *         audio_codec: string,
+     *         audio_channels: string,
+     *         subtitle: string
+     *     }
      * }
      */
     public static function fromJellyfin(
@@ -263,6 +324,11 @@ final class SessionStreamInfo
             'displayTitle' => (string) ($subtitleStream['DisplayTitle'] ?? ''),
         ]);
 
+        $sourceFile = trim((string) ($nowPlayingItem['Path'] ?? $nowPlayingItem['FileName'] ?? ''));
+        if ($sourceFile !== '') {
+            $sourceFile = basename(str_replace('\\', '/', $sourceFile));
+        }
+
         return [
             'quality' => $quality !== '' ? $quality : '—',
             'stream' => $stream,
@@ -271,6 +337,26 @@ final class SessionStreamInfo
             'audio' => $audio,
             'subtitle' => $subtitle,
             'throttled' => false,
+            'source' => [
+                'file' => $sourceFile,
+                'format' => $sourceContainer !== '' ? $sourceContainer : '—',
+                'resolution' => $sourceRes !== '' ? $sourceRes : '—',
+                'video_codec' => $sourceVideoCodec !== '' ? $sourceVideoCodec : '—',
+                'audio_codec' => $sourceAudioCodec !== '' ? $sourceAudioCodec : '—',
+                'audio_channels' => $sourceChannels !== '' ? $sourceChannels : '—',
+                'audio_lang' => $audioLang !== '' ? $audioLang : '—',
+            ],
+            'output' => [
+                'stream' => $stream !== '' ? $stream : '—',
+                'container' => $container !== '' ? $container : '—',
+                'video_decision' => $videoDecision !== '' ? $videoDecision : '—',
+                'audio_decision' => $audioDecision !== '' ? $audioDecision : '—',
+                'resolution' => ($videoDecision === 'transcode' && $destRes !== '' ? $destRes : $sourceRes) ?: '—',
+                'video_codec' => ($videoDecision === 'transcode' ? $destVideoCodec : $sourceVideoCodec) ?: '—',
+                'audio_codec' => ($audioDecision === 'transcode' ? $destAudioCodec : $sourceAudioCodec) ?: '—',
+                'audio_channels' => ($audioDecision === 'transcode' ? $destChannels : $sourceChannels) ?: '—',
+                'subtitle' => $subtitle !== '' ? $subtitle : 'None',
+            ],
         ];
     }
 
@@ -458,6 +544,31 @@ final class SessionStreamInfo
         }
 
         return $line;
+    }
+
+    /** @param array<string, mixed> $media */
+    private static function plexSourceFileName(array $media): string
+    {
+        $parts = $media['Part'] ?? [];
+        if (!is_array($parts)) {
+            return '';
+        }
+        if ($parts !== [] && !array_is_list($parts)) {
+            $parts = [$parts];
+        }
+        foreach ($parts as $part) {
+            if (!is_array($part)) {
+                continue;
+            }
+            $file = trim((string) ($part['file'] ?? ''));
+            if ($file === '') {
+                continue;
+            }
+
+            return basename(str_replace('\\', '/', $file));
+        }
+
+        return '';
     }
 
     private static function formatContainerLine(

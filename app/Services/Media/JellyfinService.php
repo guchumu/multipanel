@@ -446,8 +446,8 @@ final class JellyfinService
         // Mostrar aviso antes de cortar; sin pausa el stop llega antes de que el cliente pinte el mensaje.
         if ($announceAndWait) {
             $header = PlaybackStopMessageService::DEFAULT_TITLE;
-            $this->sendSessionMessage($sessionId, $header, $reason, 10000);
-            usleep(10_000_000);
+            $this->sendSessionMessage($sessionId, $header, $reason, 30000);
+            usleep(30_000_000);
         }
 
         try {

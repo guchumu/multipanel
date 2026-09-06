@@ -240,10 +240,10 @@ final class VideoTranscodePauseService
     public function durationLabel(string $duration): string
     {
         return match ($duration) {
-            self::DURATION_1H => '1 hora',
-            self::DURATION_3H => '3 horas',
-            self::DURATION_5H => '5 horas',
-            self::DURATION_EOD => 'hasta medianoche',
+            self::DURATION_1H => 'Saltar 1 hora',
+            self::DURATION_3H => 'Saltar 3 horas',
+            self::DURATION_5H => 'Saltar 5 horas',
+            self::DURATION_EOD => 'Saltar hasta medianoche',
             default => $duration,
         };
     }
@@ -251,11 +251,11 @@ final class VideoTranscodePauseService
     public function ntfyActionLabel(string $duration): string
     {
         return match ($duration) {
-            self::DURATION_1H => 'Pausa 1h',
-            self::DURATION_3H => 'Pausa 3h',
-            self::DURATION_5H => 'Pausa 5h',
-            self::DURATION_EOD => 'Hasta 00:00',
-            default => 'Pausa',
+            self::DURATION_1H => 'Saltar 1h',
+            self::DURATION_3H => 'Saltar 3h',
+            self::DURATION_5H => 'Saltar 5h',
+            self::DURATION_EOD => 'Saltar hoy',
+            default => 'Saltar',
         };
     }
 
