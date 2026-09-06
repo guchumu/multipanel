@@ -267,7 +267,7 @@
         const bgStyle = bgUrl ? `background-image:url('${escapeHtml(bgUrl)}')` : '';
         const bufferPct = Math.min(100, progress + (isTranscode ? 8 : 0));
 
-        return `<div class="col-12 col-lg-6 col-xxl-4 session-col">
+        return `<div class="col-12 col-md-6 col-lg-4 col-xxl-3 session-col">
         <div class="session-card session-row${s.over_limit ? ' session-row--over-limit' : ''}${isTranscode ? ' session-row--transcode' : ''}" data-session-id="${sid}" data-server-id="${Number(s.server_id || 0)}" data-play-method="${escapeHtml(method)}">
             <div class="session-activity-container">
                 <div class="session-activity-background" style="${bgStyle}">

@@ -120,7 +120,7 @@ $infoRowsFoot = [
     ['Bandwidth', $bandwidth !== '' ? $bandwidth : ((string) ($session['server_name'] ?? '—'))],
 ];
 ?>
-<div class="col-12 col-lg-6 col-xxl-4 session-col">
+<div class="col-12 col-md-6 col-lg-4 col-xxl-3 session-col">
     <div class="session-card session-row<?= !empty($session['over_limit']) ? ' session-row--over-limit' : '' ?><?= $isTranscode ? ' session-row--transcode' : '' ?>"
          data-session-id="<?= e($sessionKey) ?>"
          data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
