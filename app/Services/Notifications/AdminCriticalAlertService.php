@@ -368,6 +368,47 @@ final class AdminCriticalAlertService
     }
 
     /**
+     * Aviso al cortar una sesión con Vídeo = Transcode (auto-corte o «Cortar ahora»).
+     *
+     * @return array{ok: bool, skipped: bool, reason: string, channels: array<int, string>}
+     */
+    public function notifyVideoTranscodeKill(
+        int $tenantId,
+        string $username,
+        string $title,
+        string $serverName,
+        string $fingerprint,
+    ): array {
+        $username = trim($username) !== '' ? trim($username) : 'desconocido';
+        $title = trim($title) !== '' ? trim($title) : 'Sin título';
+        $serverName = trim($serverName) !== '' ? trim($serverName) : 'servidor ?';
+        $when = WhatsAppAdminText::nowMadridLong();
+
+        return $this->notify(
+            $tenantId,
+            'video_transcode_kill:' . $fingerprint,
+            'CORTE: vídeo Transcode',
+            AdminMessageFormat::compose([
+                '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~1 s.',
+                implode("\n", [
+                    AdminMessageFormat::label('Momento', $when),
+                    AdminMessageFormat::label('Usuario', $username),
+                    AdminMessageFormat::label('Título', $title),
+                    AdminMessageFormat::label('Servidor', $serverName),
+                    AdminMessageFormat::label('Motivo', 'Vídeo Transcode'),
+                ]),
+            ]),
+            [
+                // El debounce por sesión (cache auto_kill_vtrans_*) evita spam entre ticks de cron.
+                'debounce_minutes' => 0,
+                'data' => [
+                    'whatsapp_kind' => 'cut',
+                ],
+            ]
+        );
+    }
+
+    /**
      * @return array{ok: bool, skipped: bool, reason: string, channels: array<int, string>}
      */
     public function notifyPaymentWebhookFailure(int $tenantId, string $gateway, string $error): array

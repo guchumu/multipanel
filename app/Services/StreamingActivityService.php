@@ -9,7 +9,9 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Notifications\AdminCriticalAlertService;
 use Core\Cache;
+use Core\Logger;
 
 /**
  * Aggregates live playback sessions from all media servers.
@@ -235,6 +237,7 @@ final class StreamingActivityService
 
     /**
      * Corta ahora todas las sesiones con vídeo en Transcode.
+     * Avisa al admin, envía el mensaje al detener y corta tras ~1 s.
      *
      * @return array{killed: int, failed: int, matched: int}
      */
@@ -267,7 +270,7 @@ final class StreamingActivityService
                 $failed++;
                 continue;
             }
-            if ($this->terminateSession($server, $sessionId, $message)) {
+            if ($this->terminateVideoTranscodeSession($tenantId, $server, $session, $sessionId, $message, true)) {
                 $killed++;
             } else {
                 $failed++;
@@ -278,7 +281,7 @@ final class StreamingActivityService
     }
 
     /**
-     * Si el auto-corte está activo (cron streams): corta vídeo Transcode con mensaje predeterminado.
+     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~1 s → corta.
      *
      * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
      * @return array{killed: int, failed: int, skipped: int, matched: int, enabled: bool}
@@ -325,10 +328,19 @@ final class StreamingActivityService
                 continue;
             }
 
-            $ok = $this->terminateSession($server, $sessionId, $message);
+            // Marcar ya: evita notify+kill en cada tick del cron para la misma sesión.
+            Cache::set($debounceKey, 1, 120);
+
+            $ok = $this->terminateVideoTranscodeSession(
+                $tenantId,
+                $server,
+                $session,
+                $sessionId,
+                $message,
+                true
+            );
             if ($ok) {
                 $killed++;
-                Cache::set($debounceKey, 1, 120);
             } else {
                 $failed++;
             }
@@ -341,6 +353,50 @@ final class StreamingActivityService
             'matched' => $matched,
             'enabled' => true,
         ];
+    }
+
+    /**
+     * Orden: avisar admin → mensaje al reproductor / preparar corte → ~1 s → terminar sesión.
+     *
+     * @param array<string, mixed> $session
+     */
+    private function terminateVideoTranscodeSession(
+        int $tenantId,
+        Server $server,
+        array $session,
+        string $sessionId,
+        string $message,
+        bool $notifyAdmin,
+    ): bool {
+        if ($notifyAdmin) {
+            $username = trim((string) ($session['user'] ?? '')) ?: 'desconocido';
+            $title = trim((string) ($session['title'] ?? '')) ?: 'Sin título';
+            $serverName = trim((string) ($server->name ?? '')) ?: ('#' . (int) $server->id);
+            $fp = (int) $server->id . ':' . sha1($sessionId);
+            try {
+                (new AdminCriticalAlertService())->notifyVideoTranscodeKill(
+                    $tenantId,
+                    $username,
+                    $title,
+                    $serverName,
+                    $fp
+                );
+            } catch (\Throwable $e) {
+                Logger::warning('Video transcode admin notify failed', [
+                    'tenant_id' => $tenantId,
+                    'session_id' => $sessionId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $media = MediaServerFactory::make($server);
+        // Plex muestra el motivo al cortar; Jellyfin ya espera ~1 s tras el mensaje en terminateSession.
+        if ($media instanceof PlexService) {
+            usleep(1_000_000);
+        }
+
+        return $this->terminateSession($server, $sessionId, $message);
     }
 
     /** @return array{body: string, content_type: string}|null */
