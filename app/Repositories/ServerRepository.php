@@ -81,6 +81,16 @@ class ServerRepository
         );
     }
 
+    /** Quita el marcado de predeterminado de un servidor concreto. */
+    public function clearDefault(int $tenantId, int $serverId): void
+    {
+        $this->ensureIsDefaultColumn();
+        Database::getInstance()->query(
+            'UPDATE `servers` SET `is_default` = 0 WHERE `id` = ? AND `tenant_id` = ? AND `deleted_at` IS NULL',
+            [$serverId, $tenantId]
+        );
+    }
+
     /** ¿Hay ya algún servidor de este tipo marcado como predeterminado? */
     public function hasDefaultOfType(int $tenantId, string $type): bool
     {

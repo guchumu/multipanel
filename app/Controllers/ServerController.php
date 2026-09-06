@@ -573,21 +573,35 @@ class ServerController extends Controller
                 return $this->json(['error' => 'Servidor no encontrado'], 404);
             }
 
-            $this->servers->setDefault((int) $server->tenant_id, (int) $server->id, (string) $server->type);
+            $wasDefault = $server->isDefault();
+            if ($wasDefault) {
+                $this->servers->clearDefault((int) $server->tenant_id, (int) $server->id);
+                $auditAction = 'server.clear_default';
+                $message = sprintf(
+                    'Se ha quitado el marcado de predeterminado a "%s" (%s).',
+                    $server->name,
+                    strtoupper((string) $server->type)
+                );
+            } else {
+                $this->servers->setDefault((int) $server->tenant_id, (int) $server->id, (string) $server->type);
+                $auditAction = 'server.set_default';
+                $message = sprintf(
+                    '"%s" es ahora el servidor %s predeterminado. Puedes tener uno de Plex y uno de Jellyfin.',
+                    $server->name,
+                    strtoupper((string) $server->type)
+                );
+            }
 
             try {
-                AuditService::log('server.set_default', 'server', (int) $server->id);
+                AuditService::log($auditAction, 'server', (int) $server->id);
             } catch (\Throwable $auditError) {
-                \Core\Logger::warning('server.set_default audit log failed', ['error' => $auditError->getMessage()]);
+                \Core\Logger::warning($auditAction . ' audit log failed', ['error' => $auditError->getMessage()]);
             }
 
             return $this->json([
                 'success' => true,
-                'message' => sprintf(
-                    '"%s" es ahora el servidor %s predeterminado. Puedes tener uno de Plex y uno de Jellyfin.',
-                    $server->name,
-                    strtoupper((string) $server->type)
-                ),
+                'message' => $message,
+                'is_default' => !$wasDefault,
                 'type' => $server->type,
                 'server_id' => (int) $server->id,
             ]);
@@ -596,7 +610,7 @@ class ServerController extends Controller
             return $this->json([
                 'success' => false,
                 'error' => $e->getMessage(),
-                'message' => 'No se pudo marcar como predeterminado: ' . $e->getMessage(),
+                'message' => 'No se pudo cambiar el predeterminado: ' . $e->getMessage(),
             ], 500);
         }
     }

@@ -269,25 +269,35 @@
         btn.addEventListener('click', async function () {
             const uuid = this.dataset.uuid;
             const type = (this.dataset.type || 'plex').toUpperCase();
+            const isDefault = this.dataset.isDefault === '1' || this.classList.contains('is-default');
             this.disabled = true;
-            showStatus(`Marcando servidor ${type} por defecto…`, 'info');
+            showStatus(
+                isDefault
+                    ? `Quitando predeterminado ${type}…`
+                    : `Marcando servidor ${type} por defecto…`,
+                'info'
+            );
             try {
                 const data = await postJson(`/servers/${uuid}/default`);
                 if (!data.__httpOk || data.success === false) {
                     showStatus(
-                        responseMessage(data, '', 'No se pudo marcar como predeterminado.'),
+                        responseMessage(data, '', 'No se pudo cambiar el predeterminado.'),
                         'danger'
                     );
                     this.disabled = false;
                     return;
                 }
                 showStatus(
-                    responseMessage(data, 'Servidor marcado como predeterminado.', ''),
+                    responseMessage(
+                        data,
+                        isDefault ? 'Predeterminado quitado.' : 'Servidor marcado como predeterminado.',
+                        ''
+                    ),
                     'success'
                 );
                 setTimeout(() => location.reload(), 600);
             } catch (e) {
-                showStatus('Error de red al marcar predeterminado.', 'danger');
+                showStatus('Error de red al cambiar predeterminado.', 'danger');
                 this.disabled = false;
             }
         });

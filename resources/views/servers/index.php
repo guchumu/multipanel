@@ -17,7 +17,7 @@ ob_start();
 
 <p class="text-muted small mb-3">
     <i class="bi bi-star-fill text-warning me-1"></i>
-    Marca con la estrella el servidor por defecto para altas automáticas — uno para <strong>Plex</strong> y otro para <strong>Jellyfin</strong>.
+    Pulsa la estrella para marcar o quitar el servidor por defecto de altas automáticas — uno para <strong>Plex</strong> y otro para <strong>Jellyfin</strong>.
 </p>
 
 <div class="card border-0 shadow-sm">
@@ -47,7 +47,10 @@ ob_start();
                                 class="btn btn-link btn-sm p-0 me-1 align-middle btn-default-star <?= $isDefault ? 'is-default' : '' ?>"
                                 data-uuid="<?= e($server->uuid) ?>"
                                 data-type="<?= e($server->type) ?>"
-                                title="<?= $isDefault ? 'Servidor ' . strtoupper($server->type) . ' por defecto' : 'Marcar como predeterminado ' . strtoupper($server->type) ?>">
+                                data-is-default="<?= $isDefault ? '1' : '0' ?>"
+                                title="<?= $isDefault
+                                    ? 'Quitar predeterminado ' . strtoupper($server->type) . ' (ahora es el por defecto)'
+                                    : 'Marcar como predeterminado ' . strtoupper($server->type) ?>">
                             <i class="bi bi-star<?= $isDefault ? '-fill text-warning' : ' text-muted' ?>"></i>
                         </button>
                         <a href="/servers/<?= e($server->uuid) ?>" class="fw-medium align-middle"><?= e($server->name) ?></a>
