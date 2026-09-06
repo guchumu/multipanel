@@ -237,7 +237,7 @@ final class StreamingActivityService
 
     /**
      * Corta ahora todas las sesiones con vídeo en Transcode.
-     * Avisa al admin, envía el mensaje al detener y corta tras ~1 s.
+     * Avisa al admin, envía el mensaje al detener y corta tras ~10 s.
      *
      * @return array{killed: int, failed: int, matched: int}
      */
@@ -281,7 +281,7 @@ final class StreamingActivityService
     }
 
     /**
-     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~1 s → corta.
+     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~10 s → corta.
      *
      * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
      * @return array{killed: int, failed: int, skipped: int, matched: int, enabled: bool}
@@ -356,7 +356,8 @@ final class StreamingActivityService
     }
 
     /**
-     * Orden: avisar admin → mensaje al reproductor / preparar corte → ~1 s → terminar sesión.
+     * Orden: avisar admin (Telegram/WhatsApp/ntfy/email según canales críticos) →
+     * mensaje al reproductor / preparar corte → ~10 s → terminar sesión.
      *
      * @param array<string, mixed> $session
      */
@@ -391,9 +392,9 @@ final class StreamingActivityService
         }
 
         $media = MediaServerFactory::make($server);
-        // Plex muestra el motivo al cortar; Jellyfin ya espera ~1 s tras el mensaje en terminateSession.
+        // Plex muestra el motivo al cortar; Jellyfin ya espera ~10 s tras el mensaje en terminateSession.
         if ($media instanceof PlexService) {
-            usleep(1_000_000);
+            usleep(10_000_000);
         }
 
         return $this->terminateSession($server, $sessionId, $message);

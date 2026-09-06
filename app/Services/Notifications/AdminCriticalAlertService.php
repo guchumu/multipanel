@@ -389,7 +389,7 @@ final class AdminCriticalAlertService
             'video_transcode_kill:' . $fingerprint,
             'CORTE: vídeo Transcode',
             AdminMessageFormat::compose([
-                '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~1 s.',
+                '✂️ Vídeo = Transcode detectado. Se corta la emisión en ~10 s.',
                 implode("\n", [
                     AdminMessageFormat::label('Momento', $when),
                     AdminMessageFormat::label('Usuario', $username),

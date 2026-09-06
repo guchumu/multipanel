@@ -112,7 +112,13 @@ final class NtfyChannel implements NotificationChannelInterface
     {
         $tags = [];
         $kind = trim((string) ($data['whatsapp_kind'] ?? ''));
-        if ($kind !== '') {
+        if ($kind === 'cut') {
+            $tags[] = 'scissors';
+            $tags[] = 'warning';
+        } elseif ($kind === 'sandbox') {
+            $tags[] = 'test_tube';
+            $tags[] = 'warning';
+        } elseif ($kind !== '') {
             $tags[] = $kind;
         }
         $event = trim((string) ($data['event'] ?? ''));
