@@ -254,7 +254,9 @@ class MediaUserController extends Controller
             }
         }
 
-        $endpoints = (new \App\Services\MediaUserEndpointService())->listForUser((int) $user->id);
+        $endpointService = new \App\Services\MediaUserEndpointService();
+        $endpoints = $endpointService->listForUser((int) $user->id);
+        $homeIpAnalysis = $endpointService->analyzeHomeIps((int) $user->id, $endpoints);
         $playbackHistory = (new \App\Services\PlaybackHistoryService())->listForUser((int) $user->id, 40);
         $playbackHistoryTotal = (new \App\Services\PlaybackHistoryService())->countForUser((int) $user->id);
 
@@ -293,6 +295,7 @@ class MediaUserController extends Controller
             'defaultMaxAwayStreams' => (new \App\Services\StreamLimitSettingsService())->getDefaultMaxAwayStreams((int) ($user->tenant_id ?? 1)),
             'nowPlaying' => $nowPlaying,
             'endpoints' => $endpoints,
+            'homeIpAnalysis' => $homeIpAnalysis,
             'playbackHistory' => $playbackHistory,
             'playbackHistoryTotal' => $playbackHistoryTotal,
             'portalLink' => $this->portalLinks->activeInfo((int) $user->id),

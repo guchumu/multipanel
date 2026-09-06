@@ -199,4 +199,58 @@ final class MediaUserEndpointServiceTest extends TestCase
         $this->assertSame('home_ip', $meta['source']);
         $this->assertSame('mobile', $meta['device_class']);
     }
+
+    public function testHomeIpRankingPrefersBusySharedIpOverRareFriendTv(): void
+    {
+        $endpoints = [
+            [
+                'id' => 1,
+                'ip' => '203.0.113.10',
+                'lan_ip' => '192.168.1.20',
+                'location' => 'WAN',
+                'product' => 'Plex for Samsung',
+                'platform' => 'Tizen',
+                'device_name' => 'Salon',
+                'play_count' => 120,
+                'last_seen_at' => '2026-09-06 10:00:00',
+                'kind' => 'unknown',
+                'kind_locked' => 0,
+            ],
+            [
+                'id' => 2,
+                'ip' => '203.0.113.10',
+                'location' => 'WAN',
+                'product' => 'Plex for iOS',
+                'platform' => 'iOS',
+                'device_name' => 'iPhone',
+                'play_count' => 80,
+                'last_seen_at' => '2026-09-06 11:00:00',
+                'kind' => 'unknown',
+                'kind_locked' => 0,
+            ],
+            [
+                'id' => 3,
+                'ip' => '198.51.100.99',
+                'location' => 'WAN',
+                'product' => 'Plex for Amazon Fire TV',
+                'platform' => 'Fire TV',
+                'device_name' => 'Amigos',
+                'play_count' => 2,
+                'last_seen_at' => '2026-09-01 09:00:00',
+                'kind' => 'unknown',
+                'kind_locked' => 0,
+            ],
+        ];
+
+        $groups = MediaUserEndpointService::rankHomeIpGroups($endpoints);
+        $this->assertSame('203.0.113.10', $groups[0]['ip']);
+        $this->assertGreaterThan($groups[1]['score'], $groups[0]['score']);
+        $this->assertStringContainsString('probable hogar', mb_strtolower((string) $groups[0]['label']));
+        $this->assertStringContainsString('poco uso', mb_strtolower((string) $groups[1]['label']));
+
+        $analysis = (new MediaUserEndpointService())->analyzeHomeIps(1, $endpoints);
+        $this->assertNotNull($analysis['suggested']);
+        $this->assertSame('203.0.113.10', $analysis['suggested']['ip']);
+        $this->assertFalse($analysis['has_confirmed_home']);
+    }
 }

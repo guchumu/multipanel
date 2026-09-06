@@ -448,51 +448,126 @@ ob_start();
 
         <div class="tab-pane fade" id="tab-actividad" role="tabpanel">
             <div class="section-title"><i class="bi bi-router"></i>IPs y dispositivos</div>
-            <p class="small text-muted mb-3">Hogar = misma IP. Al marcar hogar/fuera se aplica a toda la IP: tele y móvil en esa red cuentan igual. Una tele en otra IP (casa de amigos) cuenta como fuera.</p>
-            <div class="table-responsive mb-4">
-                <table class="table table-sm mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>IP</th>
-                            <th>Dispositivo</th>
-                            <th>Red</th>
-                            <th>Visto</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php if ($endpoints === []): ?>
-                    <tr><td colspan="5" class="text-muted text-center py-3">Aún no hay reproducciones registradas</td></tr>
-                    <?php else: ?>
-                    <?php foreach ($endpoints as $ep): ?>
-                    <?php $kl = $kindLabel((string) ($ep['kind'] ?? 'unknown')); ?>
-                    <tr>
-                        <td class="small">
-                            <code><?= e((string) (($ep['ip'] ?? '') !== '' ? $ep['ip'] : '—')) ?></code>
-                            <?php if (!empty($ep['lan_ip']) && (string) $ep['lan_ip'] !== (string) ($ep['ip'] ?? '')): ?>
-                            <div class="text-muted">LAN <?= e((string) $ep['lan_ip']) ?></div>
-                            <?php endif; ?>
-                            <div><span class="badge bg-<?= e($kl[1]) ?>"><?= e($kl[0]) ?></span></div>
-                        </td>
-                        <td class="small">
-                            <?= e((string) (($ep['device_name'] ?? '') !== '' ? $ep['device_name'] : '—')) ?>
-                            <div class="text-muted"><?= e(trim((string) (($ep['product'] ?? '') . ' ' . ($ep['platform'] ?? '')))) ?></div>
-                        </td>
-                        <td class="small"><?= e((string) ($ep['location'] ?? '—')) ?></td>
-                        <td class="small text-nowrap">
-                            <?= (int) ($ep['play_count'] ?? 0) ?>×
-                            <div class="text-muted"><?= e((string) ($ep['last_seen_at'] ?? '')) ?></div>
-                        </td>
-                        <td class="text-end text-nowrap">
-                            <button type="button" class="btn btn-outline-success btn-sm btn-ep-kind" data-ep-id="<?= (int) $ep['id'] ?>" data-kind="home">Hogar</button>
-                            <button type="button" class="btn btn-outline-danger btn-sm btn-ep-kind" data-ep-id="<?= (int) $ep['id'] ?>" data-kind="away">Fuera</button>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
+            <p class="small text-muted mb-3">
+                Hogar = misma IP. El panel sugiere la IP más usada; tú confirmas.
+                Al marcar hogar/fuera se aplica a toda esa IP.
+            </p>
+            <?php
+            $homeIpAnalysis = is_array($homeIpAnalysis ?? null) ? $homeIpAnalysis : ['groups' => [], 'suggested' => null, 'has_confirmed_home' => false];
+            $ipGroups = is_array($homeIpAnalysis['groups'] ?? null) ? $homeIpAnalysis['groups'] : [];
+            $suggestedIp = is_array($homeIpAnalysis['suggested'] ?? null) ? $homeIpAnalysis['suggested'] : null;
+            $hasConfirmedHome = !empty($homeIpAnalysis['has_confirmed_home']);
+            $deviceClassLabel = static function (array $ep): string {
+                $class = \App\Services\MediaUserEndpointService::classifyDeviceClass([
+                    'product' => (string) ($ep['product'] ?? ''),
+                    'platform' => (string) ($ep['platform'] ?? ''),
+                    'player' => (string) ($ep['device_name'] ?? ''),
+                ]);
+
+                return match ($class) {
+                    'tv' => 'Tele / stick',
+                    'mobile' => 'Móvil',
+                    default => 'Otro',
+                };
+            };
+            ?>
+
+            <?php if ($suggestedIp !== null && !$hasConfirmedHome): ?>
+            <div class="alert alert-primary border-0 shadow-sm mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-semibold mb-1">
+                            <i class="bi bi-house-check me-1"></i>Sugerencia de hogar:
+                            <code><?= e((string) $suggestedIp['ip']) ?></code>
+                        </div>
+                        <div class="small mb-0">
+                            <?= e(implode(' · ', array_map('strval', $suggestedIp['reasons'] ?? []))) ?>
+                        </div>
+                        <div class="small text-muted mt-1"><?= e((string) ($suggestedIp['label'] ?? '')) ?></div>
+                    </div>
+                    <?php if (!empty($suggestedIp['primary_endpoint_id'])): ?>
+                    <button type="button"
+                            class="btn btn-success btn-sm btn-ep-kind"
+                            data-ep-id="<?= (int) $suggestedIp['primary_endpoint_id'] ?>"
+                            data-kind="home">
+                        <i class="bi bi-check2-circle me-1"></i>Confirmar como hogar
+                    </button>
                     <?php endif; ?>
-                    </tbody>
-                </table>
+                </div>
             </div>
+            <?php elseif ($hasConfirmedHome): ?>
+            <div class="alert alert-success border-0 shadow-sm mb-3 py-2">
+                <i class="bi bi-shield-check me-1"></i>
+                Hogar confirmado:
+                <?php foreach ($homeIpAnalysis['confirmed_home'] as $hip): ?>
+                <code class="me-1"><?= e((string) $hip) ?></code>
+                <?php endforeach; ?>
+                <span class="small text-muted">— el resto de IPs cuentan como fuera salvo que las marques.</span>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($ipGroups === []): ?>
+            <div class="text-muted small border rounded p-3 mb-4">Aún no hay reproducciones registradas</div>
+            <?php else: ?>
+            <div class="mu-ip-groups mb-4">
+                <?php foreach ($ipGroups as $gi => $group): ?>
+                <?php
+                    $gKind = (string) ($group['kind'] ?? 'unknown');
+                    $kl = $kindLabel($gKind === '' ? 'unknown' : $gKind);
+                    $isSug = $suggestedIp && (string) $suggestedIp['ip'] === (string) $group['ip'];
+                    $cardClass = 'mu-ip-group';
+                    if (!empty($group['is_confirmed_home'])) {
+                        $cardClass .= ' mu-ip-group--home';
+                    } elseif (!empty($group['is_confirmed_away'])) {
+                        $cardClass .= ' mu-ip-group--away';
+                    } elseif ($isSug) {
+                        $cardClass .= ' mu-ip-group--suggest';
+                    }
+                ?>
+                <div class="<?= e($cardClass) ?>">
+                    <div class="mu-ip-group__head">
+                        <div>
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <code class="fs-6"><?= e((string) $group['ip']) ?></code>
+                                <span class="badge bg-<?= e($kl[1]) ?>"><?= e($kl[0]) ?></span>
+                                <span class="badge <?= !empty($group['is_confirmed_home']) ? 'bg-success' : ($isSug ? 'bg-primary' : 'bg-light text-dark border') ?>">
+                                    <?= e((string) ($group['label'] ?? 'Por revisar')) ?>
+                                </span>
+                            </div>
+                            <div class="small text-muted">
+                                <?= (int) ($group['play_count'] ?? 0) ?>× ·
+                                <?= (int) ($group['device_count'] ?? 0) ?> disp.
+                                <?php if (!empty($group['has_lan'])): ?> · LAN<?php endif; ?>
+                                <?php if (!empty($group['last_seen_at'])): ?> · último <?= e((string) $group['last_seen_at']) ?><?php endif; ?>
+                            </div>
+                            <?php if (!empty($group['reasons'])): ?>
+                            <div class="small mt-1"><?= e(implode(' · ', array_map('strval', $group['reasons']))) ?></div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <?php $primaryId = (int) ($group['primary_endpoint_id'] ?? 0); ?>
+                            <?php if ($primaryId > 0): ?>
+                            <button type="button" class="btn btn-outline-success btn-sm btn-ep-kind" data-ep-id="<?= $primaryId ?>" data-kind="home">Hogar</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm btn-ep-kind" data-ep-id="<?= $primaryId ?>" data-kind="away">Fuera</button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="mu-ip-group__devices">
+                        <?php foreach ($group['endpoints'] as $ep): ?>
+                        <div class="mu-ip-device">
+                            <div class="small">
+                                <span class="fw-semibold"><?= e((string) (($ep['device_name'] ?? '') !== '' ? $ep['device_name'] : '—')) ?></span>
+                                <span class="badge bg-light text-dark border ms-1"><?= e($deviceClassLabel($ep)) ?></span>
+                                <div class="text-muted"><?= e(trim((string) (($ep['product'] ?? '') . ' ' . ($ep['platform'] ?? '')))) ?></div>
+                            </div>
+                            <div class="small text-nowrap text-muted"><?= (int) ($ep['play_count'] ?? 0) ?>×</div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
 
             <div id="playback-history-card">
                 <div class="section-title d-flex justify-content-between align-items-center">

@@ -152,6 +152,253 @@ final class MediaUserEndpointService
     }
 
     /**
+     * Agrupa endpoints por IP y puntúa cuáles parecen el hogar real.
+     * No marca nada: solo ayuda a decidir en el panel.
+     *
+     * @param list<array<string, mixed>>|null $endpoints
+     * @return array{
+     *   groups: list<array<string, mixed>>,
+     *   suggested: ?array<string, mixed>,
+     *   confirmed_home: list<string>,
+     *   has_confirmed_home: bool
+     * }
+     */
+    public function analyzeHomeIps(int $mediaUserId, ?array $endpoints = null): array
+    {
+        $endpoints ??= $this->listForUser($mediaUserId);
+        $groups = self::rankHomeIpGroups($endpoints);
+        $confirmedHome = [];
+        foreach ($groups as $group) {
+            if (!empty($group['is_confirmed_home'])) {
+                $confirmedHome[] = (string) $group['ip'];
+            }
+        }
+
+        $suggested = null;
+        foreach ($groups as $group) {
+            if (!empty($group['is_confirmed_home']) || !empty($group['is_confirmed_away'])) {
+                continue;
+            }
+            if ((int) ($group['score'] ?? 0) <= 0) {
+                continue;
+            }
+            $suggested = $group;
+            break;
+        }
+
+        return [
+            'groups' => $groups,
+            'suggested' => $suggested,
+            'confirmed_home' => $confirmedHome,
+            'has_confirmed_home' => $confirmedHome !== [],
+        ];
+    }
+
+    /**
+     * Puntuación de IPs candidatas a hogar (pura, testeable).
+     *
+     * @param list<array<string, mixed>> $endpoints
+     * @return list<array{
+     *   ip: string,
+     *   play_count: int,
+     *   device_count: int,
+     *   tv_count: int,
+     *   mobile_count: int,
+     *   has_lan: bool,
+     *   last_seen_at: ?string,
+     *   kind: string,
+     *   is_confirmed_home: bool,
+     *   is_confirmed_away: bool,
+     *   score: int,
+     *   reasons: list<string>,
+     *   label: string,
+     *   endpoints: list<array<string, mixed>>
+     * }>
+     */
+    public static function rankHomeIpGroups(array $endpoints): array
+    {
+        /** @var array<string, array<string, mixed>> $byIp */
+        $byIp = [];
+
+        foreach ($endpoints as $ep) {
+            $ip = SessionClientIp::normalize((string) ($ep['ip'] ?? ''));
+            if ($ip === '' || $ip === 'unknown') {
+                $ip = SessionClientIp::normalize((string) ($ep['lan_ip'] ?? ''));
+            }
+            if ($ip === '' || $ip === 'unknown') {
+                continue;
+            }
+
+            if (!isset($byIp[$ip])) {
+                $byIp[$ip] = [
+                    'ip' => $ip,
+                    'play_count' => 0,
+                    'device_count' => 0,
+                    'tv_count' => 0,
+                    'mobile_count' => 0,
+                    'has_lan' => false,
+                    'last_seen_at' => null,
+                    'locked_home' => 0,
+                    'locked_away' => 0,
+                    'any_home' => 0,
+                    'any_away' => 0,
+                    'endpoints' => [],
+                ];
+            }
+
+            $deviceClass = self::classifyDeviceClass([
+                'product' => (string) ($ep['product'] ?? ''),
+                'platform' => (string) ($ep['platform'] ?? ''),
+                'player' => (string) ($ep['device_name'] ?? ''),
+            ]);
+            $plays = max(0, (int) ($ep['play_count'] ?? 0));
+            $byIp[$ip]['play_count'] += $plays;
+            $byIp[$ip]['device_count']++;
+            if ($deviceClass === 'tv') {
+                $byIp[$ip]['tv_count']++;
+            }
+            if ($deviceClass === 'mobile') {
+                $byIp[$ip]['mobile_count']++;
+            }
+            if (strtoupper((string) ($ep['location'] ?? '')) === 'LAN'
+                || SessionClientIp::isPrivate((string) ($ep['lan_ip'] ?? ''))
+                || SessionClientIp::isPrivate($ip)
+            ) {
+                $byIp[$ip]['has_lan'] = true;
+            }
+
+            $seen = (string) ($ep['last_seen_at'] ?? '');
+            if ($seen !== '' && ($byIp[$ip]['last_seen_at'] === null || $seen > (string) $byIp[$ip]['last_seen_at'])) {
+                $byIp[$ip]['last_seen_at'] = $seen;
+            }
+
+            $kind = self::normalizeKind((string) ($ep['kind'] ?? self::KIND_UNKNOWN));
+            $locked = (int) ($ep['kind_locked'] ?? 0) === 1;
+            if ($kind === self::KIND_HOME) {
+                $byIp[$ip]['any_home']++;
+                if ($locked) {
+                    $byIp[$ip]['locked_home']++;
+                }
+            }
+            if ($kind === self::KIND_AWAY) {
+                $byIp[$ip]['any_away']++;
+                if ($locked) {
+                    $byIp[$ip]['locked_away']++;
+                }
+            }
+
+            $byIp[$ip]['endpoints'][] = $ep;
+        }
+
+        $groups = [];
+        foreach ($byIp as $group) {
+            $score = 0;
+            $reasons = [];
+
+            $plays = (int) $group['play_count'];
+            if ($plays >= 50) {
+                $score += 50;
+                $reasons[] = $plays . ' reproducciones (uso habitual)';
+            } elseif ($plays >= 15) {
+                $score += 30;
+                $reasons[] = $plays . ' reproducciones';
+            } elseif ($plays >= 5) {
+                $score += 15;
+                $reasons[] = $plays . ' reproducciones';
+            } elseif ($plays > 0) {
+                $score += 5;
+                $reasons[] = $plays . ' reproducción(es) — poco uso';
+            }
+
+            $devices = (int) $group['device_count'];
+            if ($devices >= 3) {
+                $score += 25;
+                $reasons[] = $devices . ' dispositivos en la misma IP';
+            } elseif ($devices === 2) {
+                $score += 15;
+                $reasons[] = '2 dispositivos en la misma IP';
+            }
+
+            if ((int) $group['tv_count'] > 0 && (int) $group['mobile_count'] > 0) {
+                $score += 20;
+                $reasons[] = 'Tele/Fire Stick + móvil en la misma IP';
+            } elseif ((int) $group['tv_count'] >= 2) {
+                $score += 12;
+                $reasons[] = 'Varias teles/Fire Stick en la misma IP';
+            }
+
+            if (!empty($group['has_lan'])) {
+                $score += 35;
+                $reasons[] = 'Red local (LAN) del servidor';
+            }
+
+            $isConfirmedHome = (int) $group['locked_home'] > 0;
+            $isConfirmedAway = (int) $group['locked_away'] > 0 && (int) $group['locked_home'] === 0;
+
+            if ($isConfirmedHome) {
+                $label = 'Hogar confirmado';
+            } elseif ($isConfirmedAway) {
+                $label = 'Fuera confirmado';
+                $score = min($score, 5);
+            } elseif ($score >= 55) {
+                $label = 'Muy probable hogar';
+            } elseif ($score >= 30) {
+                $label = 'Posible hogar';
+            } elseif ($plays <= 3 && $devices <= 1) {
+                $label = 'Poco uso — probable fuera';
+                $score = max(0, $score - 10);
+            } else {
+                $label = 'Por revisar';
+            }
+
+            $kind = self::KIND_UNKNOWN;
+            if ($isConfirmedHome) {
+                $kind = self::KIND_HOME;
+            } elseif ($isConfirmedAway) {
+                $kind = self::KIND_AWAY;
+            } elseif ((int) $group['any_home'] > (int) $group['any_away']) {
+                $kind = self::KIND_HOME;
+            } elseif ((int) $group['any_away'] > 0) {
+                $kind = self::KIND_AWAY;
+            }
+
+            $groups[] = [
+                'ip' => (string) $group['ip'],
+                'play_count' => $plays,
+                'device_count' => $devices,
+                'tv_count' => (int) $group['tv_count'],
+                'mobile_count' => (int) $group['mobile_count'],
+                'has_lan' => !empty($group['has_lan']),
+                'last_seen_at' => $group['last_seen_at'],
+                'kind' => $kind,
+                'is_confirmed_home' => $isConfirmedHome,
+                'is_confirmed_away' => $isConfirmedAway,
+                'score' => $score,
+                'reasons' => $reasons,
+                'label' => $label,
+                'endpoints' => $group['endpoints'],
+                'primary_endpoint_id' => (int) (($group['endpoints'][0]['id'] ?? 0)),
+            ];
+        }
+
+        usort($groups, static function (array $a, array $b): int {
+            if (!empty($a['is_confirmed_home']) !== !empty($b['is_confirmed_home'])) {
+                return !empty($a['is_confirmed_home']) ? -1 : 1;
+            }
+            if ((int) $a['score'] !== (int) $b['score']) {
+                return (int) $b['score'] <=> (int) $a['score'];
+            }
+            if ((int) $a['play_count'] !== (int) $b['play_count']) {
+                return (int) $b['play_count'] <=> (int) $a['play_count'];
+            }
+
+            return strcmp((string) $b['last_seen_at'], (string) $a['last_seen_at']);
+        });
+
+        return $groups;
+    }
+
+    /**
      * Marca casa/fuera desde una sesión en directo (upsert endpoint + bloqueo manual).
      *
      * @param array<string, mixed> $session
