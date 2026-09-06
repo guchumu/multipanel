@@ -331,7 +331,7 @@ final class SessionStreamInfo
 
         return [
             'quality' => $quality !== '' ? $quality : '—',
-            'stream' => $stream,
+            'stream' => $stream !== '' ? $stream : '—',
             'container' => $container !== '' ? $container : '—',
             'video' => $video,
             'audio' => $audio,
@@ -358,6 +358,96 @@ final class SessionStreamInfo
                 'subtitle' => $subtitle !== '' ? $subtitle : 'None',
             ],
         ];
+    }
+
+    /**
+     * Explica en español por qué el cliente está forzando Transcode de vídeo.
+     * Inferido de source/output (Plex/Jellyfin no siempre dan un "reason" explícito).
+     *
+     * @param array<string, mixed> $streamInfo
+     * @param array<string, mixed> $session
+     */
+    public static function explainVideoTranscodeReason(array $streamInfo, array $session = []): string
+    {
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $subtitle = trim((string) ($output['subtitle'] ?? $streamInfo['subtitle'] ?? ''));
+        $container = trim((string) ($output['container'] ?? $streamInfo['container'] ?? ''));
+        $quality = trim((string) ($streamInfo['quality'] ?? ''));
+        $throttled = !empty($streamInfo['throttled']);
+        $player = trim((string) ($session['player'] ?? ''));
+        $product = trim((string) ($session['product'] ?? ''));
+        $platform = trim((string) ($session['platform'] ?? ''));
+
+        $srcCodec = self::dashless((string) ($source['video_codec'] ?? ''));
+        $outCodec = self::dashless((string) ($output['video_codec'] ?? ''));
+        $srcRes = self::dashless((string) ($source['resolution'] ?? ''));
+        $outRes = self::dashless((string) ($output['resolution'] ?? ''));
+        $srcAudio = self::dashless((string) ($source['audio_codec'] ?? ''));
+        $outAudio = self::dashless((string) ($output['audio_codec'] ?? ''));
+
+        $reasons = [];
+
+        $subLower = strtolower($subtitle);
+        if ($subLower !== '' && (str_starts_with($subLower, 'burn') || str_contains($subLower, 'burn'))) {
+            $reasons[] = 'quema subtítulos (obliga a Transcode de vídeo)';
+        }
+
+        if ($srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) !== 0) {
+            $reasons[] = "baja resolución ({$srcRes} → {$outRes}) por calidad/límite del cliente";
+        }
+
+        if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) !== 0) {
+            $reasons[] = "convierte codec ({$srcCodec} → {$outCodec}): el reproductor no lo hace Direct Play";
+        }
+
+        if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0
+            && $srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) === 0
+            && $reasons === []) {
+            $reasons[] = "reencodea {$srcCodec} {$srcRes} (el cliente no acepta el stream original)";
+        }
+
+        if (stripos($container, 'converting') !== false) {
+            $reasons[] = 'cambia contenedor (' . preg_replace('/^converting\s*/i', '', $container) . ')';
+        }
+
+        if ($srcAudio !== '' && $outAudio !== '' && strcasecmp($srcAudio, $outAudio) !== 0) {
+            $reasons[] = "también audio ({$srcAudio} → {$outAudio})";
+        }
+
+        if ($throttled) {
+            $reasons[] = 'throttled (el servidor va justo de CPU)';
+        }
+
+        if ($quality !== '' && $quality !== '—') {
+            $reasons[] = 'calidad pedida: ' . $quality;
+        }
+
+        $clientBits = array_values(array_filter([$product, $player, $platform], static fn (string $v): bool => $v !== ''));
+        $clientBits = array_values(array_unique($clientBits));
+        if ($clientBits !== []) {
+            $reasons[] = 'cliente: ' . implode(' · ', array_slice($clientBits, 0, 2));
+        }
+
+        if ($reasons === []) {
+            return 'El cliente fuerza Transcode de vídeo (codec, resolución o subtítulos no compatibles en Direct Play).';
+        }
+
+        // Primera causa como frase principal; el resto como detalle breve.
+        $main = array_shift($reasons);
+        $main = mb_strtoupper(mb_substr($main, 0, 1)) . mb_substr($main, 1);
+        if ($reasons === []) {
+            return $main . '.';
+        }
+
+        return $main . '. ' . implode('; ', $reasons) . '.';
+    }
+
+    private static function dashless(string $value): string
+    {
+        $value = trim($value);
+
+        return ($value === '' || $value === '—') ? '' : $value;
     }
 
     /**

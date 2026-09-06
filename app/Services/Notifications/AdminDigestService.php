@@ -368,16 +368,16 @@ final class AdminDigestService
 
         $autoKillLines = [
             AdminMessageFormat::label(
-                'Estado auto-corte',
+                'Estado',
                 !empty($p['auto_kill_video_transcodes']) ? 'ON' : 'OFF'
             ),
         ];
         $toggleUrls = is_array($p['auto_kill_toggle_urls'] ?? null) ? $p['auto_kill_toggle_urls'] : [];
         if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
-            $autoKillLines[] = 'Activar: ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
+            $autoKillLines[] = 'ON ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
         }
         if (!empty($toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
-            $autoKillLines[] = 'Apagar: ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
+            $autoKillLines[] = 'OFF ' . $toggleUrls[VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
         }
 
         $text = AdminMessageFormat::compose([

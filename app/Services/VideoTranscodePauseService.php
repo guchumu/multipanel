@@ -117,16 +117,24 @@ final class VideoTranscodePauseService
             return [];
         }
 
+        $shortener = new TranscodeActionLinkService();
         $urls = [];
         foreach (self::DURATIONS as $duration) {
-            $token = $this->createToken([
+            $payload = [
                 'tenant_id' => $tenantId,
                 'media_user_id' => (int) ($session['media_user_id'] ?? 0),
                 'server_id' => (int) ($session['server_id'] ?? 0),
                 'user_id' => trim((string) ($session['user_id'] ?? '')),
                 'username' => trim((string) ($session['user'] ?? '')),
                 'duration' => $duration,
-            ]);
+            ];
+            $short = $shortener->createPauseUrl($payload);
+            if ($short !== null) {
+                $urls[$duration] = $short;
+                continue;
+            }
+            // Fallback: token largo firmado (si falla el acortador).
+            $token = $this->createToken($payload);
             if ($token === null) {
                 continue;
             }
@@ -256,6 +264,18 @@ final class VideoTranscodePauseService
             self::DURATION_5H => 'Saltar 5h',
             self::DURATION_EOD => 'Saltar hoy',
             default => 'Saltar',
+        };
+    }
+
+    /** Etiqueta corta para el cuerpo del aviso (ntfy/WhatsApp). */
+    public function shortLinkLabel(string $duration): string
+    {
+        return match ($duration) {
+            self::DURATION_1H => '1h',
+            self::DURATION_3H => '3h',
+            self::DURATION_5H => '5h',
+            self::DURATION_EOD => 'hoy',
+            default => $duration,
         };
     }
 

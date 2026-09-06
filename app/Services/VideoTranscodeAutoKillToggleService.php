@@ -33,12 +33,19 @@ final class VideoTranscodeAutoKillToggleService
             return [];
         }
 
+        $shortener = new TranscodeActionLinkService();
         $urls = [];
         foreach (self::ACTIONS as $action) {
-            $token = $this->createToken([
+            $payload = [
                 'tenant_id' => $tenantId,
                 'action' => $action,
-            ]);
+            ];
+            $short = $shortener->createToggleUrl($payload);
+            if ($short !== null) {
+                $urls[$action] = $short;
+                continue;
+            }
+            $token = $this->createToken($payload);
             if ($token === null) {
                 continue;
             }

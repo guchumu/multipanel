@@ -432,7 +432,7 @@ final class AdminCriticalAlertService
         $pauseUrls = $session !== [] ? $pause->buildPauseUrls($tenantId, $session) : [];
         $pauseLines = [];
         foreach ($pauseUrls as $duration => $url) {
-            $pauseLines[] = $pause->durationLabel($duration) . ': ' . $url;
+            $pauseLines[] = $pause->shortLinkLabel($duration) . ' ' . $url;
         }
 
         $toggle = new \App\Services\VideoTranscodeAutoKillToggleService();
@@ -440,10 +440,13 @@ final class AdminCriticalAlertService
         $autoKillOn = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
         $autoKillState = $toggle->stateLabel($autoKillOn);
 
+        $motivo = \App\Services\Media\SessionStreamInfo::explainVideoTranscodeReason($streamInfo, $session);
+
         // Cabecera: contexto mínimo; el bloque Saltar va justo después del usuario.
         $headerLines = [
             AdminMessageFormat::label('Momento', $when),
             AdminMessageFormat::label('Usuario', $username),
+            AdminMessageFormat::label('Motivo Transcode', $motivo),
         ];
 
         $detailLines = [
@@ -528,13 +531,13 @@ final class AdminCriticalAlertService
         }
 
         $toggleLines = [
-            AdminMessageFormat::label('Estado auto-corte', $autoKillState),
+            AdminMessageFormat::label('Estado', $autoKillState),
         ];
         if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
-            $toggleLines[] = 'Apagar: ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
+            $toggleLines[] = 'OFF ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
         }
         if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
-            $toggleLines[] = 'Activar: ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
+            $toggleLines[] = 'ON ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
         }
 
         $sections = [
@@ -545,16 +548,16 @@ final class AdminCriticalAlertService
             $sections[] = AdminMessageFormat::block(
                 '⏭ Saltar este corte',
                 array_merge(
-                    ['Pulsa YA si quieres permitirlo (pausa auto-corte Transcode):'],
+                    ['Pulsa YA si quieres permitirlo:'],
                     $pauseLines
                 )
             );
         }
         $sections[] = implode("\n", $detailLines);
         $sections[] = AdminMessageFormat::block('📁 Archivo original', $originalLines);
-        $sections[] = AdminMessageFormat::block('📡 Stream en curso (qué está haciendo)', $streamDoingLines);
+        $sections[] = AdminMessageFormat::block('📡 Stream en curso', $streamDoingLines);
         $sections[] = AdminMessageFormat::block('Cliente', $clientLines);
-        $sections[] = AdminMessageFormat::block('Auto-corte global (tenant)', $toggleLines);
+        $sections[] = AdminMessageFormat::block('Auto-corte', $toggleLines);
 
         // ntfy máx. 3 Actions: priorizar Saltar (pausa); Activar solo si sobra hueco.
         $ntfyActions = [];
