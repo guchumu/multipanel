@@ -72,11 +72,11 @@ ob_start();
 
                     <div class="mb-3">
                         <label class="form-label" for="kill_message">Mensaje genérico al cortar (opcional)</label>
-                        <textarea class="form-control" id="kill_message" name="kill_message" rows="2"
+                        <textarea class="form-control" id="kill_message" name="kill_message" rows="3"
                                   maxlength="500"
-                                  placeholder="Vacío = mensajes distintos para «otra casa» y «demasiadas teles»"><?= e($settings['kill_message'] ?? '') ?></textarea>
+                                  placeholder="Vacío = mensajes con instrucciones para casa / fuera / genérico"><?= e($settings['kill_message'] ?? '') ?></textarea>
                         <div class="form-text">
-                            Fuera: «esta cuenta solo se puede usar en casa». Casa: «demasiadas reproducciones a la vez».
+                            Si lo dejas vacío: mensajes distintos con pasos a seguir (casa, fuera y genérico) + «contacta con soporte».
                         </div>
                     </div>
 

@@ -90,8 +90,11 @@ ob_start();
             <div class="bg-light rounded p-2 small">
                 <strong>Frase para el cliente:</strong>
                 «No es que la película esté mal: la app pide una calidad más baja y el servidor convierte el vídeo.
-                Sube la calidad a Original y no debería cortarse.»
+                Sube la calidad a Original y no debería cortarse. Si tienes problemas, contacta con soporte.»
             </div>
+            <p class="small text-muted mt-2 mb-0">
+                El mensaje en el reproductor ya incluye estos pasos al cortar por Transcode salvable.
+            </p>
         </div>
     </div>
 
@@ -220,7 +223,7 @@ ob_start();
             <h5 class="card-title">7. Textos WhatsApp / chat (copiar)</h5>
             <div class="mb-3">
                 <div class="small text-muted mb-1">Calidad / Transcode</div>
-                <pre class="bg-light rounded p-3 small mb-0 help-cs-copy">Hola. El corte es porque la app está pidiendo una calidad más baja y el servidor tiene que convertir el vídeo. En Plex: Ajustes → Calidad / Reproducción → pon «Original» o la máxima (en casa y fuera). Cierra Plex y vuelve a abrir. Si sigue igual, mándanos captura de Ajustes → Calidad.</pre>
+                <pre class="bg-light rounded p-3 small mb-0 help-cs-copy">Hola. El corte es porque la app está pidiendo una calidad más baja y el servidor tiene que convertir el vídeo. En Plex: Ajustes → Calidad / Reproducción → pon «Original» o la máxima (en casa y fuera); desactiva Convertir automáticamente; activa Direct Play. Cierra Plex y vuelve a abrir. Si tienes problemas, contacta con soporte.</pre>
             </div>
             <div class="mb-3">
                 <div class="small text-muted mb-1">Límite en casa</div>

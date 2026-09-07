@@ -264,10 +264,7 @@ final class StreamingActivityService
     {
         Cache::forget('activity_snapshot_' . $tenantId);
         $sessions = $this->getSnapshot($tenantId, $serverId)['sessions'] ?? [];
-        $message = trim((string) $message);
-        if ($message === '') {
-            $message = (new PlaybackStopMessageService())->defaultBody($tenantId);
-        }
+        $override = trim((string) $message);
 
         $matched = 0;
         $killed = 0;
@@ -294,12 +291,18 @@ final class StreamingActivityService
                 $failed++;
                 continue;
             }
+            $sessionMessage = $override !== ''
+                ? $override
+                : ClientStopGuidanceService::forVideoTranscodeSession(
+                    is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [],
+                    $session
+                );
             if ($this->terminateVideoTranscodeSession(
                 $tenantId,
                 $server,
                 $session,
                 $sessionId,
-                $message,
+                $sessionMessage,
                 true,
                 $this->playbackCounts($sessions, $session)
             )) {
@@ -331,7 +334,6 @@ final class StreamingActivityService
             $sessions = $this->getSnapshot($tenantId)['sessions'] ?? [];
         }
 
-        $message = (new PlaybackStopMessageService())->defaultBody($tenantId);
         $pause = new VideoTranscodePauseService();
         $killed = 0;
         $failed = 0;
@@ -374,12 +376,17 @@ final class StreamingActivityService
             // Marcar ya: evita notify+kill en cada tick del cron para la misma sesión.
             Cache::set($debounceKey, 1, 120);
 
+            $sessionMessage = ClientStopGuidanceService::forVideoTranscodeSession(
+                is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [],
+                $session
+            );
+
             $ok = $this->terminateVideoTranscodeSession(
                 $tenantId,
                 $server,
                 $session,
                 $sessionId,
-                $message,
+                $sessionMessage,
                 true,
                 $this->playbackCounts($sessions, $session),
                 true

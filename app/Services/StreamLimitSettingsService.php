@@ -27,12 +27,11 @@ final class StreamLimitSettingsService
 
     public const COUNT_MODE_HOUSEHOLD = 'household';
 
-    public const DEFAULT_KILL_MESSAGE = 'Se ha superado el límite de reproducciones simultáneas. Se ha cortado una emisión adicional.';
+    public const DEFAULT_KILL_MESSAGE = ClientStopGuidanceService::MSG_GENERIC_LIMIT;
 
-    public const DEFAULT_KILL_HOME = 'Has superado las reproducciones a la vez en casa. Se ha cortado una emisión extra.';
+    public const DEFAULT_KILL_HOME = ClientStopGuidanceService::MSG_HOME_LIMIT;
 
-    public const DEFAULT_KILL_AWAY = 'Esta cuenta solo se puede usar en casa. Se ha cortado la reproducción fuera del hogar.';
-
+    public const DEFAULT_KILL_AWAY = ClientStopGuidanceService::MSG_AWAY_LIMIT;
     public function isEnforcementEnabled(int $tenantId): bool
     {
         $value = $this->get($tenantId, 'enforcement_enabled');
@@ -108,21 +107,7 @@ final class StreamLimitSettingsService
             return trim($custom);
         }
 
-        try {
-            $presets = (new PlaybackStopMessageService())->listForTenant($tenantId);
-            foreach ($presets as $preset) {
-                if ((int) ($preset['is_default'] ?? 0) === 1 && trim((string) $preset['body']) !== '') {
-                    return trim((string) $preset['body']);
-                }
-            }
-            if ($presets !== [] && trim((string) ($presets[0]['body'] ?? '')) !== '') {
-                return trim((string) $presets[0]['body']);
-            }
-        } catch (\Throwable) {
-            // Fall through to default.
-        }
-
-        return self::DEFAULT_KILL_MESSAGE;
+        return ClientStopGuidanceService::forGenericStreamLimit();
     }
 
     public function getKillMessageHome(int $tenantId): string
@@ -132,7 +117,7 @@ final class StreamLimitSettingsService
             return trim($custom);
         }
 
-        return self::DEFAULT_KILL_HOME;
+        return ClientStopGuidanceService::forHomeLimit();
     }
 
     public function getKillMessageAway(int $tenantId): string
@@ -142,7 +127,7 @@ final class StreamLimitSettingsService
             return trim($custom);
         }
 
-        return self::DEFAULT_KILL_AWAY;
+        return ClientStopGuidanceService::forAwayLimit();
     }
 
     public function setKillMessage(int $tenantId, ?string $message): void

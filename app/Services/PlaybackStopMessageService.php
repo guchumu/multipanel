@@ -14,7 +14,10 @@ final class PlaybackStopMessageService
 {
     public const DEFAULT_TITLE = 'Configuración mal configurada';
 
-    public const DEFAULT_BODY = 'Ajustes de configuración mal configurados. Para evitar cortes revise la configuración obligatoria o contacte con soporte.';
+    /** @deprecated Usar ClientStopGuidanceService::forSalvableTranscode(); se mantiene por compatibilidad de seeds. */
+    public const DEFAULT_BODY_LEGACY = 'Ajustes de configuración mal configurados. Para evitar cortes revise la configuración obligatoria o contacte con soporte.';
+
+    public const DEFAULT_BODY = ClientStopGuidanceService::MSG_SALVABLE_TRANSCODE;
 
     /**
      * Prefer Updater/migrations; fall back to CREATE IF NOT EXISTS when the table is still missing.
@@ -264,6 +267,7 @@ final class PlaybackStopMessageService
     /**
      * Asegura el mensaje canónico «Configuración mal configurada» y que haya un predeterminado.
      * Si se borró de la BD, lo vuelve a crear y lo marca como predeterminado.
+     * Si sigue el texto legacy corto, lo actualiza al mensaje con instrucciones.
      */
     public function ensureDefaultSeed(int $tenantId): void
     {
@@ -271,10 +275,10 @@ final class PlaybackStopMessageService
 
         $db = Database::getInstance();
         $canonical = $db->fetchOne(
-            'SELECT `id`, `is_default` FROM `playback_stop_messages`
-             WHERE `tenant_id` = ? AND (`title` = ? OR `body` = ?)
+            'SELECT `id`, `is_default`, `body` FROM `playback_stop_messages`
+             WHERE `tenant_id` = ? AND (`title` = ? OR `body` = ? OR `body` = ?)
              ORDER BY `id` ASC LIMIT 1',
-            [$tenantId, self::DEFAULT_TITLE, self::DEFAULT_BODY]
+            [$tenantId, self::DEFAULT_TITLE, self::DEFAULT_BODY, self::DEFAULT_BODY_LEGACY]
         );
 
         if ($canonical === null) {
@@ -291,6 +295,14 @@ final class PlaybackStopMessageService
             ]);
 
             return;
+        }
+
+        $currentBody = trim((string) ($canonical['body'] ?? ''));
+        if ($currentBody === self::DEFAULT_BODY_LEGACY || $currentBody === '') {
+            $db->query(
+                'UPDATE `playback_stop_messages` SET `body` = ?, `title` = ? WHERE `id` = ? AND `tenant_id` = ?',
+                [self::DEFAULT_BODY, self::DEFAULT_TITLE, (int) $canonical['id'], $tenantId]
+            );
         }
 
         $hasDefault = $db->fetchOne(
