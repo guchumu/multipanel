@@ -56,6 +56,7 @@ $settingsActive = $startsWith('/settings') || $startsWith('/import') || $startsW
     <li class="nav-item"><a class="<?= $linkClass('/customers') ?>" href="/customers" title="<?= e(__('customers')) ?>"><i class="bi bi-person-vcard me-2"></i><span class="sidebar-label"><?= __('customers') ?></span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/billing') ?>" href="/billing" title="<?= e(__('billing')) ?>"><i class="bi bi-credit-card me-2"></i><span class="sidebar-label"><?= __('billing') ?></span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/tickets') ?>" href="/tickets" title="<?= e(__('support')) ?>"><i class="bi bi-headset me-2"></i><span class="sidebar-label"><?= __('support') ?></span></a></li>
+    <li class="nav-item"><a class="<?= $linkClass('/help/atencion-cliente') ?>" href="/help/atencion-cliente" title="Guía atención al cliente"><i class="bi bi-journal-bookmark me-2"></i><span class="sidebar-label">Guía atención cliente</span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/invoices') ?>" href="/invoices" title="<?= e(__('invoices')) ?>"><i class="bi bi-receipt me-2"></i><span class="sidebar-label"><?= __('invoices') ?></span></a></li>
     <li class="nav-item mt-3"><small class="text-muted px-3 sidebar-label"><?= __('security_section') ?></small></li>
     <li class="nav-item"><a class="<?= $linkClass('/roles') ?>" href="/roles" title="<?= e(__('roles')) ?>"><i class="bi bi-shield-check me-2"></i><span class="sidebar-label"><?= __('roles') ?></span></a></li>

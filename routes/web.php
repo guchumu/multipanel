@@ -13,6 +13,7 @@ use App\Controllers\SettingsController;
 use App\Controllers\BillingController;
 use App\Controllers\StatsController;
 use App\Controllers\TicketController;
+use App\Controllers\HelpController;
 use App\Controllers\IntegrationController;
 use App\Controllers\UpdaterController;
 use App\Controllers\PluginController;
@@ -240,6 +241,9 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/tickets/{uuid}', [TicketController::class, 'show'], 'tickets.show');
     $router->post('/tickets/{uuid}/reply', [TicketController::class, 'reply'], 'tickets.reply', [CsrfMiddleware::class]);
     $router->post('/tickets/{uuid}/close', [TicketController::class, 'close'], 'tickets.close', [CsrfMiddleware::class]);
+
+    // Guías internas
+    $router->get('/help/atencion-cliente', [HelpController::class, 'atencionCliente'], 'help.atencion_cliente');
 
     // Integrations
     $router->get('/integrations', [IntegrationController::class, 'index'], 'integrations.index');
