@@ -46,7 +46,7 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~30 s) y corta las sesiones cuyo vídeo dice Transcode. Desde ntfy puedes saltar el auto-corte 1h / 3h / 5h / hasta medianoche (no afecta a límites de streams).">
+        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~30 s) y corta solo Transcodes de vídeo «salvables» (bajada de calidad / mal ajuste). Deja pasar Burn de subtítulos y cambio de codec cuando el dispositivo no acepta el fichero. Desde ntfy puedes saltar 1h / 3h / 5h / hasta medianoche.">
             <input class="form-check-input" type="checkbox" role="switch"
                    id="auto-kill-video-transcodes"
                    <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>
@@ -58,7 +58,7 @@ ob_start();
         <button type="button"
                 class="btn btn-warning btn-sm"
                 id="btn-kill-video-transcodes"
-                title="Avisa al admin, espera ~30 s y corta solo transcodes de vídeo con el mensaje predeterminado.">
+                title="Avisa, espera ~30 s y corta solo Transcodes salvables (calidad/ajustes). No toca Burn ni incompatibilidad de codec.">
             <i class="bi bi-cpu me-1"></i>Cortar ahora
         </button>
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
@@ -353,9 +353,9 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
     if (!btn) return;
     btn.addEventListener('click', async () => {
         if (!confirm(
-            '¿Cortar todos los TRANSCODES DE VÍDEO' + (viewMode === 'server' ? ' de este servidor' : '') + '?\n\n' +
-            '• Solo cuando el vídeo dice Transcode\n' +
-            '• No toca Direct Play ni solo-audio\n' +
+            '¿Cortar Transcodes de vídeo SALVABLES' + (viewMode === 'server' ? ' de este servidor' : '') + '?\n\n' +
+            '• Sí: bajada de calidad / mal ajuste (p. ej. 1080p→720p mismo codec)\n' +
+            '• No: Burn de subtítulos ni cambio de codec (dispositivo no acepta el fichero)\n' +
             '• Se envía el mensaje al detener predeterminado'
         )) {
             return;

@@ -404,7 +404,7 @@ final class SessionStreamInfo
         if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0
             && $srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) === 0
             && $reasons === []) {
-            $reasons[] = "reencodea {$srcCodec} {$srcRes} (el cliente no acepta el stream original)";
+            $reasons[] = "reencodea {$srcCodec} {$srcRes} (calidad/ajustes del cliente; el fichero ya era compatible)";
         }
 
         if (stripos($container, 'converting') !== false) {
@@ -443,11 +443,150 @@ final class SessionStreamInfo
         return $main . '. ' . implode('; ', $reasons) . '.';
     }
 
+    /**
+     * ¿Hay subtítulos quemados (Burn)? Eso casi siempre obliga a Transcode de vídeo.
+     *
+     * @param array<string, mixed> $streamInfo
+     */
+    public static function hasBurnedSubtitles(array $streamInfo): bool
+    {
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $subtitle = strtolower(trim((string) ($output['subtitle'] ?? $streamInfo['subtitle'] ?? '')));
+        if ($subtitle === '' || $subtitle === 'none' || $subtitle === '—') {
+            return false;
+        }
+
+        return str_starts_with($subtitle, 'burn') || str_contains($subtitle, 'burn');
+    }
+
+    /**
+     * Transcode de vídeo «salvable»: calidad/ajustes mal puestos (p. ej. 1080p→720p mismo codec).
+     * No salvable (dejar pasar): el dispositivo no acepta el fichero (cambio de codec) o Burn de subtítulos.
+     *
+     * @param array<string, mixed> $streamInfo
+     * @param array<string, mixed> $session
+     */
+    public static function isSalvableVideoTranscode(array $streamInfo, array $session = []): bool
+    {
+        return self::videoTranscodeAction($streamInfo, $session) === 'kill';
+    }
+
+    /**
+     * Política de auto-corte / aviso ntfy para un Transcode de vídeo.
+     *
+     * @param array<string, mixed> $streamInfo
+     * @param array<string, mixed> $session
+     * @return 'kill'|'allow'
+     */
+    public static function videoTranscodeAction(array $streamInfo, array $session = []): string
+    {
+        // Subtítulos quemados: no hay otra forma → dejar pasar.
+        if (self::hasBurnedSubtitles($streamInfo)) {
+            return 'allow';
+        }
+
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+
+        $srcCodec = self::normalizeCodecKey((string) ($source['video_codec'] ?? ''));
+        $outCodec = self::normalizeCodecKey((string) ($output['video_codec'] ?? ''));
+        $srcRes = self::normalizeResolutionKey((string) ($source['resolution'] ?? ''));
+        $outRes = self::normalizeResolutionKey((string) ($output['resolution'] ?? ''));
+
+        // Cambio de codec de vídeo = el cliente no acepta el fichero → dejar pasar.
+        if ($srcCodec !== '' && $outCodec !== '' && $srcCodec !== $outCodec) {
+            return 'allow';
+        }
+
+        // Misma familia de codec + bajada de resolución = calidad/límite del cliente → cortar.
+        if ($srcRes !== '' && $outRes !== '' && $srcRes !== $outRes) {
+            return 'kill';
+        }
+
+        // Mismo codec y misma resolución (o sin datos de res) pero reencodea vídeo:
+        // suele ser calidad remota / «Convertir automáticamente» / bitrate → salvable.
+        if ($srcCodec !== '' && $outCodec !== '' && $srcCodec === $outCodec) {
+            return 'kill';
+        }
+
+        // Sin señales claras: no cortar (evitar matar Transcodes necesarios).
+        return 'allow';
+    }
+
+    /**
+     * Etiqueta corta de por qué se corta o se deja pasar.
+     *
+     * @param array<string, mixed> $streamInfo
+     * @param array<string, mixed> $session
+     */
+    public static function videoTranscodeActionLabel(array $streamInfo, array $session = []): string
+    {
+        $action = self::videoTranscodeAction($streamInfo, $session);
+        if ($action === 'allow') {
+            if (self::hasBurnedSubtitles($streamInfo)) {
+                return 'Permitido: subtítulos quemados';
+            }
+            $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+            $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+            $srcCodec = self::dashless((string) ($source['video_codec'] ?? ''));
+            $outCodec = self::dashless((string) ($output['video_codec'] ?? ''));
+            if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) !== 0) {
+                return "Permitido: el dispositivo no acepta {$srcCodec} (pasa a {$outCodec})";
+            }
+
+            return 'Permitido: Transcode necesario o sin señal de mal ajuste';
+        }
+
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $srcRes = self::dashless((string) ($source['resolution'] ?? ''));
+        $outRes = self::dashless((string) ($output['resolution'] ?? ''));
+        if ($srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) !== 0) {
+            return "Salvable: bajada de calidad ({$srcRes} → {$outRes})";
+        }
+
+        return 'Salvable: reencode por calidad/ajustes del cliente';
+    }
+
     private static function dashless(string $value): string
     {
         $value = trim($value);
 
         return ($value === '' || $value === '—') ? '' : $value;
+    }
+
+    private static function normalizeCodecKey(string $codec): string
+    {
+        $codec = strtolower(self::dashless($codec));
+        if ($codec === '') {
+            return '';
+        }
+
+        return match ($codec) {
+            'h264', 'avc', 'avc1' => 'h264',
+            'hevc', 'h265', 'hvc1' => 'hevc',
+            'mpeg2', 'mpeg2video' => 'mpeg2',
+            default => $codec,
+        };
+    }
+
+    private static function normalizeResolutionKey(string $resolution): string
+    {
+        $resolution = strtolower(self::dashless($resolution));
+        if ($resolution === '') {
+            return '';
+        }
+        if ($resolution === '4k' || $resolution === '2160p' || $resolution === 'uhd') {
+            return '2160';
+        }
+        if ($resolution === '8k' || $resolution === '4320p') {
+            return '4320';
+        }
+        if (preg_match('/^(\d{3,4})p?$/', $resolution, $m)) {
+            return (string) (int) $m[1];
+        }
+
+        return $resolution;
     }
 
     /**

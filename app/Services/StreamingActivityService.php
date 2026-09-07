@@ -9,6 +9,7 @@ use App\Repositories\ServerRepository;
 use App\Services\Media\JellyfinService;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
+use App\Services\Media\SessionStreamInfo;
 use App\Services\Notifications\AdminCriticalAlertService;
 use Core\Cache;
 use Core\Logger;
@@ -236,10 +237,28 @@ final class StreamingActivityService
     }
 
     /**
-     * Corta ahora todas las sesiones con vídeo en Transcode.
-     * Avisa al admin, envía el mensaje al detener y corta tras ~30 s.
+     * Transcode de vídeo «salvable» (calidad/ajustes): sí avisar y cortar.
+     * Incompatibilidad de codec o Burn de subtítulos: no.
      *
-     * @return array{killed: int, failed: int, matched: int}
+     * @param array<string, mixed> $session
+     */
+    public static function shouldAutoKillVideoTranscode(array $session): bool
+    {
+        if (!self::isVideoTranscodeSession($session)) {
+            return false;
+        }
+
+        $info = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+
+        return SessionStreamInfo::isSalvableVideoTranscode($info, $session);
+    }
+
+    /**
+     * Corta ahora las sesiones con vídeo en Transcode «salvable» (calidad/ajustes).
+     * Avisa al admin, envía el mensaje al detener y corta tras ~30 s.
+     * No toca Burn ni cambios de codec por incompatibilidad del dispositivo.
+     *
+     * @return array{killed: int, failed: int, matched: int, skipped: int}
      */
     public function killVideoTranscodes(int $tenantId, ?int $serverId = null, ?string $message = null): array
     {
@@ -253,12 +272,17 @@ final class StreamingActivityService
         $matched = 0;
         $killed = 0;
         $failed = 0;
+        $skipped = 0;
 
         foreach ($sessions as $session) {
             if (!self::isVideoTranscodeSession($session)) {
                 continue;
             }
             $matched++;
+            if (!self::shouldAutoKillVideoTranscode($session)) {
+                $skipped++;
+                continue;
+            }
             $sessionId = trim((string) ($session['session_id'] ?? ''));
             $sid = (int) ($session['server_id'] ?? 0);
             if ($sessionId === '' || $sid <= 0) {
@@ -285,11 +309,12 @@ final class StreamingActivityService
             }
         }
 
-        return ['killed' => $killed, 'failed' => $failed, 'matched' => $matched];
+        return ['killed' => $killed, 'failed' => $failed, 'matched' => $matched, 'skipped' => $skipped];
     }
 
     /**
      * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~30 s → corta.
+     * Solo Transcodes «salvables» (calidad/ajustes); deja pasar Burn y cambio de codec.
      *
      * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
      * @return array{killed: int, failed: int, skipped: int, matched: int, enabled: bool}
@@ -318,6 +343,10 @@ final class StreamingActivityService
                 continue;
             }
             $matched++;
+            if (!self::shouldAutoKillVideoTranscode($session)) {
+                $skipped++;
+                continue;
+            }
             $sessionId = trim((string) ($session['session_id'] ?? ''));
             $serverId = (int) ($session['server_id'] ?? 0);
             if ($sessionId === '' || $serverId <= 0) {

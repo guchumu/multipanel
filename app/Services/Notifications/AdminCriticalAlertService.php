@@ -441,11 +441,13 @@ final class AdminCriticalAlertService
         $autoKillState = $toggle->stateLabel($autoKillOn);
 
         $motivo = \App\Services\Media\SessionStreamInfo::explainVideoTranscodeReason($streamInfo, $session);
+        $policy = \App\Services\Media\SessionStreamInfo::videoTranscodeActionLabel($streamInfo, $session);
 
         // Cabecera: contexto mínimo; el bloque Saltar va justo después del usuario.
         $headerLines = [
             AdminMessageFormat::label('Momento', $when),
             AdminMessageFormat::label('Usuario', $username),
+            AdminMessageFormat::label('Política', $policy),
             AdminMessageFormat::label('Motivo', $motivo),
         ];
 
@@ -550,7 +552,7 @@ final class AdminCriticalAlertService
         }
 
         $sections = [
-            '✂️ Vídeo = Transcode. Tienes ~30 s para saltar el corte antes de cortar la emisión.',
+            '✂️ Transcode salvable (calidad/ajustes). ~30 s para saltar antes del corte.',
             implode("\n", $headerLines),
         ];
         if ($pauseLines !== []) {

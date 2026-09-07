@@ -369,6 +369,7 @@ SVG;
         $killed = (int) ($result['killed'] ?? 0);
         $failed = (int) ($result['failed'] ?? 0);
         $matched = (int) ($result['matched'] ?? 0);
+        $skipped = (int) ($result['skipped'] ?? 0);
 
         if ($matched === 0) {
             return $this->json([
@@ -376,7 +377,19 @@ SVG;
                 'killed' => 0,
                 'failed' => 0,
                 'matched' => 0,
+                'skipped' => 0,
                 'message' => 'No hay sesiones con Vídeo = Transcode para cortar.',
+            ]);
+        }
+
+        if ($killed === 0 && $skipped === $matched) {
+            return $this->json([
+                'success' => true,
+                'killed' => 0,
+                'failed' => 0,
+                'matched' => $matched,
+                'skipped' => $skipped,
+                'message' => 'Hay Transcodes de vídeo, pero ninguno es «salvable» (calidad/ajustes). Burn o cambio de codec se dejan pasar.',
             ]);
         }
 
@@ -385,11 +398,14 @@ SVG;
             'killed' => $killed,
             'failed' => $failed,
             'matched' => $matched,
+            'skipped' => $skipped,
             'message' => $killed > 0
                 ? sprintf(
-                    'Cortados %d transcode(s) de vídeo. Mensaje predefinido enviado.',
+                    'Cortados %d Transcode(s) salvable(s). Mensaje predefinido enviado.',
                     $killed
-                ) . ($failed > 0 ? " Fallidos: {$failed}." : '')
+                )
+                . ($skipped > 0 ? " Omitidos (necesarios): {$skipped}." : '')
+                . ($failed > 0 ? " Fallidos: {$failed}." : '')
                 : sprintf('No se pudo cortar ninguna sesión (%d fallo(s)).', $failed),
         ], ($killed > 0 || $failed === 0) ? 200 : 502);
     }

@@ -96,4 +96,43 @@ final class TranscodeActionLinkServiceTest extends TestCase
 
         $this->assertStringContainsString('subtítulos', $reason);
     }
+
+    public function testSalvableQualityDownscaleIsKill(): void
+    {
+        $info = [
+            'subtitle' => 'None',
+            'source' => ['video_codec' => 'H264', 'resolution' => '1080p'],
+            'output' => ['video_codec' => 'H264', 'resolution' => '720p', 'subtitle' => 'None'],
+        ];
+        $this->assertSame('kill', SessionStreamInfo::videoTranscodeAction($info));
+        $this->assertTrue(SessionStreamInfo::isSalvableVideoTranscode($info));
+        $this->assertStringContainsString('bajada', SessionStreamInfo::videoTranscodeActionLabel($info));
+    }
+
+    public function testCodecChangeIsAllowed(): void
+    {
+        $info = [
+            'subtitle' => 'None',
+            'source' => ['video_codec' => 'HEVC', 'resolution' => '4K'],
+            'output' => ['video_codec' => 'H264', 'resolution' => '1080p', 'subtitle' => 'None'],
+        ];
+        $this->assertSame('allow', SessionStreamInfo::videoTranscodeAction($info));
+        $this->assertFalse(SessionStreamInfo::isSalvableVideoTranscode($info));
+        $this->assertStringContainsString('no acepta', SessionStreamInfo::videoTranscodeActionLabel($info));
+    }
+
+    public function testBurnSubtitlesAreAllowedEvenWithDownscale(): void
+    {
+        $info = [
+            'subtitle' => 'Burn (Español)',
+            'source' => ['video_codec' => 'H264', 'resolution' => '1080p'],
+            'output' => [
+                'video_codec' => 'H264',
+                'resolution' => '720p',
+                'subtitle' => 'Burn (Español)',
+            ],
+        ];
+        $this->assertSame('allow', SessionStreamInfo::videoTranscodeAction($info));
+        $this->assertTrue(SessionStreamInfo::hasBurnedSubtitles($info));
+    }
 }
