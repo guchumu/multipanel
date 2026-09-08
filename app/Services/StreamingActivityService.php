@@ -480,11 +480,50 @@ final class StreamingActivityService
             if ($ok) {
                 Cache::forget('activity_snapshot_' . $tenantId);
             }
+            $this->logVideoTranscodeCut($tenantId, $server, $session, $sessionId, $message, (bool) $ok);
 
             return $ok;
         }
 
-        return $this->terminateSession($server, $sessionId, $message);
+        $ok = $this->terminateSession($server, $sessionId, $message);
+        $this->logVideoTranscodeCut($tenantId, $server, $session, $sessionId, $message, $ok);
+
+        return $ok;
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     */
+    private function logVideoTranscodeCut(
+        int $tenantId,
+        Server $server,
+        array $session,
+        string $sessionId,
+        string $message,
+        bool $killed,
+    ): void {
+        $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
+        $why = SessionStreamInfo::shortVideoTranscodeWhy($streamInfo, $session);
+        (new PlaybackCutLogService())->log(
+            $tenantId,
+            PlaybackCutLogService::KIND_VIDEO_TRANSCODE,
+            $why,
+            $message,
+            trim((string) ($session['user'] ?? '')) ?: null,
+            trim((string) ($session['title'] ?? '')) ?: null,
+            $sessionId,
+            (int) ($session['media_user_id'] ?? 0) ?: null,
+            (int) ($server->id ?? 0) ?: null,
+            $killed,
+            [
+                'video' => (string) ($streamInfo['video'] ?? ''),
+                'quality' => (string) ($streamInfo['quality'] ?? ''),
+                'player' => (string) ($session['player'] ?? ''),
+                'product' => (string) ($session['product'] ?? ''),
+                'server' => (string) ($server->name ?? ''),
+                'policy' => SessionStreamInfo::videoTranscodeActionLabel($streamInfo, $session),
+            ]
+        );
     }
 
     /**

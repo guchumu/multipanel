@@ -172,6 +172,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users', [MediaUserController::class, 'index'], 'media_users.index');
     $router->get('/media-users/activity', [MediaUserController::class, 'activity'], 'media_users.activity');
     $router->get('/media-users/stream-violations', [StreamLimitController::class, 'violations'], 'media_users.stream_violations');
+    $router->get('/media-users/cut-logs', [StreamLimitController::class, 'cutLogs'], 'media_users.cut_logs');
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');
     $router->get('/media-users/expired-outreach', static function (\Core\Request $request) {
         $serverId = $request->input('server_id');

@@ -368,8 +368,8 @@ final class AdminCriticalAlertService
     }
 
     /**
-     * Aviso al cortar una sesión con Vídeo = Transcode (auto-corte o «Cortar ahora»).
-     * En ntfy: carátula, archivo original vs stream en curso, y saltar (pausa) arriba tras el usuario.
+     * Aviso corto al cortar Transcode salvable (auto-corte o «Cortar ahora»).
+     * ntfy: por qué + saltar; carátula y botones de pausa si hay.
      *
      * @param array<string, mixed> $session
      * @param array{user_active?: int, total_active?: int} $meta
@@ -387,46 +387,22 @@ final class AdminCriticalAlertService
         $username = trim($username) !== '' ? trim($username) : 'desconocido';
         $title = trim($title) !== '' ? trim($title) : 'Sin título';
         $serverName = trim($serverName) !== '' ? trim($serverName) : 'servidor ?';
-        $when = WhatsAppAdminText::nowMadridLong();
-
         $subtitle = trim((string) ($session['subtitle'] ?? ''));
         $streamInfo = is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [];
-        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
-        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
-
-        $quality = trim((string) ($streamInfo['quality'] ?? ''));
-        $streamLine = trim((string) ($output['stream'] ?? $streamInfo['stream'] ?? ''));
-        $container = trim((string) ($output['container'] ?? $streamInfo['container'] ?? ''));
-        $videoLine = trim((string) ($streamInfo['video'] ?? $session['video_label'] ?? $session['video_decision'] ?? ''));
-        $audioLine = trim((string) ($streamInfo['audio'] ?? $session['audio_label'] ?? $session['audio_decision'] ?? ''));
-        $subtitleLine = trim((string) ($output['subtitle'] ?? $streamInfo['subtitle'] ?? ''));
         $product = trim((string) ($session['product'] ?? ''));
         $player = trim((string) ($session['player'] ?? ''));
-        $platform = trim((string) ($session['platform'] ?? ''));
-        $location = trim((string) ($session['location'] ?? ''));
-        $clientIp = trim((string) ($session['client_ip'] ?? ''));
-        $bandwidth = trim((string) ($session['bandwidth'] ?? ''));
         $household = (($session['household'] ?? '') === 'home') ? 'Casa' : ((($session['household'] ?? '') === 'away') ? 'Fuera' : '');
-        $progress = max(0, min(100, (int) ($session['progress'] ?? 0)));
-        $state = trim((string) ($session['state'] ?? ''));
-        $userActive = max(0, (int) ($meta['user_active'] ?? 0));
-        $totalActive = max(0, (int) ($meta['total_active'] ?? 0));
+        $clientIp = trim((string) ($session['client_ip'] ?? ''));
 
-        $srcFile = trim((string) ($source['file'] ?? ''));
-        $srcFormat = trim((string) ($source['format'] ?? ''));
-        $srcRes = trim((string) ($source['resolution'] ?? ''));
-        $srcVideo = trim((string) ($source['video_codec'] ?? ''));
-        $srcAudio = trim((string) ($source['audio_codec'] ?? ''));
-        $srcChannels = trim((string) ($source['audio_channels'] ?? ''));
-        $srcLang = trim((string) ($source['audio_lang'] ?? ''));
-        $srcAudioType = trim(implode(' ', array_filter([$srcLang !== '—' ? $srcLang : '', $srcAudio !== '—' ? $srcAudio : '', $srcChannels !== '—' ? $srcChannels : ''])));
+        $why = \App\Services\Media\SessionStreamInfo::shortVideoTranscodeWhy($streamInfo, $session);
+        $clientBits = array_values(array_filter([$product, $player], static fn (string $v): bool => $v !== ''));
+        $clientBits = array_values(array_unique($clientBits));
+        $where = trim(($household !== '' ? $household : '') . ($clientIp !== '' ? ($household !== '' ? ' · ' : '') . $clientIp : ''));
 
-        $outVideoDecision = trim((string) ($output['video_decision'] ?? $session['video_decision'] ?? 'transcode'));
-        $outAudioDecision = trim((string) ($output['audio_decision'] ?? $session['audio_decision'] ?? ''));
-        $outRes = trim((string) ($output['resolution'] ?? ''));
-        $outVideo = trim((string) ($output['video_codec'] ?? ''));
-        $outAudio = trim((string) ($output['audio_codec'] ?? ''));
-        $outChannels = trim((string) ($output['audio_channels'] ?? ''));
+        $showTitle = $title;
+        if ($subtitle !== '') {
+            $showTitle .= ' — ' . $subtitle;
+        }
 
         $pause = new \App\Services\VideoTranscodePauseService();
         $pauseUrls = $session !== [] ? $pause->buildPauseUrls($tenantId, $session) : [];
@@ -435,143 +411,23 @@ final class AdminCriticalAlertService
             $pauseLines[] = $pause->shortLinkLabel($duration) . ' ' . $url;
         }
 
-        $toggle = new \App\Services\VideoTranscodeAutoKillToggleService();
-        $toggleUrls = $toggle->buildToggleUrls($tenantId);
-        $autoKillOn = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
-        $autoKillState = $toggle->stateLabel($autoKillOn);
-
-        $motivo = \App\Services\Media\SessionStreamInfo::explainVideoTranscodeReason($streamInfo, $session);
-        $policy = \App\Services\Media\SessionStreamInfo::videoTranscodeActionLabel($streamInfo, $session);
-
-        // Cabecera: contexto mínimo; el bloque Saltar va justo después del usuario.
-        $headerLines = [
-            AdminMessageFormat::label('Momento', $when),
-            AdminMessageFormat::label('Usuario', $username),
-            AdminMessageFormat::label('Política', $policy),
-            AdminMessageFormat::label('Motivo', $motivo),
+        $lines = [
+            $username . ' · ' . $showTitle,
+            $serverName . ($where !== '' ? ' · ' . $where : ''),
+            'Por qué: ' . $why,
         ];
-
-        $detailLines = [
-            AdminMessageFormat::label('Título', $title),
-        ];
-        if ($subtitle !== '') {
-            $detailLines[] = AdminMessageFormat::label('Episodio', $subtitle);
+        if ($clientBits !== []) {
+            $lines[] = 'Cliente: ' . implode(' · ', array_slice($clientBits, 0, 2));
         }
-        $detailLines[] = AdminMessageFormat::label('Servidor', $serverName);
-        if ($userActive > 0 || $totalActive > 0) {
-            $detailLines[] = AdminMessageFormat::label(
-                'Reproducciones',
-                ($userActive > 0 ? "usuario {$userActive}" : '')
-                . ($userActive > 0 && $totalActive > 0 ? ' · ' : '')
-                . ($totalActive > 0 ? "total {$totalActive}" : '')
-            );
-        }
-
-        // Bloque idéntico a Tautulli / En directo (Product…Subtitle + Location).
-        $tautulliLines = [
-            AdminMessageFormat::label('Product', $product !== '' ? $product : '—'),
-            AdminMessageFormat::label('Player', $player !== '' ? $player : ($platform !== '' ? $platform : '—')),
-            AdminMessageFormat::label('Quality', $quality !== '' ? $quality : '—'),
-            AdminMessageFormat::label('Stream', $streamLine !== '' ? $streamLine : 'Transcode'),
-            AdminMessageFormat::label('Container', $container !== '' ? $container : '—'),
-            AdminMessageFormat::label(
-                'Video',
-                $videoLine !== '' ? $videoLine : (
-                    trim(
-                        ($outVideoDecision !== '' ? ucfirst($outVideoDecision) : 'Transcode')
-                        . ($outVideo !== '' && $outVideo !== '—' ? " ({$outVideo}" : '')
-                        . ($outRes !== '' && $outRes !== '—' ? " {$outRes}" : '')
-                        . ($outVideo !== '' && $outVideo !== '—' ? ')' : '')
-                    ) ?: 'Transcode'
-                )
-            ),
-            AdminMessageFormat::label(
-                'Audio',
-                $audioLine !== '' ? $audioLine : (
-                    trim(
-                        ($outAudioDecision !== '' ? ucfirst($outAudioDecision) : '—')
-                        . ($outAudio !== '' && $outAudio !== '—' ? " ({$outAudio}" : '')
-                        . ($outChannels !== '' && $outChannels !== '—' ? " {$outChannels}" : '')
-                        . ($outAudio !== '' && $outAudio !== '—' ? ')' : '')
-                    ) ?: '—'
-                )
-            ),
-            AdminMessageFormat::label('Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None'),
-        ];
-        $locationLine = '';
-        if ($location !== '') {
-            $locationLine = strtoupper($location);
-        }
-        if ($clientIp !== '') {
-            $locationLine = ($locationLine !== '' ? $locationLine . ': ' : '') . $clientIp;
-        }
-        if ($household !== '') {
-            $locationLine = ($locationLine !== '' ? $locationLine . ' · ' : '') . $household;
-        }
-        if ($locationLine !== '') {
-            $tautulliLines[] = AdminMessageFormat::label('Location', $locationLine);
-        }
-        if ($bandwidth !== '') {
-            $tautulliLines[] = AdminMessageFormat::label('Bandwidth', $bandwidth);
-        }
-        if ($state !== '' || $progress > 0) {
-            $tautulliLines[] = AdminMessageFormat::label(
-                'Progress',
-                trim(($state !== '' ? $state : '') . ($progress > 0 ? " {$progress}%" : ''))
-            );
-        }
-
-        $originalLines = [];
-        if ($srcFile !== '') {
-            $originalLines[] = AdminMessageFormat::label('Fichero', $srcFile);
-        }
-        if ($srcFormat !== '' && $srcFormat !== '—') {
-            $originalLines[] = AdminMessageFormat::label('Formato', $srcFormat);
-        }
-        if ($srcRes !== '' && $srcRes !== '—') {
-            $originalLines[] = AdminMessageFormat::label('Resolución', $srcRes);
-        }
-        if ($srcVideo !== '' && $srcVideo !== '—') {
-            $originalLines[] = AdminMessageFormat::label('Vídeo', $srcVideo);
-        }
-        if ($srcAudioType !== '' || ($srcAudio !== '' && $srcAudio !== '—')) {
-            $originalLines[] = AdminMessageFormat::label(
-                'Audio',
-                $srcAudioType !== '' ? $srcAudioType : $srcAudio
-            );
-        }
-
-        $toggleLines = [
-            AdminMessageFormat::label('Estado', $autoKillState),
-        ];
-        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE])) {
-            $toggleLines[] = 'OFF ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_DISABLE];
-        }
-        if (!empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
-            $toggleLines[] = 'ON ' . $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE];
-        }
-
-        $sections = [
-            '✂️ Transcode salvable (calidad/ajustes). ~30 s para saltar antes del corte.',
-            implode("\n", $headerLines),
-        ];
+        $lines[] = '~30 s para saltar el corte';
         if ($pauseLines !== []) {
-            $sections[] = AdminMessageFormat::block(
-                '⏭ Saltar este corte',
-                array_merge(
-                    ['Pulsa YA si quieres permitirlo:'],
-                    $pauseLines
-                )
-            );
+            $lines[] = '';
+            $lines[] = 'Saltar:';
+            foreach ($pauseLines as $pl) {
+                $lines[] = $pl;
+            }
         }
-        $sections[] = implode("\n", $detailLines);
-        $sections[] = AdminMessageFormat::block('📡 Stream (como Tautulli)', $tautulliLines);
-        if ($originalLines !== []) {
-            $sections[] = AdminMessageFormat::block('📁 Archivo original', $originalLines);
-        }
-        $sections[] = AdminMessageFormat::block('Auto-corte', $toggleLines);
 
-        // ntfy máx. 3 Actions: priorizar Saltar (pausa); Activar solo si sobra hueco.
         $ntfyActions = [];
         foreach (\App\Services\VideoTranscodePauseService::NTFY_ACTION_DURATIONS as $duration) {
             if (count($ntfyActions) >= 3 || empty($pauseUrls[$duration])) {
@@ -583,20 +439,9 @@ final class AdminCriticalAlertService
                 'clear' => true,
             ];
         }
-        if (count($ntfyActions) < 3
-            && !empty($toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE])) {
-            $ntfyActions[] = [
-                'label' => $toggle->ntfyActionLabel(\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE),
-                'url' => $toggleUrls[\App\Services\VideoTranscodeAutoKillToggleService::ACTION_ENABLE],
-                'clear' => true,
-            ];
-        }
 
         $attach = \App\Services\StreamingActivityService::signedPublicThumbAbsoluteUrl($session);
-
-        $data = [
-            'whatsapp_kind' => 'cut',
-        ];
+        $data = ['whatsapp_kind' => 'cut'];
         if ($attach !== null) {
             $data['ntfy_attach'] = $attach;
         }
@@ -607,19 +452,15 @@ final class AdminCriticalAlertService
         return $this->notify(
             $tenantId,
             'video_transcode_kill:' . $fingerprint,
-            'CORTE: vídeo Transcode',
-            AdminMessageFormat::compose($sections),
+            'CORTE Transcode · ' . $username,
+            implode("\n", $lines),
             [
-                // El debounce por sesión (cache auto_kill_vtrans_*) evita spam entre ticks de cron.
                 'debounce_minutes' => 0,
                 'data' => $data,
             ]
         );
     }
 
-    /**
-     * @return array{ok: bool, skipped: bool, reason: string, channels: array<int, string>}
-     */
     public function notifyPaymentWebhookFailure(int $tenantId, string $gateway, string $error): array
     {
         $gateway = trim($gateway) !== '' ? trim($gateway) : 'payment';

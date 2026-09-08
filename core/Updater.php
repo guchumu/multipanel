@@ -49,6 +49,7 @@ final class Updater
         '024_session_kill_links.sql' => ['table' => 'session_kill_links'],
         '025_session_kill_links_batch.sql' => ['column' => ['session_kill_links', 'batch_sessions']],
         '026_playback_sessions_subtitle.sql' => ['column' => ['playback_sessions', 'subtitle']],
+        '027_playback_cut_logs.sql' => ['table' => 'playback_cut_logs'],
     ];
 
     public function __construct()

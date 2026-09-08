@@ -224,6 +224,34 @@ final class ConcurrentStreamLimitService
                         $killIndexes[$idx] = true;
                         $killedIds[] = $sessionId;
                         $killedTotal++;
+
+                        $kind = match ($reasonKey) {
+                            'away' => PlaybackCutLogService::KIND_STREAM_AWAY,
+                            'home' => PlaybackCutLogService::KIND_STREAM_HOME,
+                            default => PlaybackCutLogService::KIND_STREAM_GENERIC,
+                        };
+                        $why = match ($reasonKey) {
+                            'away' => 'Fuera de casa / otra IP (límite away)',
+                            'home' => 'Demasiadas pantallas en casa',
+                            default => 'Límite de streams simultáneos',
+                        };
+                        (new PlaybackCutLogService())->log(
+                            $tenantId,
+                            $kind,
+                            $why,
+                            $sessionKillMessage,
+                            $username !== '' ? $username : null,
+                            trim((string) ($sessions[$idx]['title'] ?? '')) ?: null,
+                            $sessionId,
+                            $mediaUserId > 0 ? (int) $mediaUserId : null,
+                            $sid,
+                            true,
+                            [
+                                'cut_reason' => $reasonKey,
+                                'stream_count' => $count,
+                                'stream_limit' => $household ? $homeLimit : $limit,
+                            ]
+                        );
                     }
                 }
             }

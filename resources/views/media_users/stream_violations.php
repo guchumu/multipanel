@@ -15,6 +15,9 @@ ob_start();
         </p>
     </div>
     <div class="d-flex gap-2">
+        <a href="/media-users/cut-logs" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-scissors me-1"></i>Log de cortes
+        </a>
         <a href="/settings/stream-limits" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-sliders me-1"></i>Configurar límite
         </a>

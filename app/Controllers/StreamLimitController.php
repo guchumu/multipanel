@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Services\AuthService;
 use App\Services\ConcurrentStreamLimitService;
+use App\Services\PlaybackCutLogService;
 use App\Services\StreamLimitSettingsService;
 use Core\Controller;
 use Core\Request;
@@ -68,6 +69,21 @@ class StreamLimitController extends Controller
             'violations' => $this->enforcer->listViolations($tenantId, $limit),
             'enforcementEnabled' => $this->settings->isEnforcementEnabled($tenantId),
             'defaultMaxStreams' => $this->settings->getDefaultMaxStreams($tenantId),
+        ]);
+    }
+
+    public function cutLogs(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $limit = max(20, min(300, (int) $request->input('limit', 100)));
+        $kind = trim((string) $request->input('kind', ''));
+        $logs = new PlaybackCutLogService();
+
+        return $this->view('media_users.cut_logs', [
+            'title' => 'Log de cortes',
+            'logs' => $logs->listForTenant($tenantId, $limit, $kind !== '' ? $kind : null),
+            'kindFilter' => $kind,
+            'cutLogService' => $logs,
         ]);
     }
 }

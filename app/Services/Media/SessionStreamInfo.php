@@ -548,6 +548,54 @@ final class SessionStreamInfo
         return 'Salvable: reencode por calidad/ajustes del cliente';
     }
 
+    /**
+     * Resumen corto para ntfy / logs (una línea).
+     *
+     * @param array<string, mixed> $streamInfo
+     * @param array<string, mixed> $session
+     */
+    public static function shortVideoTranscodeWhy(array $streamInfo, array $session = []): string
+    {
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $quality = trim((string) ($streamInfo['quality'] ?? ''));
+        $videoLine = trim((string) ($streamInfo['video'] ?? ''));
+        $srcRes = self::dashless((string) ($source['resolution'] ?? ''));
+        $outRes = self::dashless((string) ($output['resolution'] ?? ''));
+        $srcCodec = self::dashless((string) ($source['video_codec'] ?? ''));
+        $outCodec = self::dashless((string) ($output['video_codec'] ?? ''));
+
+        if ($srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) !== 0) {
+            $bit = "Calidad: {$srcRes}→{$outRes}";
+            if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0) {
+                $bit .= " ({$srcCodec})";
+            }
+            if ($quality !== '' && $quality !== '—') {
+                $bit .= " · {$quality}";
+            }
+
+            return $bit;
+        }
+
+        if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0) {
+            $bit = "Calidad/ajustes: reencode {$srcCodec}";
+            if ($outRes !== '') {
+                $bit .= " {$outRes}";
+            }
+            if ($quality !== '' && $quality !== '—') {
+                $bit .= " · {$quality}";
+            }
+
+            return $bit;
+        }
+
+        if ($videoLine !== '') {
+            return 'Calidad/ajustes: ' . $videoLine;
+        }
+
+        return self::videoTranscodeActionLabel($streamInfo, $session);
+    }
+
     private static function dashless(string $value): string
     {
         $value = trim($value);

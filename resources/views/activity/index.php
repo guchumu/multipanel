@@ -64,6 +64,9 @@ ob_start();
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
             <i class="bi bi-exclamation-octagon me-1"></i>Límites
         </a>
+        <a href="/media-users/cut-logs" class="btn btn-outline-secondary btn-sm" title="Log de cortes (motivo + mensaje al cliente)">
+            <i class="bi bi-scissors me-1"></i>Cortes
+        </a>
         <a href="/help/atencion-cliente" class="btn btn-outline-secondary btn-sm" title="Guía para atención al cliente">
             <i class="bi bi-journal-bookmark me-1"></i>Guía AC
         </a>
