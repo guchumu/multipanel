@@ -196,7 +196,7 @@ ob_start();
                     </thead>
                     <tbody class="small">
                         <tr>
-                            <td>Corte ~30 s + mensaje configuración</td>
+                            <td>Corte ~2 min + mensaje configuración</td>
                             <td>Calidad baja → Transcode salvable</td>
                             <td>Punto 1 (Original)</td>
                         </tr>

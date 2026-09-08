@@ -419,7 +419,7 @@ final class AdminCriticalAlertService
         if ($clientBits !== []) {
             $lines[] = 'Cliente: ' . implode(' · ', array_slice($clientBits, 0, 2));
         }
-        $lines[] = '~30 s para saltar el corte';
+        $lines[] = '~2 min para saltar el corte';
         if ($pauseLines !== []) {
             $lines[] = '';
             $lines[] = 'Saltar:';
