@@ -293,10 +293,7 @@ final class StreamingActivityService
             }
             $sessionMessage = $override !== ''
                 ? $override
-                : ClientStopGuidanceService::forVideoTranscodeSession(
-                    is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [],
-                    $session
-                );
+                : (new StreamLimitSettingsService())->getKillMessageVideoTranscode($tenantId);
             if ($this->terminateVideoTranscodeSession(
                 $tenantId,
                 $server,
@@ -376,10 +373,7 @@ final class StreamingActivityService
             // Marcar ya: evita notify+kill en cada tick del cron para la misma sesión.
             Cache::set($debounceKey, 1, 120);
 
-            $sessionMessage = ClientStopGuidanceService::forVideoTranscodeSession(
-                is_array($session['stream_info'] ?? null) ? $session['stream_info'] : [],
-                $session
-            );
+            $sessionMessage = (new StreamLimitSettingsService())->getKillMessageVideoTranscode($tenantId);
 
             $ok = $this->terminateVideoTranscodeSession(
                 $tenantId,

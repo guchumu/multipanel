@@ -11,7 +11,8 @@ use Core\Database;
  *
  * Group: streams
  * Keys: enforcement_enabled, default_max_streams, default_max_away_streams,
- * kill_message, count_mode, sandbox_alerts, auto_kill_video_transcodes
+ * kill_message, kill_message_video_transcode, count_mode, sandbox_alerts,
+ * auto_kill_video_transcodes
  */
 final class StreamLimitSettingsService
 {
@@ -32,6 +33,8 @@ final class StreamLimitSettingsService
     public const DEFAULT_KILL_HOME = ClientStopGuidanceService::MSG_HOME_LIMIT;
 
     public const DEFAULT_KILL_AWAY = ClientStopGuidanceService::MSG_AWAY_LIMIT;
+
+    public const DEFAULT_KILL_VIDEO_TRANSCODE = ClientStopGuidanceService::MSG_SALVABLE_TRANSCODE;
     public function isEnforcementEnabled(int $tenantId): bool
     {
         $value = $this->get($tenantId, 'enforcement_enabled');
@@ -136,6 +139,32 @@ final class StreamLimitSettingsService
         $this->set($tenantId, 'kill_message', $message, 'string');
     }
 
+    /** Mensaje al cliente en auto-corte / «Cortar ahora» de Transcode salvable. */
+    public function getKillMessageVideoTranscode(int $tenantId): string
+    {
+        $custom = $this->get($tenantId, 'kill_message_video_transcode');
+        if ($custom !== null && trim($custom) !== '') {
+            return mb_substr(trim($custom), 0, 500);
+        }
+
+        return ClientStopGuidanceService::forSalvableTranscode();
+    }
+
+    /** Valor guardado (vacío = usar el texto por defecto del sistema). */
+    public function getStoredKillMessageVideoTranscode(int $tenantId): string
+    {
+        return trim((string) ($this->get($tenantId, 'kill_message_video_transcode') ?? ''));
+    }
+
+    public function setKillMessageVideoTranscode(int $tenantId, ?string $message): void
+    {
+        $message = $message !== null ? trim($message) : '';
+        if (mb_strlen($message) > 500) {
+            $message = mb_substr($message, 0, 500);
+        }
+        $this->set($tenantId, 'kill_message_video_transcode', $message, 'string');
+    }
+
     /**
      * household (recomendado): teles en casa vs fuera.
      * sessions: cada sesión cuenta (sin distinguir hogar).
@@ -192,7 +221,18 @@ final class StreamLimitSettingsService
         return max(1, min(50, (int) $maxStreams));
     }
 
-    /** @return array{enforcement_enabled: bool, default_max_streams: int, default_max_away_streams: int, kill_message: string, count_mode: string, sandbox_alerts: bool, auto_kill_video_transcodes: bool} */
+    /**
+     * @return array{
+     *   enforcement_enabled: bool,
+     *   default_max_streams: int,
+     *   default_max_away_streams: int,
+     *   kill_message: string,
+     *   kill_message_video_transcode: string,
+     *   count_mode: string,
+     *   sandbox_alerts: bool,
+     *   auto_kill_video_transcodes: bool
+     * }
+     */
     public function all(int $tenantId): array
     {
         return [
@@ -200,6 +240,7 @@ final class StreamLimitSettingsService
             'default_max_streams' => $this->getDefaultMaxStreams($tenantId),
             'default_max_away_streams' => $this->getDefaultMaxAwayStreams($tenantId),
             'kill_message' => (string) ($this->get($tenantId, 'kill_message') ?? ''),
+            'kill_message_video_transcode' => $this->getStoredKillMessageVideoTranscode($tenantId),
             'count_mode' => $this->getCountMode($tenantId),
             'sandbox_alerts' => $this->sandboxAlertsEnabled($tenantId),
             'auto_kill_video_transcodes' => $this->isAutoKillVideoTranscodesEnabled($tenantId),

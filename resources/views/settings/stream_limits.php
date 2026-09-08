@@ -77,6 +77,8 @@ ob_start();
                                   placeholder="Vacío = mensajes con instrucciones para casa / fuera / genérico"><?= e($settings['kill_message'] ?? '') ?></textarea>
                         <div class="form-text">
                             Si lo dejas vacío: mensajes distintos con pasos a seguir (casa, fuera y genérico) + «contacta con soporte».
+                            El de <strong>Transcode</strong> se edita en
+                            <a href="/settings/stop-messages">Mensajes al detener</a>.
                         </div>
                     </div>
 

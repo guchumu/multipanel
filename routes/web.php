@@ -284,6 +284,8 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/settings/notifications/reengage/test', [NotificationSettingsController::class, 'testReengage'], 'settings.notifications.reengage_test', [CsrfMiddleware::class]);
     $router->get('/settings/stop-messages', [PlaybackStopMessageController::class, 'index'], 'settings.stop_messages');
     $router->post('/settings/stop-messages', [PlaybackStopMessageController::class, 'store'], 'settings.stop_messages.store', [CsrfMiddleware::class]);
+    $router->post('/settings/stop-messages/video-transcode', [PlaybackStopMessageController::class, 'updateVideoTranscodeMessage'], 'settings.stop_messages.video_transcode', [CsrfMiddleware::class]);
+    $router->post('/settings/stop-messages/video-transcode/test', [PlaybackStopMessageController::class, 'testVideoTranscodeMessage'], 'settings.stop_messages.video_transcode_test', [CsrfMiddleware::class]);
     $router->put('/settings/stop-messages/{id}', [PlaybackStopMessageController::class, 'update'], 'settings.stop_messages.update', [CsrfMiddleware::class]);
     $router->post('/settings/stop-messages/{id}/default', [PlaybackStopMessageController::class, 'setDefault'], 'settings.stop_messages.default', [CsrfMiddleware::class]);
     $router->post('/settings/stop-messages/{id}/test', [PlaybackStopMessageController::class, 'test'], 'settings.stop_messages.test', [CsrfMiddleware::class]);
