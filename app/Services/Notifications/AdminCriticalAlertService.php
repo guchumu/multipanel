@@ -369,7 +369,7 @@ final class AdminCriticalAlertService
 
     /**
      * Aviso corto al cortar Transcode salvable (auto-corte o «Cortar ahora»).
-     * ntfy: por qué + saltar; carátula y botones de pausa si hay.
+     * ntfy: por qué + saltar (sin portada).
      *
      * @param array<string, mixed> $session
      * @param array{user_active?: int, total_active?: int} $meta
@@ -440,11 +440,7 @@ final class AdminCriticalAlertService
             ];
         }
 
-        $attach = \App\Services\StreamingActivityService::signedPublicThumbAbsoluteUrl($session);
         $data = ['whatsapp_kind' => 'cut'];
-        if ($attach !== null) {
-            $data['ntfy_attach'] = $attach;
-        }
         if ($ntfyActions !== []) {
             $data['ntfy_actions'] = $ntfyActions;
         }
