@@ -93,7 +93,9 @@ ob_start();
                 Sube la calidad a Original y no debería cortarse. Si tienes problemas, contacta con soporte.»
             </div>
             <p class="small text-muted mt-2 mb-0">
-                El mensaje en el reproductor ya incluye estos pasos al cortar por Transcode salvable.
+                El mensaje en el reproductor se edita en
+                <a href="/settings/stop-messages">Mensajes al detener</a>
+                (bloque «Auto-corte Transcode»).
             </p>
         </div>
     </div>
