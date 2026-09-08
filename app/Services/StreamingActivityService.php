@@ -237,13 +237,28 @@ final class StreamingActivityService
     }
 
     /**
+     * Los auto-cortes / «Cortar ahora» de Transcode solo aplican a Plex (no Jellyfin).
+     *
+     * @param array<string, mixed> $session
+     */
+    public static function isPlexCutTarget(array $session): bool
+    {
+        return strtolower(trim((string) ($session['server_type'] ?? ''))) === 'plex';
+    }
+
+    /**
      * Transcode de vídeo «salvable» (calidad/ajustes): sí avisar y cortar.
      * Incompatibilidad de codec o Burn de subtítulos: no.
+     * Solo servidores Plex.
      *
      * @param array<string, mixed> $session
      */
     public static function shouldAutoKillVideoTranscode(array $session): bool
     {
+        if (!self::isPlexCutTarget($session)) {
+            return false;
+        }
+
         if (!self::isVideoTranscodeSession($session)) {
             return false;
         }
@@ -254,9 +269,9 @@ final class StreamingActivityService
     }
 
     /**
-     * Corta ahora las sesiones con vídeo en Transcode «salvable» (calidad/ajustes).
+     * Corta ahora las sesiones Plex con vídeo en Transcode «salvable» (calidad/ajustes).
      * Avisa al admin, envía el mensaje al detener y corta tras ~30 s.
-     * No toca Burn ni cambios de codec por incompatibilidad del dispositivo.
+     * No toca Jellyfin, Burn ni cambios de codec por incompatibilidad del dispositivo.
      *
      * @return array{killed: int, failed: int, matched: int, skipped: int}
      */
@@ -272,6 +287,9 @@ final class StreamingActivityService
         $skipped = 0;
 
         foreach ($sessions as $session) {
+            if (!self::isPlexCutTarget($session)) {
+                continue;
+            }
             if (!self::isVideoTranscodeSession($session)) {
                 continue;
             }
@@ -289,6 +307,10 @@ final class StreamingActivityService
             $server = Server::find($sid);
             if ($server === null || (int) $server->tenant_id !== $tenantId) {
                 $failed++;
+                continue;
+            }
+            if (strtolower((string) ($server->type ?? '')) !== 'plex') {
+                $skipped++;
                 continue;
             }
             $sessionMessage = $override !== ''
@@ -338,6 +360,9 @@ final class StreamingActivityService
         $matched = 0;
 
         foreach ($sessions as $session) {
+            if (!self::isPlexCutTarget($session)) {
+                continue;
+            }
             if (!self::isVideoTranscodeSession($session)) {
                 continue;
             }

@@ -210,6 +210,10 @@ final class ConcurrentStreamLimitService
                     if ($server === null || (int) $server->tenant_id !== $tenantId) {
                         continue;
                     }
+                    // Cortes de límite solo en Plex; Jellyfin se deja pasar.
+                    if (strtolower((string) ($server->type ?? '')) !== 'plex') {
+                        continue;
+                    }
 
                     $reasonKey = (string) ($cutReasons[$idx] ?? $sessions[$idx]['cut_reason'] ?? '');
                     $sessionKillMessage = match ($reasonKey) {

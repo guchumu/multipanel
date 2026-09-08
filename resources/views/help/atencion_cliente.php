@@ -35,7 +35,8 @@ ob_start();
 
     <div class="alert alert-info border-0 shadow-sm small">
         <strong>Idea clave:</strong> solo se avisa/corta el Transcode de vídeo
-        <em>salvable</em> (bajada de calidad / mal ajuste). Se deja pasar Burn de subtítulos
+        <em>salvable</em> en <strong>Plex</strong> (bajada de calidad / mal ajuste).
+        <strong>Jellyfin no se corta</strong>. Se deja pasar Burn de subtítulos
         y cambio de codec cuando el dispositivo no acepta el fichero.
     </div>
 

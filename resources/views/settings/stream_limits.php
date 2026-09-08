@@ -10,6 +10,7 @@ ob_start();
         Por defecto: <strong>2 teles en casa</strong> y <strong>0 fuera</strong>.
         El corte automático queda apagado hasta que lo actives tú. Mientras tanto, WhatsApp/Telegram te avisan
         <em>cuándo se habría cortado</em> y el motivo (otra casa o demasiadas teles).
+        Los cortes (límite y Transcode) solo aplican a servidores <strong>Plex</strong>; Jellyfin no se corta.
     </p>
 </div>
 
