@@ -80,16 +80,28 @@ final class SessionStreamInfo
             $targetContainer = $sourceContainer;
         }
 
+        $destHeight = (int) ($transcode['height'] ?? 0);
+        $destWidth = (int) ($transcode['width'] ?? 0);
+        $destRes = self::resolutionLabel('', $destHeight, $destWidth);
+
+        // Origen = metadata del fichero (como Tautulli). El Stream a veces ya trae
+        // el alto/ancho de salida al transcodificar; no usarlo como fuente en ese caso.
         $sourceRes = self::resolutionLabel(
             (string) ($media['videoResolution'] ?? ''),
-            (int) ($videoStream['height'] ?? $media['height'] ?? $transcode['sourceVideoHeight'] ?? 0),
-            (int) ($videoStream['width'] ?? $media['width'] ?? $transcode['sourceVideoWidth'] ?? 0),
+            (int) ($media['height'] ?? $transcode['sourceVideoHeight'] ?? 0),
+            (int) ($media['width'] ?? $transcode['sourceVideoWidth'] ?? 0),
         );
-        $destRes = self::resolutionLabel(
-            '',
-            (int) ($transcode['height'] ?? 0),
-            (int) ($transcode['width'] ?? 0),
-        );
+        if ($sourceRes === '') {
+            $streamHeight = (int) ($videoStream['height'] ?? 0);
+            $streamWidth = (int) ($videoStream['width'] ?? 0);
+            $streamLooksLikeOutput = $videoDecision === 'transcode'
+                && $destHeight > 0
+                && $streamHeight === $destHeight
+                && ($destWidth === 0 || $streamWidth === $destWidth);
+            if (!$streamLooksLikeOutput) {
+                $sourceRes = self::resolutionLabel('', $streamHeight, $streamWidth);
+            }
+        }
         if ($destRes === '' || $videoDecision === 'copy' || $videoDecision === 'directplay') {
             $destRes = $sourceRes;
         }
@@ -175,6 +187,7 @@ final class SessionStreamInfo
                 'format' => $sourceContainer !== '' ? $sourceContainer : '—',
                 'resolution' => $sourceRes !== '' ? $sourceRes : '—',
                 'video_codec' => $sourceVideoCodec !== '' ? $sourceVideoCodec : '—',
+                'video_hw' => $sourceHw,
                 'audio_codec' => $sourceAudioCodec !== '' ? $sourceAudioCodec : '—',
                 'audio_channels' => $sourceChannels !== '' ? $sourceChannels : '—',
                 'audio_lang' => $audioLang !== '' ? $audioLang : '—',
@@ -186,6 +199,7 @@ final class SessionStreamInfo
                 'audio_decision' => $audioDecision !== '' ? $audioDecision : '—',
                 'resolution' => ($videoDecision === 'transcode' && $destRes !== '' ? $destRes : $sourceRes) ?: '—',
                 'video_codec' => ($videoDecision === 'transcode' ? $destVideoCodec : $sourceVideoCodec) ?: '—',
+                'video_hw' => $videoDecision === 'transcode' ? $destHw : $sourceHw,
                 'audio_codec' => ($audioDecision === 'transcode' ? $destAudioCodec : $sourceAudioCodec) ?: '—',
                 'audio_channels' => ($audioDecision === 'transcode' ? $destChannels : $sourceChannels) ?: '—',
                 'subtitle' => $subtitle !== '' ? $subtitle : 'None',
@@ -259,14 +273,27 @@ final class SessionStreamInfo
 
         $sourceRes = self::resolutionLabel(
             '',
-            (int) ($videoStream['Height'] ?? $nowPlayingItem['Height'] ?? 0),
-            (int) ($videoStream['Width'] ?? $nowPlayingItem['Width'] ?? 0),
+            (int) ($nowPlayingItem['Height'] ?? $videoStream['Height'] ?? 0),
+            (int) ($nowPlayingItem['Width'] ?? $videoStream['Width'] ?? 0),
         );
-        $destRes = self::resolutionLabel(
-            '',
-            (int) ($transcoding['Height'] ?? 0),
-            (int) ($transcoding['Width'] ?? 0),
-        );
+        $destHeight = (int) ($transcoding['Height'] ?? 0);
+        $destWidth = (int) ($transcoding['Width'] ?? 0);
+        $destRes = self::resolutionLabel('', $destHeight, $destWidth);
+        if ($sourceRes === '' && $videoDecision === 'transcode' && $destHeight > 0) {
+            $streamHeight = (int) ($videoStream['Height'] ?? 0);
+            $streamWidth = (int) ($videoStream['Width'] ?? 0);
+            $streamLooksLikeOutput = $streamHeight === $destHeight
+                && ($destWidth === 0 || $streamWidth === $destWidth);
+            if (!$streamLooksLikeOutput) {
+                $sourceRes = self::resolutionLabel('', $streamHeight, $streamWidth);
+            }
+        } elseif ($sourceRes === '') {
+            $sourceRes = self::resolutionLabel(
+                '',
+                (int) ($videoStream['Height'] ?? 0),
+                (int) ($videoStream['Width'] ?? 0),
+            );
+        }
         if ($destRes === '' || $videoDecision !== 'transcode') {
             $destRes = $sourceRes;
         }
@@ -289,9 +316,11 @@ final class SessionStreamInfo
             $destVideoCodec = $sourceVideoCodec;
         }
         $hw = !empty($transcoding['HardwareAccelerationType']);
+        $sourceHw = $hw && $videoDecision === 'transcode';
+        $destHw = $hw && $videoDecision === 'transcode';
         $video = self::formatDecisionLine(
             $videoDecision,
-            self::formatVideoDetail($sourceVideoCodec, $sourceRes, $hw && $videoDecision === 'transcode', $destVideoCodec, $destRes, $hw && $videoDecision === 'transcode', $videoDecision),
+            self::formatVideoDetail($sourceVideoCodec, $sourceRes, $sourceHw, $destVideoCodec, $destRes, $destHw, $videoDecision),
         );
 
         $audioLang = self::languageLabel(
@@ -342,6 +371,7 @@ final class SessionStreamInfo
                 'format' => $sourceContainer !== '' ? $sourceContainer : '—',
                 'resolution' => $sourceRes !== '' ? $sourceRes : '—',
                 'video_codec' => $sourceVideoCodec !== '' ? $sourceVideoCodec : '—',
+                'video_hw' => $sourceHw,
                 'audio_codec' => $sourceAudioCodec !== '' ? $sourceAudioCodec : '—',
                 'audio_channels' => $sourceChannels !== '' ? $sourceChannels : '—',
                 'audio_lang' => $audioLang !== '' ? $audioLang : '—',
@@ -353,6 +383,7 @@ final class SessionStreamInfo
                 'audio_decision' => $audioDecision !== '' ? $audioDecision : '—',
                 'resolution' => ($videoDecision === 'transcode' && $destRes !== '' ? $destRes : $sourceRes) ?: '—',
                 'video_codec' => ($videoDecision === 'transcode' ? $destVideoCodec : $sourceVideoCodec) ?: '—',
+                'video_hw' => $videoDecision === 'transcode' ? $destHw : $sourceHw,
                 'audio_codec' => ($audioDecision === 'transcode' ? $destAudioCodec : $sourceAudioCodec) ?: '—',
                 'audio_channels' => ($audioDecision === 'transcode' ? $destChannels : $sourceChannels) ?: '—',
                 'subtitle' => $subtitle !== '' ? $subtitle : 'None',
@@ -549,51 +580,78 @@ final class SessionStreamInfo
     }
 
     /**
-     * Resumen corto para ntfy / logs (una línea).
+     * Resumen corto para ntfy / logs (estilo Tautulli: origen → destino).
      *
      * @param array<string, mixed> $streamInfo
      * @param array<string, mixed> $session
      */
     public static function shortVideoTranscodeWhy(array $streamInfo, array $session = []): string
     {
-        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
-        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
         $quality = trim((string) ($streamInfo['quality'] ?? ''));
-        $videoLine = trim((string) ($streamInfo['video'] ?? ''));
-        $srcRes = self::dashless((string) ($source['resolution'] ?? ''));
-        $outRes = self::dashless((string) ($output['resolution'] ?? ''));
-        $srcCodec = self::dashless((string) ($source['video_codec'] ?? ''));
-        $outCodec = self::dashless((string) ($output['video_codec'] ?? ''));
-
-        if ($srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) !== 0) {
-            $bit = "Calidad: {$srcRes}→{$outRes}";
-            if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0) {
-                $bit .= " ({$srcCodec})";
-            }
-            if ($quality !== '' && $quality !== '—') {
-                $bit .= " · {$quality}";
-            }
-
-            return $bit;
+        if ($quality === '—') {
+            $quality = '';
         }
 
-        if ($srcCodec !== '' && $outCodec !== '' && strcasecmp($srcCodec, $outCodec) === 0) {
-            $bit = "Calidad/ajustes: reencode {$srcCodec}";
-            if ($outRes !== '') {
-                $bit .= " {$outRes}";
-            }
-            if ($quality !== '' && $quality !== '—') {
-                $bit .= " · {$quality}";
-            }
-
-            return $bit;
-        }
-
-        if ($videoLine !== '') {
-            return 'Calidad/ajustes: ' . $videoLine;
+        $transition = self::videoTranscodeTransition($streamInfo);
+        if ($transition !== '') {
+            return $quality !== '' ? $transition . ' · ' . $quality : $transition;
         }
 
         return self::videoTranscodeActionLabel($streamInfo, $session);
+    }
+
+    /**
+     * Detalle de vídeo estilo Tautulli: "H264 (HW) 1080p → H264 (HW) 720p".
+     *
+     * @param array<string, mixed> $streamInfo
+     */
+    public static function videoTranscodeTransition(array $streamInfo): string
+    {
+        $videoLine = trim((string) ($streamInfo['video'] ?? ''));
+        if (preg_match('/^Transcode\s*\((.+)\)\s*$/iu', $videoLine, $m)) {
+            $inner = self::normalizeTransitionArrow(trim((string) ($m[1] ?? '')));
+            if ($inner !== '') {
+                return $inner;
+            }
+        }
+
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $srcCodec = self::dashless((string) ($source['video_codec'] ?? ''));
+        $outCodec = self::dashless((string) ($output['video_codec'] ?? ''));
+        $srcRes = self::dashless((string) ($source['resolution'] ?? ''));
+        $outRes = self::dashless((string) ($output['resolution'] ?? ''));
+        $srcHw = !empty($source['video_hw']);
+        $outHw = !empty($output['video_hw']);
+
+        $src = trim($srcCodec . ($srcHw ? ' (HW)' : '') . ($srcRes !== '' ? ' ' . $srcRes : ''));
+        $dst = trim($outCodec . ($outHw ? ' (HW)' : '') . ($outRes !== '' ? ' ' . $outRes : ''));
+        if ($src !== '' && $dst !== '' && strcasecmp($src, $dst) !== 0) {
+            return $src . ' → ' . $dst;
+        }
+        if ($srcRes !== '' && $outRes !== '' && strcasecmp($srcRes, $outRes) !== 0) {
+            $bit = $srcRes . ' → ' . $outRes;
+            if ($srcCodec !== '') {
+                $bit .= ' (' . $srcCodec . ')';
+            }
+
+            return $bit;
+        }
+
+        return $src !== '' ? $src : $dst;
+    }
+
+    private static function normalizeTransitionArrow(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        // Unificar flechas / guiones a la misma forma que Tautulli.
+        $normalized = preg_replace('/\s*(?:→|->|=>|–|—)\s*/u', ' → ', $value);
+
+        return is_string($normalized) ? trim($normalized) : $value;
     }
 
     private static function dashless(string $value): string

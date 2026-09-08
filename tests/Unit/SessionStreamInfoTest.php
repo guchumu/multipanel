@@ -171,4 +171,64 @@ final class SessionStreamInfoTest extends TestCase
         $this->assertSame('aac', $audio['codec'] ?? null);
         $this->assertSame('burn', $subtitle['decision'] ?? null);
     }
+
+    public function test_short_video_transcode_why_shows_tautulli_transition(): void
+    {
+        $info = SessionStreamInfo::fromPlex(
+            'transcode',
+            [
+                'videoDecision' => 'transcode',
+                'audioDecision' => 'transcode',
+                'subtitleDecision' => 'none',
+                'throttled' => '1',
+                'sourceVideoCodec' => 'h264',
+                'videoCodec' => 'h264',
+                'sourceAudioCodec' => 'eac3',
+                'audioCodec' => 'aac',
+                'sourceAudioChannels' => '6',
+                'audioChannels' => '6',
+                'width' => '1280',
+                'height' => '720',
+                'container' => 'mp4',
+                'videoBitrate' => '3800',
+                'transcodeHwDecoding' => '1',
+                'transcodeHwEncoding' => '1',
+            ],
+            [
+                'container' => 'mkv',
+                'videoResolution' => '1080',
+                'videoCodec' => 'h264',
+                'audioCodec' => 'eac3',
+                'audioChannels' => '6',
+                'bitrate' => '12000',
+                'width' => '1920',
+                'height' => '1080',
+            ],
+            ['bandwidth' => '4000'],
+            [
+                // Stream dims = salida (caso real Plex); el origen debe salir del Media.
+                'streamType' => '1',
+                'codec' => 'h264',
+                'width' => '1280',
+                'height' => '720',
+                'decision' => 'transcode',
+            ],
+            [
+                'streamType' => '2',
+                'codec' => 'eac3',
+                'channels' => '6',
+                'language' => 'español',
+                'decision' => 'transcode',
+            ],
+            [],
+        );
+
+        $this->assertSame('Transcode (H264 (HW) 1080p → H264 (HW) 720p)', $info['video']);
+        $this->assertSame('1080p', $info['source']['resolution']);
+        $this->assertSame('720p', $info['output']['resolution']);
+        $this->assertSame(
+            'H264 (HW) 1080p → H264 (HW) 720p · 4 Mbps 720p (3.8 Mbps)',
+            SessionStreamInfo::shortVideoTranscodeWhy($info)
+        );
+    }
 }
