@@ -25,6 +25,9 @@ final class TranscodeActionLinkService
 
     private const DEFAULT_TTL_SECONDS = 900;
 
+    /** Máximo TTL de enlace corto (p. ej. pausa «hoy» hasta medianoche). */
+    private const MAX_TTL_SECONDS = 172800;
+
     /**
      * @param array{
      *   tenant_id: int,
@@ -37,7 +40,9 @@ final class TranscodeActionLinkService
      */
     public function createPauseUrl(array $payload): ?string
     {
-        return $this->create(self::KIND_PAUSE, $payload);
+        $ttl = (new VideoTranscodePauseService())->linkTtlSeconds();
+
+        return $this->create(self::KIND_PAUSE, $payload, $ttl);
     }
 
     /**
@@ -63,7 +68,7 @@ final class TranscodeActionLinkService
             return null;
         }
 
-        $ttl = max(60, min(3600, $ttlSeconds ?? self::DEFAULT_TTL_SECONDS));
+        $ttl = max(60, min(self::MAX_TTL_SECONDS, $ttlSeconds ?? self::DEFAULT_TTL_SECONDS));
         $code = $this->allocateCode($ttl);
         if ($code === null) {
             return null;
@@ -100,14 +105,18 @@ final class TranscodeActionLinkService
 
         $key = self::CACHE_PREFIX . $code;
         $stored = Cache::get($key);
-        Cache::forget($key);
 
         if (!is_array($stored) || !isset($stored['kind'], $stored['payload']) || !is_array($stored['payload'])) {
-            return ['ok' => false, 'error' => 'Este enlace no existe, ya se usó o ha caducado.'];
+            return ['ok' => false, 'error' => 'Este enlace no existe o ha caducado.'];
         }
 
         $kind = strtolower(trim((string) $stored['kind']));
         $payload = $stored['payload'];
+
+        // Pausa: reutilizable el mismo día (reenviar al cliente). Toggle: un solo uso.
+        if ($kind !== self::KIND_PAUSE) {
+            Cache::forget($key);
+        }
 
         if ($kind === self::KIND_PAUSE) {
             $result = (new VideoTranscodePauseService())->pause($payload);

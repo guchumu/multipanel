@@ -46,7 +46,7 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~30 s) y corta solo Transcodes de vídeo «salvables» en Plex (bajada de calidad / mal ajuste). No afecta a Jellyfin. Deja pasar Burn de subtítulos y cambio de codec. Desde ntfy puedes saltar 1h / 3h / 5h / hasta medianoche.">
+        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~30 s) y corta solo Transcodes de vídeo «salvables» en Plex (bajada de calidad / mal ajuste). No afecta a Jellyfin. Deja pasar Burn de subtítulos y cambio de codec. Desde ntfy puedes saltar 3h o hasta medianoche (enlaces válidos todo el día).">
             <input class="form-check-input" type="checkbox" role="switch"
                    id="auto-kill-video-transcodes"
                    <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>

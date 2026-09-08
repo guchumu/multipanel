@@ -30,7 +30,7 @@ final class TranscodeActionLinkServiceTest extends TestCase
             'tenant_id' => 1,
             'media_user_id' => 42,
             'username' => 'alice',
-            'duration' => VideoTranscodePauseService::DURATION_1H,
+            'duration' => VideoTranscodePauseService::DURATION_3H,
         ]);
         $this->assertNotNull($url);
         $this->assertMatchesRegularExpression('#^https?://[^/]+/t/[A-Za-z0-9]{10}$#', (string) $url);
@@ -39,11 +39,13 @@ final class TranscodeActionLinkServiceTest extends TestCase
         $result = $svc->consume($code);
         $this->assertTrue($result['ok']);
         $this->assertSame(TranscodeActionLinkService::KIND_PAUSE, $result['kind']);
-        $this->assertSame(VideoTranscodePauseService::DURATION_1H, $result['duration']);
+        $this->assertSame(VideoTranscodePauseService::DURATION_3H, $result['duration']);
         $this->assertSame('alice', $result['username']);
 
+        // Los enlaces de pausa se pueden reutilizar el mismo día (reenviar al cliente).
         $again = $svc->consume($code);
-        $this->assertFalse($again['ok']);
+        $this->assertTrue($again['ok']);
+        $this->assertSame(VideoTranscodePauseService::DURATION_3H, $again['duration']);
     }
 
     public function testExplainVideoTranscodeReasonCodecAndRes(): void

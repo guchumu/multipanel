@@ -25,7 +25,7 @@ final class VideoTranscodePauseServiceTest extends TestCase
             'tenant_id' => 1,
             'media_user_id' => 42,
             'username' => 'alice',
-            'duration' => VideoTranscodePauseService::DURATION_1H,
+            'duration' => VideoTranscodePauseService::DURATION_3H,
         ]);
         $this->assertTrue($result['ok']);
         $this->assertTrue($svc->isPaused(1, [

@@ -12,34 +12,46 @@ use DateTimeZone;
 /**
  * Pausa temporal del auto-corte de vídeo Transcode (solo ese corte; no límites de streams).
  * Clave por media_user_id o, si no hay match, por servidor + user_id externo / username.
+ *
+ * Enlaces públicos: 3h y «hoy» (hasta medianoche). Caducan al final del día (reutilizables).
  */
 final class VideoTranscodePauseService
 {
+    /** @deprecated Ya no se ofrece en ntfy; se acepta en enlaces antiguos. */
     public const DURATION_1H = '1h';
 
     public const DURATION_3H = '3h';
 
+    /** @deprecated Ya no se ofrece en ntfy; se acepta en enlaces antiguos. */
     public const DURATION_5H = '5h';
 
     public const DURATION_EOD = 'eod';
 
+    /** Duraciones que se generan en avisos nuevos. */
     /** @var list<string> */
     public const DURATIONS = [
+        self::DURATION_3H,
+        self::DURATION_EOD,
+    ];
+
+    /** Todas las duraciones aceptadas al consumir un enlace (incluye legado). */
+    /** @var list<string> */
+    public const ACCEPTED_DURATIONS = [
         self::DURATION_1H,
         self::DURATION_3H,
         self::DURATION_5H,
         self::DURATION_EOD,
     ];
 
-    /** ntfy admite como máximo 3 Actions; el resto va en el cuerpo. */
+    /** ntfy admite como máximo 3 Actions. */
     /** @var list<string> */
     public const NTFY_ACTION_DURATIONS = [
-        self::DURATION_1H,
         self::DURATION_3H,
         self::DURATION_EOD,
     ];
 
-    private const TOKEN_TTL_SECONDS = 900;
+    /** TTL de tokens firmados (fallback): hasta fin de día, mín. 12 h. */
+    private const TOKEN_MIN_TTL_SECONDS = 43200;
 
     private const CACHE_PREFIX = 'vtrans_pause:';
 
@@ -76,7 +88,7 @@ final class VideoTranscodePauseService
     {
         $tenantId = (int) ($target['tenant_id'] ?? 0);
         $duration = strtolower(trim((string) ($target['duration'] ?? '')));
-        if ($tenantId <= 0 || !in_array($duration, self::DURATIONS, true)) {
+        if ($tenantId <= 0 || !in_array($duration, self::ACCEPTED_DURATIONS, true)) {
             return ['ok' => false, 'error' => 'Datos de pausa no válidos.'];
         }
 
@@ -145,6 +157,17 @@ final class VideoTranscodePauseService
     }
 
     /**
+     * Segundos de validez del enlace público (hasta medianoche, mínimo 12 h).
+     * Así puedes reenviarlo más tarde el mismo día si el cliente escribe.
+     */
+    public function linkTtlSeconds(): int
+    {
+        $untilMidnight = $this->expiresAt(self::DURATION_EOD) - time();
+
+        return max(self::TOKEN_MIN_TTL_SECONDS, $untilMidnight + 3600);
+    }
+
+    /**
      * @param array{
      *   tenant_id: int,
      *   media_user_id?: int,
@@ -158,7 +181,7 @@ final class VideoTranscodePauseService
     {
         $tenantId = (int) ($payload['tenant_id'] ?? 0);
         $duration = strtolower(trim((string) ($payload['duration'] ?? '')));
-        if ($tenantId <= 0 || !in_array($duration, self::DURATIONS, true)) {
+        if ($tenantId <= 0 || !in_array($duration, self::ACCEPTED_DURATIONS, true)) {
             return null;
         }
 
@@ -177,7 +200,7 @@ final class VideoTranscodePauseService
             'u' => $userId,
             'n' => $username,
             'd' => $duration,
-            'e' => time() + self::TOKEN_TTL_SECONDS,
+            'e' => time() + $this->linkTtlSeconds(),
         ];
 
         $json = json_encode($body, JSON_UNESCAPED_UNICODE);
@@ -289,7 +312,7 @@ final class VideoTranscodePauseService
             self::DURATION_3H => $now->modify('+3 hours')->getTimestamp(),
             self::DURATION_5H => $now->modify('+5 hours')->getTimestamp(),
             self::DURATION_EOD => $now->modify('tomorrow')->setTime(0, 0, 0)->getTimestamp(),
-            default => $now->modify('+1 hour')->getTimestamp(),
+            default => $now->modify('+3 hours')->getTimestamp(),
         };
     }
 
