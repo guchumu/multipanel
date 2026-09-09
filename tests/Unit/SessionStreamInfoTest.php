@@ -230,5 +230,13 @@ final class SessionStreamInfoTest extends TestCase
             'H264 (HW) 1080p → H264 (HW) 720p · 4 Mbps 720p (3.8 Mbps)',
             SessionStreamInfo::shortVideoTranscodeWhy($info)
         );
+        $detail = SessionStreamInfo::ntfyTranscodeChangeLines($info);
+        $this->assertContains('Original → pide el cliente:', $detail);
+        $this->assertContains('Vídeo: H264 (HW) 1080p → H264 (HW) 720p', $detail);
+        $this->assertTrue(
+            (bool) array_filter($detail, static fn (string $l): bool => str_starts_with($l, 'Audio:')),
+            'Debe incluir línea de audio'
+        );
+        $this->assertContains('Calidad: 4 Mbps 720p (3.8 Mbps)', $detail);
     }
 }

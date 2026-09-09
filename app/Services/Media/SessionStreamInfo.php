@@ -601,6 +601,48 @@ final class SessionStreamInfo
     }
 
     /**
+     * Líneas claras para ntfy: qué pide el cliente vs el original (vídeo / audio / contenedor).
+     *
+     * @param array<string, mixed> $streamInfo
+     * @return list<string>
+     */
+    public static function ntfyTranscodeChangeLines(array $streamInfo): array
+    {
+        $lines = ['Original → pide el cliente:'];
+
+        $video = self::videoTranscodeTransition($streamInfo);
+        if ($video !== '') {
+            $lines[] = 'Vídeo: ' . $video;
+        }
+
+        $audio = self::audioTranscodeTransition($streamInfo);
+        if ($audio !== '') {
+            $lines[] = 'Audio: ' . $audio;
+        }
+
+        $container = self::containerTranscodeTransition($streamInfo);
+        if ($container !== '') {
+            $lines[] = 'Contenedor: ' . $container;
+        }
+
+        $quality = trim((string) ($streamInfo['quality'] ?? ''));
+        if ($quality !== '' && $quality !== '—') {
+            $lines[] = 'Calidad: ' . $quality;
+        }
+
+        if (count($lines) === 1) {
+            $fallback = self::shortVideoTranscodeWhy($streamInfo);
+            if ($fallback !== '') {
+                return ['Original → pide el cliente:', $fallback];
+            }
+
+            return [];
+        }
+
+        return $lines;
+    }
+
+    /**
      * Detalle de vídeo estilo Tautulli: "H264 (HW) 1080p → H264 (HW) 720p".
      *
      * @param array<string, mixed> $streamInfo
@@ -639,6 +681,67 @@ final class SessionStreamInfo
         }
 
         return $src !== '' ? $src : $dst;
+    }
+
+    /**
+     * @param array<string, mixed> $streamInfo
+     */
+    public static function audioTranscodeTransition(array $streamInfo): string
+    {
+        $audioLine = trim((string) ($streamInfo['audio'] ?? ''));
+        if (preg_match('/^Transcode\s*\((.+)\)\s*$/iu', $audioLine, $m)) {
+            $inner = self::normalizeTransitionArrow(trim((string) ($m[1] ?? '')));
+            if ($inner !== '' && str_contains($inner, '→')) {
+                return $inner;
+            }
+        }
+
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+        $srcCodec = self::dashless((string) ($source['audio_codec'] ?? ''));
+        $outCodec = self::dashless((string) ($output['audio_codec'] ?? ''));
+        $srcCh = self::dashless((string) ($source['audio_channels'] ?? ''));
+        $outCh = self::dashless((string) ($output['audio_channels'] ?? ''));
+        $lang = self::dashless((string) ($source['audio_lang'] ?? ''));
+
+        $srcCore = trim($srcCodec . ($srcCh !== '' ? ' ' . $srcCh : ''));
+        $dstCore = trim($outCodec . ($outCh !== '' ? ' ' . $outCh : ''));
+        if ($srcCore === '' && $dstCore === '') {
+            return '';
+        }
+        if ($dstCore === '' || strcasecmp($srcCore, $dstCore) === 0) {
+            return $lang !== '' && $srcCore !== '' ? $lang . ' - ' . $srcCore : $srcCore;
+        }
+
+        $src = $lang !== '' && $srcCore !== '' ? $lang . ' - ' . $srcCore : $srcCore;
+
+        return ($src !== '' ? $src : '?') . ' → ' . $dstCore;
+    }
+
+    /**
+     * @param array<string, mixed> $streamInfo
+     */
+    public static function containerTranscodeTransition(array $streamInfo): string
+    {
+        $containerLine = trim((string) ($streamInfo['container'] ?? ''));
+        if (preg_match('/^Converting\s*\((.+)\)\s*$/iu', $containerLine, $m)) {
+            $inner = self::normalizeTransitionArrow(trim((string) ($m[1] ?? '')));
+            if ($inner !== '') {
+                return $inner;
+            }
+        }
+
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $src = self::dashless((string) ($source['format'] ?? ''));
+        if ($src !== '' && preg_match('/\(([A-Z0-9]+)(?:\s*→\s*([A-Z0-9]+))?\)/i', $containerLine, $m2)) {
+            $from = strtoupper((string) ($m2[1] ?? ''));
+            $to = strtoupper((string) ($m2[2] ?? ''));
+            if ($from !== '' && $to !== '') {
+                return $from . ' → ' . $to;
+            }
+        }
+
+        return '';
     }
 
     private static function normalizeTransitionArrow(string $value): string

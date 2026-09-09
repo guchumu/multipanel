@@ -50,7 +50,9 @@ final class TranscodeActionLinkService
      */
     public function createToggleUrl(array $payload): ?string
     {
-        return $this->create(self::KIND_TOGGLE, $payload);
+        $ttl = (new VideoTranscodePauseService())->linkTtlSeconds();
+
+        return $this->create(self::KIND_TOGGLE, $payload, $ttl);
     }
 
     /**
@@ -113,10 +115,7 @@ final class TranscodeActionLinkService
         $kind = strtolower(trim((string) $stored['kind']));
         $payload = $stored['payload'];
 
-        // Pausa: reutilizable el mismo día (reenviar al cliente). Toggle: un solo uso.
-        if ($kind !== self::KIND_PAUSE) {
-            Cache::forget($key);
-        }
+        // Pausa y ON/OFF: reutilizables todo el día (mismo TTL de caché).
 
         if ($kind === self::KIND_PAUSE) {
             $result = (new VideoTranscodePauseService())->pause($payload);

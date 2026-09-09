@@ -21,8 +21,6 @@ final class VideoTranscodeAutoKillToggleService
         self::ACTION_DISABLE,
     ];
 
-    private const TOKEN_TTL_SECONDS = 900;
-
     /**
      * @return array{enable?: string, disable?: string}
      */
@@ -69,7 +67,7 @@ final class VideoTranscodeAutoKillToggleService
         $body = [
             't' => $tenantId,
             'a' => $action,
-            'e' => time() + self::TOKEN_TTL_SECONDS,
+            'e' => time() + (new VideoTranscodePauseService())->linkTtlSeconds(),
         ];
 
         $json = json_encode($body, JSON_UNESCAPED_UNICODE);

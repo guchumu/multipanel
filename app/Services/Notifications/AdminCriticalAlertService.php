@@ -394,7 +394,7 @@ final class AdminCriticalAlertService
         $household = (($session['household'] ?? '') === 'home') ? 'Casa' : ((($session['household'] ?? '') === 'away') ? 'Fuera' : '');
         $clientIp = trim((string) ($session['client_ip'] ?? ''));
 
-        $why = \App\Services\Media\SessionStreamInfo::shortVideoTranscodeWhy($streamInfo, $session);
+        $whyLines = \App\Services\Media\SessionStreamInfo::ntfyTranscodeChangeLines($streamInfo);
         $clientBits = array_values(array_filter([$product, $player], static fn (string $v): bool => $v !== ''));
         $clientBits = array_values(array_unique($clientBits));
         $where = trim(($household !== '' ? $household : '') . ($clientIp !== '' ? ($household !== '' ? ' · ' : '') . $clientIp : ''));
@@ -414,8 +414,14 @@ final class AdminCriticalAlertService
         $lines = [
             $username . ' · ' . $showTitle,
             $serverName . ($where !== '' ? ' · ' . $where : ''),
-            'Por qué: ' . $why,
         ];
+        if ($whyLines !== []) {
+            foreach ($whyLines as $wl) {
+                $lines[] = $wl;
+            }
+        } else {
+            $lines[] = 'Por qué: ' . \App\Services\Media\SessionStreamInfo::shortVideoTranscodeWhy($streamInfo, $session);
+        }
         if ($clientBits !== []) {
             $lines[] = 'Cliente: ' . implode(' · ', array_slice($clientBits, 0, 2));
         }
