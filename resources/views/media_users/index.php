@@ -334,11 +334,14 @@ ob_start();
                             </button>
                             <ul class="dropdown-menu dropdown-menu-start shadow-sm">
                                 <li><h6 class="dropdown-header">Actualizar / renovar</h6></li>
-                                <?php foreach ([7, 15, 30, 90, 365] as $d): ?>
+                                <?php foreach (\App\Services\SubscriptionPeriod::QUICK_RENEW_DAYS as $d): ?>
+                                <?php $renewPreview = \App\Services\SubscriptionPeriod::previewAddDays($u->expires_at, (int) $d); ?>
                                 <li>
                                     <button type="button" class="dropdown-item btn-quick-renew"
-                                            data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>">
-                                        +<?= (int) $d ?> días
+                                            data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>"
+                                            data-expires-before="<?= e(expires_date_input($u->expires_at)) ?>"
+                                            data-expires-after="<?= e($renewPreview) ?>">
+                                        +<?= (int) $d ?> días → <?= e($renewPreview) ?>
                                     </button>
                                 </li>
                                 <?php endforeach; ?>
@@ -429,11 +432,14 @@ ob_start();
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end shadow-sm">
                                     <li><h6 class="dropdown-header">Sumar días</h6></li>
-                                    <?php foreach ([7, 15, 30, 90, 365] as $d): ?>
+                                    <?php foreach (\App\Services\SubscriptionPeriod::QUICK_RENEW_DAYS as $d): ?>
+                                    <?php $renewPreview = \App\Services\SubscriptionPeriod::previewAddDays($u->expires_at, (int) $d); ?>
                                     <li>
                                         <button type="button" class="dropdown-item btn-quick-renew"
-                                                data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>">
-                                            +<?= (int) $d ?> días
+                                                data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $d ?>"
+                                                data-expires-before="<?= e(expires_date_input($u->expires_at)) ?>"
+                                                data-expires-after="<?= e($renewPreview) ?>">
+                                            +<?= (int) $d ?> días → <?= e($renewPreview) ?>
                                         </button>
                                     </li>
                                     <?php endforeach; ?>
@@ -558,10 +564,15 @@ function focusExpiresInput(uuid) {
     input.focus();
     input.showPicker?.();
 }
-async function renewUserDays(uuid, days) {
+async function renewUserDays(uuid, days, expiresBefore, expiresAfter) {
     days = Number(days);
-    if (!uuid || !days) return;
-    if (!confirm(`¿Sumar ${days} días a este usuario?`)) return;
+    if (!uuid || !Number.isFinite(days) || days < 1) return;
+    if (window.__renewInFlight?.[uuid]) return;
+    const before = expiresBefore || 'sin fecha';
+    const after = expiresAfter || '(calcular en servidor)';
+    if (!confirm(`¿Sumar ${days} días a este usuario?\n\nFecha actual: ${before}\nNueva fecha: ${after}\n\n(Se suman sobre la caducidad actual; si ya estaba caducado, se parte de hoy.)`)) return;
+    window.__renewInFlight = window.__renewInFlight || {};
+    window.__renewInFlight[uuid] = true;
     try {
         const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
         const res = await fetch(`/media-users/${uuid}/add-days`, {
@@ -583,13 +594,20 @@ async function renewUserDays(uuid, days) {
         if (res.ok) location.reload();
     } catch (err) {
         alert('Error de red: ' + err.message);
+    } finally {
+        if (window.__renewInFlight) delete window.__renewInFlight[uuid];
     }
 }
 document.addEventListener('click', (e) => {
     const btn = e.target.closest?.('.btn-quick-renew');
     if (!btn) return;
     e.preventDefault();
-    renewUserDays(btn.dataset.uuid, btn.dataset.days);
+    renewUserDays(
+        btn.dataset.uuid,
+        btn.dataset.days,
+        btn.dataset.expiresBefore || '',
+        btn.dataset.expiresAfter || ''
+    );
 });
 </script>
 JS;

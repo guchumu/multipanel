@@ -9,6 +9,9 @@ namespace App\Services;
  */
 final class SubscriptionPeriod
 {
+    /** Días de los botones rápidos (+7 / +15 / +30 / +90 / +365). */
+    public const QUICK_RENEW_DAYS = [7, 15, 30, 90, 365];
+
     /** @return array<string, string> */
     public static function options(): array
     {
@@ -39,30 +42,59 @@ final class SubscriptionPeriod
         };
     }
 
+    public static function addDaysToExpires(?string $currentExpires, int $days): string
+    {
+        $days = max(1, min(3650, $days));
+        $tz = self::appTimezone();
+        $today = new \DateTimeImmutable('today', $tz);
+        $parsed = self::parseDate($currentExpires);
+
+        $base = $today;
+        if ($parsed !== null) {
+            $from = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed, $tz);
+            if ($from instanceof \DateTimeImmutable && $from >= $today) {
+                $base = $from;
+            }
+        }
+
+        return $base->modify('+' . $days . ' days')->format('Y-m-d 23:59:59');
+    }
+
+    /**
+     * Vista previa YYYY-MM-DD de addDaysToExpires (para confirmaciones en UI).
+     */
+    public static function previewAddDays(?string $currentExpires, int $days): string
+    {
+        return substr(self::addDaysToExpires($currentExpires, $days), 0, 10);
+    }
+
     /** Fecha de expiración a N días desde hoy (fin del día). */
     public static function daysToExpiresAt(int $days): string
     {
-        $days = max(1, $days);
+        $days = max(1, min(3650, $days));
 
-        return (new \DateTimeImmutable('today'))
+        return (new \DateTimeImmutable('today', self::appTimezone()))
             ->modify('+' . $days . ' days')
             ->format('Y-m-d 23:59:59');
     }
 
-    public static function addDaysToExpires(?string $currentExpires, int $days): string
+    private static function appTimezone(): \DateTimeZone
     {
-        $today = new \DateTimeImmutable('today');
-        $parsed = self::parseDate($currentExpires);
-        if ($parsed !== null) {
-            $base = \DateTimeImmutable::createFromFormat('!Y-m-d', $parsed);
-            if ($base !== false && $base < $today) {
-                $base = $today;
+        $name = 'Europe/Madrid';
+        if (function_exists('config')) {
+            try {
+                $configured = (string) config('app.timezone', 'Europe/Madrid');
+                if ($configured !== '') {
+                    $name = $configured;
+                }
+            } catch (\Throwable) {
             }
-        } else {
-            $base = $today;
         }
-
-        return $base->modify('+' . $days . ' days')->format('Y-m-d 23:59:59');
+        try {
+            return new \DateTimeZone($name);
+        } catch (\Throwable) {
+            return new \DateTimeZone('Europe/Madrid');
+        }
     }
 
     /** Normaliza entrada HTML date (Y-m-d) o valor DB a fin de día almacenable. */

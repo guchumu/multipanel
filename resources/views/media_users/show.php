@@ -143,8 +143,12 @@ ob_start();
                            title="Vacío = sin caducidad">
                     <div class="form-text mb-2">Vacío = acceso indefinido</div>
                     <div class="mu-day-chips">
-                        <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
-                        <button type="button" class="mu-day-chip btn-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
+                        <?php foreach (\App\Services\SubscriptionPeriod::QUICK_RENEW_DAYS as $days): ?>
+                        <?php $chipPreview = \App\Services\SubscriptionPeriod::previewAddDays($mediaUser->expires_at, (int) $days); ?>
+                        <button type="button" class="mu-day-chip btn-add-days" data-days="<?= (int) $days ?>"
+                                data-expires-before="<?= e(expires_date_input($mediaUser->expires_at)) ?>"
+                                data-expires-after="<?= e($chipPreview) ?>"
+                                title="Suma <?= (int) $days ?> días → <?= e($chipPreview) ?>">+<?= (int) $days ?>d</button>
                         <?php endforeach; ?>
                     </div>
                 </div>

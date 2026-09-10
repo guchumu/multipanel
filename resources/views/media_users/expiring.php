@@ -293,10 +293,13 @@ $trialDays = (int) ($reengageCfg['trial_days'] ?? 3);
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>"><i class="bi bi-eye me-2"></i>Ver ficha</a></li>
                                 <li><a class="dropdown-item" href="/media-users/<?= e($u->uuid) ?>#stripe"><i class="bi bi-credit-card me-2"></i>Enlace de pago</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <?php foreach ([7, 15, 30, 90, 365] as $opt): ?>
+                                <?php foreach (\App\Services\SubscriptionPeriod::QUICK_RENEW_DAYS as $opt): ?>
+                                <?php $renewPreview = \App\Services\SubscriptionPeriod::previewAddDays($u->expires_at, (int) $opt); ?>
                                 <li>
-                                    <a class="dropdown-item btn-quick-renew" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= $opt ?>">
-                                        <i class="bi bi-calendar-plus me-2"></i>+<?= $opt ?> días
+                                    <a class="dropdown-item btn-quick-renew" href="#" data-uuid="<?= e($u->uuid) ?>" data-days="<?= (int) $opt ?>"
+                                       data-expires-before="<?= e(expires_date_input($u->expires_at)) ?>"
+                                       data-expires-after="<?= e($renewPreview) ?>">
+                                        <i class="bi bi-calendar-plus me-2"></i>+<?= (int) $opt ?> días → <?= e($renewPreview) ?>
                                     </a>
                                 </li>
                                 <?php endforeach; ?>

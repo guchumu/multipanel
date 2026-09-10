@@ -259,8 +259,8 @@ ob_start();
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-1 mb-3">
-                <?php foreach ([7, 15, 30, 90, 365] as $days): ?>
-                <button type="button" class="btn btn-sm btn-outline-primary review-add-days" data-days="<?= $days ?>">+<?= $days ?>d</button>
+                <?php foreach (\App\Services\SubscriptionPeriod::QUICK_RENEW_DAYS as $days): ?>
+                <button type="button" class="btn btn-sm btn-outline-primary review-add-days" data-days="<?= (int) $days ?>">+<?= (int) $days ?>d</button>
                 <?php endforeach; ?>
             </div>
 
@@ -325,10 +325,19 @@ ob_start();
                 const input = document.getElementById('review-expires');
                 if (!input) return;
                 const days = Number(btn.dataset.days || 0);
-                if (!days) return;
-                const baseStr = input.value || new Date().toISOString().slice(0, 10);
+                if (!Number.isFinite(days) || days < 1) return;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const baseStr = input.value || [
+                    today.getFullYear(),
+                    String(today.getMonth() + 1).padStart(2, '0'),
+                    String(today.getDate()).padStart(2, '0'),
+                ].join('-');
                 const parts = baseStr.split('-').map(Number);
-                const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+                let dt = new Date(parts[0], parts[1] - 1, parts[2]);
+                if (Number.isNaN(dt.getTime()) || dt < today) {
+                    dt = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                }
                 dt.setDate(dt.getDate() + days);
                 input.value = [
                     dt.getFullYear(),

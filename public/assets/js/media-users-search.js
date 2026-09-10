@@ -11,6 +11,23 @@
     const countSummary = document.getElementById('usersCountSummary');
     const initialCountHtml = countSummary?.innerHTML || '';
 
+    function addDaysYmd(ymd, days) {
+        const baseStr = normalizeExpiresDate(ymd) || new Date().toISOString().slice(0, 10);
+        const parts = baseStr.split('-').map(Number);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        let dt = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (Number.isNaN(dt.getTime()) || dt < today) {
+            dt = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        }
+        dt.setDate(dt.getDate() + Number(days));
+        return [
+            dt.getFullYear(),
+            String(dt.getMonth() + 1).padStart(2, '0'),
+            String(dt.getDate()).padStart(2, '0'),
+        ].join('-');
+    }
+
     function escapeHtml(value) {
         return String(value ?? '')
             .replaceAll('&', '&amp;')
@@ -141,10 +158,11 @@
             }
             statusMenu.push(`<li><hr class="dropdown-divider"></li>`);
             statusMenu.push(`<li><button type="button" class="dropdown-item text-danger" onclick="removeAndDeleteUser('${escapeHtml(u.uuid)}')">Quitar del servidor y eliminar del panel</button></li>`);
-            const renewItems = [7, 15, 30, 90, 365].map((d) =>
-                `<li><button type="button" class="dropdown-item btn-quick-renew" data-uuid="${escapeHtml(u.uuid)}" data-days="${d}">+${d} días</button></li>`
-            ).join('');
-            const expiresDate = u.expires_at ? String(u.expires_at).slice(0, 10) : '';
+            const expiresDate = u.expires_at ? normalizeExpiresDate(u.expires_at) : '';
+            const renewItems = [7, 15, 30, 90, 365].map((d) => {
+                const after = addDaysYmd(expiresDate, d);
+                return `<li><button type="button" class="dropdown-item btn-quick-renew" data-uuid="${escapeHtml(u.uuid)}" data-days="${d}" data-expires-before="${escapeHtml(expiresDate)}" data-expires-after="${escapeHtml(after)}">+${d} días → ${escapeHtml(after)}</button></li>`;
+            }).join('');
             const dl = daysLeftBadge(expiresDate || u.expires_at);
             const mb = membershipBadge(u.on_server);
             const username = escapeHtml(u.display_name || u.username || '');

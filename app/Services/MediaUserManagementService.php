@@ -595,15 +595,33 @@ final class MediaUserManagementService
         return implode("\n", $lines);
     }
 
-    /** @return array{success: bool, message: string, expires_at: string} */
+    /** @return array{success: bool, message: string, expires_at: string, expires_date?: string, days_added?: int, expires_before?: string, expires_after?: string} */
     public function addDays(MediaUser $user, int $days): array
     {
-        if ($days <= 0) {
-            return ['success' => false, 'message' => 'Los días deben ser positivos.', 'expires_at' => (string) ($user->expires_at ?? '')];
+        if ($days <= 0 || $days > 3650) {
+            return [
+                'success' => false,
+                'message' => 'Los días deben ser un número entre 1 y 3650.',
+                'expires_at' => (string) ($user->expires_at ?? ''),
+                'expires_before' => SubscriptionPeriod::formatForInput(is_scalar($user->expires_at) ? (string) $user->expires_at : null),
+            ];
         }
 
-        $old = ['expires_at' => $user->expires_at];
-        $newDate = SubscriptionPeriod::addDaysToExpires($user->expires_at, $days);
+        $lockKey = 'media_user_add_days_' . (int) $user->id;
+        if (\Core\Cache::get($lockKey)) {
+            return [
+                'success' => false,
+                'message' => 'Ya hay una renovación en curso. Espera un momento.',
+                'expires_at' => (string) ($user->expires_at ?? ''),
+                'expires_before' => SubscriptionPeriod::formatForInput(is_scalar($user->expires_at) ? (string) $user->expires_at : null),
+            ];
+        }
+        \Core\Cache::set($lockKey, 1, 3);
+
+        $oldExpires = $user->expires_at;
+        $oldExpiresStr = is_scalar($oldExpires) ? (string) $oldExpires : null;
+        $old = ['expires_at' => $oldExpires];
+        $newDate = SubscriptionPeriod::addDaysToExpires($oldExpiresStr, $days);
         $user->expires_at = $newDate;
         $wasInactive = in_array($user->status, ['suspended', 'expired'], true);
         if ($wasInactive) {
@@ -636,11 +654,17 @@ final class MediaUserManagementService
             (string) ($user->username ?? '')
         );
 
+        $beforeLabel = SubscriptionPeriod::formatForDisplay($oldExpiresStr);
+        $afterLabel = SubscriptionPeriod::formatForDisplay($newDate);
+
         return [
             'success' => true,
-            'message' => sprintf('+%d días aplicados. Nueva fecha: %s', $days, SubscriptionPeriod::formatForDisplay($newDate)),
+            'message' => sprintf('+%d días: %s → %s', $days, $beforeLabel, $afterLabel),
+            'days_added' => $days,
             'expires_at' => $newDate,
             'expires_date' => SubscriptionPeriod::formatForInput($newDate),
+            'expires_before' => SubscriptionPeriod::formatForInput($oldExpiresStr),
+            'expires_after' => SubscriptionPeriod::formatForInput($newDate),
         ];
     }
 

@@ -169,10 +169,20 @@
         }
     });
 
+    let addDaysInFlight = false;
     document.querySelectorAll('.btn-add-days').forEach((btn) => {
         btn.addEventListener('click', async () => {
+            const days = Number(btn.dataset.days);
+            if (!Number.isFinite(days) || days < 1 || addDaysInFlight) return;
+            const before = btn.dataset.expiresBefore || document.getElementById('expiresAt')?.value || 'sin fecha';
+            const after = btn.dataset.expiresAfter || '(calcular en servidor)';
+            if (!confirm(`¿Sumar ${days} días?\n\nFecha actual: ${before || 'sin fecha'}\nNueva fecha: ${after}\n\n(Se suman sobre la caducidad actual; si ya estaba caducado, se parte de hoy.)`)) {
+                return;
+            }
+            addDaysInFlight = true;
+            btn.disabled = true;
             try {
-                const data = await post(`/media-users/${uuid}/add-days`, { days: Number(btn.dataset.days) });
+                const data = await post(`/media-users/${uuid}/add-days`, { days });
                 if (data.success === false) throw new Error(data.message || 'Error');
                 if (data.expires_at || data.expires_date) {
                     document.getElementById('expiresAt').value = data.expires_date || data.expires_at.substring(0, 10);
@@ -181,6 +191,8 @@
                 setTimeout(() => location.reload(), 600);
             } catch (err) {
                 toast(err.message);
+                addDaysInFlight = false;
+                btn.disabled = false;
             }
         });
     });

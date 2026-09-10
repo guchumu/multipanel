@@ -61,12 +61,16 @@
             e.preventDefault();
             const uuid = btn.dataset.uuid;
             const days = Number(btn.dataset.days);
-            if (!uuid || !days) return;
-            if (!confirm(`¿Sumar ${days} días a este usuario?`)) return;
+            if (!uuid || !Number.isFinite(days) || days < 1) return;
+            if (btn.dataset.inFlight === '1') return;
+            const before = btn.dataset.expiresBefore || 'sin fecha';
+            const after = btn.dataset.expiresAfter || '(calcular en servidor)';
+            if (!confirm(`¿Sumar ${days} días a este usuario?\n\nFecha actual: ${before || 'sin fecha'}\nNueva fecha: ${after}\n\n(Se suman sobre la caducidad actual; si ya estaba caducado, se parte de hoy.)`)) return;
 
             const originalHtml = btn.innerHTML;
+            btn.dataset.inFlight = '1';
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-            btn.disabled = true;
+            btn.classList.add('disabled');
 
             try {
                 const data = await post(`/media-users/${uuid}/add-days`, { days });
@@ -75,7 +79,8 @@
             } catch (err) {
                 alert(err.message);
                 btn.innerHTML = originalHtml;
-                btn.disabled = false;
+                btn.classList.remove('disabled');
+                btn.dataset.inFlight = '0';
             }
         });
     });
