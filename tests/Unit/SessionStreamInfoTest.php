@@ -232,6 +232,10 @@ final class SessionStreamInfoTest extends TestCase
         );
         $detail = SessionStreamInfo::ntfyTranscodeChangeLines($info);
         $this->assertContains('Original → pide el cliente:', $detail);
+        $this->assertTrue(
+            (bool) array_filter($detail, static fn (string $l): bool => str_starts_with($l, 'Archivo:')),
+            'Debe incluir línea Archivo con codec/resolución originales'
+        );
         $this->assertContains('Vídeo: H264 (HW) 1080p → H264 (HW) 720p', $detail);
         $this->assertTrue(
             (bool) array_filter($detail, static fn (string $l): bool => str_starts_with($l, 'Audio:')),

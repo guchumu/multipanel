@@ -1,7 +1,29 @@
 <?php
 /** @var array<string, mixed> $session */
-/** @var callable $playMethodLabel */
-/** @var callable $playMethodBadge */
+/** @var callable|null $playMethodLabel */
+/** @var callable|null $playMethodBadge */
+
+$playMethodLabel = is_callable($playMethodLabel ?? null)
+    ? $playMethodLabel
+    : static function (string $method): string {
+        return match ($method) {
+            'direct_play' => 'Direct Play',
+            'direct_stream' => 'Direct Stream',
+            'transcode' => 'Transcode',
+            default => $method !== '' ? ucfirst(str_replace('_', ' ', $method)) : 'Direct Play',
+        };
+    };
+
+$playMethodBadge = is_callable($playMethodBadge ?? null)
+    ? $playMethodBadge
+    : static function (string $method): string {
+        return match ($method) {
+            'direct_play' => 'success',
+            'direct_stream' => 'info',
+            'transcode' => 'warning',
+            default => 'secondary',
+        };
+    };
 
 // Misma URL que thumbs-debug: /activity/thumb/{uuid}?p=base64url
 $thumbUrl = (string) ($session['thumb_url'] ?? '');

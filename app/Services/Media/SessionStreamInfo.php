@@ -601,7 +601,8 @@ final class SessionStreamInfo
     }
 
     /**
-     * Líneas claras para ntfy: qué pide el cliente vs el original (vídeo / audio / contenedor).
+     * Líneas claras para ntfy: mismo detalle que En directo / Tautulli
+     * (original → lo que pide el cliente).
      *
      * @param array<string, mixed> $streamInfo
      * @return list<string>
@@ -610,19 +611,58 @@ final class SessionStreamInfo
     {
         $lines = ['Original → pide el cliente:'];
 
+        $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
+        $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
+
+        $origBits = array_values(array_filter([
+            self::dashless((string) ($source['format'] ?? '')),
+            self::dashless((string) ($source['video_codec'] ?? '')),
+            self::dashless((string) ($source['resolution'] ?? '')),
+            self::dashless((string) ($source['audio_codec'] ?? '')),
+            self::dashless((string) ($source['audio_channels'] ?? '')),
+        ], static fn (string $v): bool => $v !== ''));
+        $reqBits = array_values(array_filter([
+            self::dashless((string) ($output['video_codec'] ?? '')),
+            self::dashless((string) ($output['resolution'] ?? '')),
+            self::dashless((string) ($output['audio_codec'] ?? '')),
+            self::dashless((string) ($output['audio_channels'] ?? '')),
+        ], static fn (string $v): bool => $v !== ''));
+
+        if ($origBits !== []) {
+            $lines[] = 'Archivo: ' . implode(' · ', $origBits);
+        }
+        $sourceFile = self::dashless((string) ($source['file'] ?? ''));
+        if ($sourceFile !== '') {
+            $lines[] = 'Fichero: ' . $sourceFile;
+        }
+
         $video = self::videoTranscodeTransition($streamInfo);
+        $videoRaw = trim((string) ($streamInfo['video'] ?? ''));
         if ($video !== '') {
             $lines[] = 'Vídeo: ' . $video;
+        } elseif ($videoRaw !== '' && $videoRaw !== '—') {
+            $lines[] = 'Vídeo: ' . $videoRaw;
         }
 
         $audio = self::audioTranscodeTransition($streamInfo);
+        $audioRaw = trim((string) ($streamInfo['audio'] ?? ''));
         if ($audio !== '') {
             $lines[] = 'Audio: ' . $audio;
+        } elseif ($audioRaw !== '' && $audioRaw !== '—') {
+            $lines[] = 'Audio: ' . $audioRaw;
         }
 
         $container = self::containerTranscodeTransition($streamInfo);
+        $containerRaw = trim((string) ($streamInfo['container'] ?? ''));
         if ($container !== '') {
             $lines[] = 'Contenedor: ' . $container;
+        } elseif ($containerRaw !== '' && $containerRaw !== '—') {
+            $lines[] = 'Contenedor: ' . $containerRaw;
+        }
+
+        $streamRaw = trim((string) ($streamInfo['stream'] ?? ''));
+        if ($streamRaw !== '' && $streamRaw !== '—') {
+            $lines[] = 'Stream: ' . $streamRaw;
         }
 
         $quality = trim((string) ($streamInfo['quality'] ?? ''));
@@ -630,7 +670,12 @@ final class SessionStreamInfo
             $lines[] = 'Calidad: ' . $quality;
         }
 
-        if (count($lines) === 1) {
+        if ($reqBits !== [] && $origBits === [] && $video === '' && $videoRaw === '') {
+            $lines[] = 'Pide: ' . implode(' · ', $reqBits);
+        }
+
+        // Solo cabecera → no hay datos útiles.
+        if (count($lines) <= 1) {
             $fallback = self::shortVideoTranscodeWhy($streamInfo);
             if ($fallback !== '') {
                 return ['Original → pide el cliente:', $fallback];
@@ -652,6 +697,12 @@ final class SessionStreamInfo
         $videoLine = trim((string) ($streamInfo['video'] ?? ''));
         if (preg_match('/^Transcode\s*\((.+)\)\s*$/iu', $videoLine, $m)) {
             $inner = self::normalizeTransitionArrow(trim((string) ($m[1] ?? '')));
+            if ($inner !== '' && !str_contains($inner, '→')) {
+                // A veces llega "H264 (HW) 1080p  H264 (HW) 720p" sin flecha.
+                if (preg_match('/^(.+?\d{3,4}p)\s{1,}([A-Za-z0-9].*\d{3,4}p.*)$/u', $inner, $split)) {
+                    $inner = trim((string) $split[1]) . ' → ' . trim((string) $split[2]);
+                }
+            }
             if ($inner !== '') {
                 return $inner;
             }
