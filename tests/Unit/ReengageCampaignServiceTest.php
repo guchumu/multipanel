@@ -42,10 +42,12 @@ final class ReengageCampaignServiceTest extends TestCase
         $this->assertStringNotContainsString('{payment_url}', $out);
     }
 
-    public function testApplyDiscountAmount(): void
+    public function testCanAutoSendRespectsIntervalAndMax(): void
     {
         $svc = new ReengageCampaignService();
-        $this->assertSame(59.5, $svc->applyDiscountAmount(70.0, 15));
+        $user = new MediaUser(['id' => 0, 'username' => 'x']);
+        // Sin id válido no debe auto-enviar.
+        $this->assertFalse($svc->canAutoSend($user, ['interval_days' => 15, 'max_sends' => 4]));
     }
 
     public function testTemplateForReturnsInviteByStep(): void

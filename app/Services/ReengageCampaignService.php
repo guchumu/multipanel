@@ -363,6 +363,14 @@ final class ReengageCampaignService
             return ['success' => false, 'message' => 'La campaña de reenganche está desactivada.', 'sent' => false];
         }
 
+        if (!$force && !$this->canAutoSend($user, $cfg)) {
+            return [
+                'success' => true,
+                'message' => 'Omitido: aún no toca (intervalo o tope de avisos).',
+                'sent' => false,
+            ];
+        }
+
         $sendCount = $this->sendCountFor((int) $user->id);
         $step = min(self::INVITE_SLOTS, $sendCount + 1);
         $tpl = $this->templateFor($cfg, 'invite', $step);
@@ -393,6 +401,59 @@ final class ReengageCampaignService
         }
 
         return $result;
+    }
+
+    /**
+     * ¿Puede el cron mandar otro aviso? Respeta tope e intervalo (días completos).
+     *
+     * @param array{interval_days?: int, max_sends?: int} $cfg
+     */
+    public function canAutoSend(MediaUser $user, array $cfg): bool
+    {
+        $mediaUserId = (int) ($user->id ?? 0);
+        if ($mediaUserId <= 0) {
+            return false;
+        }
+
+        $maxSends = max(1, min(self::INVITE_SLOTS, (int) ($cfg['max_sends'] ?? 4)));
+        $intervalDays = max(1, (int) ($cfg['interval_days'] ?? 15));
+        $sendCount = $this->sendCountFor($mediaUserId);
+        if ($sendCount >= $maxSends) {
+            return false;
+        }
+
+        self::ensureTable();
+        try {
+            $row = Database::getInstance()->fetchOne(
+                'SELECT last_sent_at, converted_at FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
+                [$mediaUserId]
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($row && !empty($row['converted_at'])) {
+            return false;
+        }
+
+        $last = trim((string) ($row['last_sent_at'] ?? ''));
+        if ($last === '') {
+            return true;
+        }
+
+        try {
+            $lastDay = (new DateTimeImmutable(substr($last, 0, 10)))->setTime(0, 0);
+            $today = new DateTimeImmutable('today');
+            $daysSince = (int) $lastDay->diff($today)->days;
+            // diff()->days es absoluto; si last es futuro, no reenviar.
+            if ($lastDay > $today) {
+                return false;
+            }
+
+            return $daysSince >= $intervalDays;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** @return array{success: bool, message: string, sent: bool} */
@@ -445,21 +506,29 @@ final class ReengageCampaignService
         $converted = $this->markConversions($tenantId, (int) $cfg['trial_days']);
 
         $stats = ['sent' => 0, 'skipped' => 0, 'converted' => $converted, 'errors' => 0];
+        // PDO nativo no admite bien placeholders en INTERVAL; enteros ya saneados.
+        $minExpired = max(1, (int) $cfg['min_expired_days']);
+        $maxSends = max(1, min(self::INVITE_SLOTS, (int) $cfg['max_sends']));
+        $intervalDays = max(1, (int) $cfg['interval_days']);
+
         $rows = Database::getInstance()->fetchAll(
-            'SELECT mu.*, s.name AS server_name, r.send_count, r.last_sent_at, r.converted_at
+            "SELECT mu.*, s.name AS server_name, r.send_count, r.last_sent_at, r.converted_at
              FROM media_users mu
              LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
              LEFT JOIN media_user_reengage r ON r.media_user_id = mu.id
              WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL
                AND mu.expires_at IS NOT NULL
                AND DATE(mu.expires_at) < CURDATE()
-               AND DATEDIFF(CURDATE(), DATE(mu.expires_at)) >= ?
-               AND mu.status IN (\'expired\', \'suspended\', \'active\')
+               AND DATEDIFF(CURDATE(), DATE(mu.expires_at)) >= {$minExpired}
+               AND mu.status IN ('expired', 'suspended', 'active')
                AND (r.converted_at IS NULL)
-               AND COALESCE(r.send_count, 0) < ?
-               AND (r.last_sent_at IS NULL OR r.last_sent_at <= DATE_SUB(NOW(), INTERVAL ? DAY))
-             LIMIT 200',
-            [$tenantId, $cfg['min_expired_days'], $cfg['max_sends'], $cfg['interval_days']]
+               AND COALESCE(r.send_count, 0) < {$maxSends}
+               AND (
+                    r.last_sent_at IS NULL
+                    OR DATE(r.last_sent_at) <= DATE_SUB(CURDATE(), INTERVAL {$intervalDays} DAY)
+               )
+             LIMIT 200",
+            [$tenantId]
         );
 
         foreach ($rows as $row) {
@@ -470,10 +539,18 @@ final class ReengageCampaignService
                 continue;
             }
 
+            // Defensa extra: no confiar solo en el SQL del intervalo.
+            if (!$this->canAutoSend($user, $cfg)) {
+                $stats['skipped']++;
+                continue;
+            }
+
             $result = $this->invite($user, false);
             if (!empty($result['sent'])) {
                 $stats['sent']++;
                 Logger::info('Reengage invite sent', ['media_user_id' => $user->id]);
+            } elseif (str_starts_with((string) ($result['message'] ?? ''), 'Omitido:')) {
+                $stats['skipped']++;
             } else {
                 $stats['errors']++;
             }
@@ -559,7 +636,7 @@ final class ReengageCampaignService
 
         return [
             'enabled' => (bool) config('reengage.enabled', true),
-            'interval_days' => max(1, (int) config('reengage.interval_days', 14)),
+            'interval_days' => max(1, (int) config('reengage.interval_days', 15)),
             'max_sends' => max(1, min(self::INVITE_SLOTS, (int) config('reengage.max_sends', 4))),
             'min_expired_days' => max(1, (int) config('reengage.min_expired_days', 60)),
             'trial_days' => max(1, min(15, (int) config('reengage.trial_days', 3))),

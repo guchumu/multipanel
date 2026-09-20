@@ -236,8 +236,15 @@ final class ExpiryNotificationService
             );
 
             return $row !== null;
-        } catch (\Throwable) {
-            return false;
+        } catch (\Throwable $e) {
+            // Fail closed: mejor no spamear si la tabla falla.
+            Logger::error('Expiry alreadySent check failed', [
+                'media_user_id' => $mediaUserId,
+                'milestone' => $milestone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return true;
         }
     }
 
@@ -245,11 +252,19 @@ final class ExpiryNotificationService
     {
         self::ensureExpiryNoticesTable();
 
-        Database::getInstance()->insert('media_user_expiry_notices', [
-            'media_user_id' => $mediaUserId,
-            'milestone' => $milestone,
-            'sent_at' => date('Y-m-d H:i:s'),
-        ]);
+        try {
+            Database::getInstance()->query(
+                'INSERT IGNORE INTO media_user_expiry_notices (media_user_id, milestone, sent_at)
+                 VALUES (?, ?, ?)',
+                [$mediaUserId, $milestone, date('Y-m-d H:i:s')]
+            );
+        } catch (\Throwable $e) {
+            Logger::error('Expiry recordSent failed', [
+                'media_user_id' => $mediaUserId,
+                'milestone' => $milestone,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function renderTemplate(string $template, MediaUser $user, string $serverName, int $daysLeft, int $tenantId): string

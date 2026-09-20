@@ -10,7 +10,7 @@ declare(strict_types=1);
  */
 return [
     'enabled' => env('REENGAGE_ENABLED', true),
-    'interval_days' => (int) env('REENGAGE_INTERVAL_DAYS', 14),
+    'interval_days' => (int) env('REENGAGE_INTERVAL_DAYS', 15),
     'max_sends' => (int) env('REENGAGE_MAX_SENDS', 4),
     // Solo tras ~2 meses caducado (antes: avisos de renovación a 15/30/45 días).
     'min_expired_days' => (int) env('REENGAGE_MIN_EXPIRED_DAYS', 60),
