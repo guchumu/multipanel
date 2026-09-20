@@ -366,7 +366,7 @@ final class ReengageCampaignService
         if (!$force && !$this->canAutoSend($user, $cfg)) {
             return [
                 'success' => true,
-                'message' => 'Omitido: aún no toca (intervalo o tope de avisos).',
+                'message' => 'Omitido: aún no toca (intervalo, tope o caducado mínimo).',
                 'sent' => false,
             ];
         }
@@ -395,9 +395,43 @@ final class ReengageCampaignService
                 'sent' => false,
             ];
         }
+
+        // Cron: reservar hueco ANTES de Telegram. Si el mensaje llega pero falla el UPDATE,
+        // al día siguiente volvería a mandar el aviso 1 (como el 11/12/13 de juanjo6954).
+        if (!$force) {
+            try {
+                $this->recordSend($user, 'invite');
+            } catch (\Throwable $e) {
+                Logger::error('Reengage recordSend failed before send', [
+                    'media_user_id' => (int) ($user->id ?? 0),
+                    'error' => $e->getMessage(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'No se pudo registrar el aviso de reenganche (BD).',
+                    'sent' => false,
+                ];
+            }
+        }
+
         $result = $this->management->sendClientNotice($user, $title, $text, 'reengage_invite');
-        if (!empty($result['sent'])) {
-            $this->recordSend($user, 'invite');
+        if ($force && !empty($result['sent'])) {
+            try {
+                $this->recordSend($user, 'invite');
+            } catch (\Throwable $e) {
+                Logger::error('Reengage recordSend failed after manual send', [
+                    'media_user_id' => (int) ($user->id ?? 0),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if (!$force && empty($result['sent'])) {
+            Logger::warning('Reengage claimed but send failed (no se reintentará hasta el intervalo)', [
+                'media_user_id' => (int) ($user->id ?? 0),
+                'message' => (string) ($result['message'] ?? ''),
+            ]);
         }
 
         return $result;
@@ -578,26 +612,40 @@ final class ReengageCampaignService
 
         foreach ($rows as $row) {
             $user = new MediaUser($row);
-            $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
-            if ($chatId === '' && !$this->whatsapp->canSend($user, $tenantId)) {
-                $stats['skipped']++;
-                continue;
-            }
+            try {
+                $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
+                if ($chatId === '' && !$this->whatsapp->canSend($user, $tenantId)) {
+                    $stats['skipped']++;
+                    continue;
+                }
 
-            // Defensa extra: no confiar solo en el SQL del intervalo.
-            if (!$this->canAutoSend($user, $cfg)) {
-                $stats['skipped']++;
-                continue;
-            }
+                if (!$this->canAutoSend($user, $cfg)) {
+                    $stats['skipped']++;
+                    continue;
+                }
 
-            $result = $this->invite($user, false);
-            if (!empty($result['sent'])) {
-                $stats['sent']++;
-                Logger::info('Reengage invite sent', ['media_user_id' => $user->id]);
-            } elseif (str_starts_with((string) ($result['message'] ?? ''), 'Omitido:')) {
-                $stats['skipped']++;
-            } else {
+                $result = $this->invite($user, false);
+                if (!empty($result['sent'])) {
+                    $stats['sent']++;
+                    Logger::info('Reengage invite sent', [
+                        'media_user_id' => $user->id,
+                        'username' => (string) ($user->username ?? ''),
+                    ]);
+                } elseif (str_starts_with((string) ($result['message'] ?? ''), 'Omitido:')) {
+                    $stats['skipped']++;
+                } else {
+                    $stats['errors']++;
+                    Logger::warning('Reengage invite not sent', [
+                        'media_user_id' => $user->id,
+                        'message' => (string) ($result['message'] ?? ''),
+                    ]);
+                }
+            } catch (\Throwable $e) {
                 $stats['errors']++;
+                Logger::error('Reengage invite exception', [
+                    'media_user_id' => (int) ($user->id ?? 0),
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -817,29 +865,25 @@ final class ReengageCampaignService
     private function recordSend(MediaUser $user, string $kind): void
     {
         self::ensureTable();
-        $db = Database::getInstance();
         $tz = new \DateTimeZone((string) config('app.timezone', 'UTC'));
         $now = (new DateTimeImmutable('now', $tz))->format('Y-m-d H:i:s');
-        $existing = $db->fetchOne(
-            'SELECT id, send_count FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
-            [(int) $user->id]
-        );
-        if ($existing) {
-            $db->update('media_user_reengage', [
-                'send_count' => (int) $existing['send_count'] + 1,
-                'last_sent_at' => $now,
-                'last_kind' => $kind,
-            ], 'id = ?', [$existing['id']]);
-            return;
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $mediaUserId = (int) ($user->id ?? 0);
+        if ($mediaUserId <= 0) {
+            throw new \RuntimeException('media_user_id inválido al registrar reenganche.');
         }
 
-        $db->insert('media_user_reengage', [
-            'tenant_id' => (int) ($user->tenant_id ?? 1),
-            'media_user_id' => (int) $user->id,
-            'send_count' => 1,
-            'last_sent_at' => $now,
-            'last_kind' => $kind,
-        ]);
+        // UPSERT atómico: evita carrera insert/update y el caso “Telegram OK, UPDATE falla”.
+        Database::getInstance()->query(
+            'INSERT INTO `media_user_reengage`
+                (`tenant_id`, `media_user_id`, `send_count`, `last_sent_at`, `last_kind`)
+             VALUES (?, ?, 1, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                `send_count` = `send_count` + 1,
+                `last_sent_at` = VALUES(`last_sent_at`),
+                `last_kind` = VALUES(`last_kind`)',
+            [$tenantId, $mediaUserId, $now, $kind]
+        );
     }
 
     private function markConversions(int $tenantId, int $trialDays): int
