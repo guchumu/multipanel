@@ -109,11 +109,14 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {dis
             <div>
                 <h5 class="mb-1"><i class="bi bi-heart me-1 text-danger"></i>Reenganche de caducados</h5>
                 <p class="text-muted small mb-0">
-                    Solo a partir de <strong><?= (int) ($reengage['min_expired_days'] ?? 60) ?> días</strong> caducado
-                    (antes: renovación a 15/30/45 días a precio de Facturación).
-                    Cuatro avisos en orden con enlace de pago Stripe: preset más largo de Facturación
-                    con <strong><?= (int) ($reengage['discount_percent'] ?? 15) ?>% de descuento único</strong> por cliente.
-                    Si pagan, entran; si no, no pasa nada. El cron manda el siguiente cada <?= (int) $reengage['interval_days'] ?> días.
+                    Hay dos fases: a los <strong>15 / 30 / 45 días</strong> caducado llega un aviso de renovación
+                    a precio normal (<em>una vez cada hito</em>).
+                    El reenganche con descuento empieza a los
+                    <strong><?= (int) ($reengage['min_expired_days'] ?? 60) ?> días</strong>:
+                    como máximo <strong><?= (int) $reengage['max_sends'] ?></strong> avisos,
+                    cada <strong><?= (int) $reengage['interval_days'] ?></strong> días,
+                    con <strong><?= (int) ($reengage['discount_percent'] ?? 15) ?>%</strong> único.
+                    Si pagan, entran; si no, no pasa nada.
                 </p>
             </div>
             <span class="badge bg-light text-dark border">
