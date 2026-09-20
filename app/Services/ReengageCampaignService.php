@@ -404,14 +404,20 @@ final class ReengageCampaignService
     }
 
     /**
-     * ¿Puede el cron mandar otro aviso? Respeta tope e intervalo (días completos).
+     * ¿Puede el cron mandar otro aviso? Respeta caducado mín., tope e intervalo (días completos).
      *
-     * @param array{interval_days?: int, max_sends?: int} $cfg
+     * @param array{interval_days?: int, max_sends?: int, min_expired_days?: int} $cfg
      */
     public function canAutoSend(MediaUser $user, array $cfg): bool
     {
         $mediaUserId = (int) ($user->id ?? 0);
         if ($mediaUserId <= 0) {
+            return false;
+        }
+
+        $minExpired = max(1, (int) ($cfg['min_expired_days'] ?? 60));
+        $daysExpired = $this->daysExpired($user);
+        if ($daysExpired === null || $daysExpired < $minExpired) {
             return false;
         }
 
@@ -425,7 +431,7 @@ final class ReengageCampaignService
         self::ensureTable();
         try {
             $row = Database::getInstance()->fetchOne(
-                'SELECT last_sent_at, converted_at FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
+                'SELECT last_sent_at, converted_at, send_count FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
                 [$mediaUserId]
             );
         } catch (\Throwable) {
@@ -436,21 +442,60 @@ final class ReengageCampaignService
             return false;
         }
 
+        // Cinturón: si en el historial de mensajes ya hubo un reengage reciente, no repetir.
+        if ($this->hasRecentReengageMessage($mediaUserId, $intervalDays)) {
+            return false;
+        }
+
         $last = trim((string) ($row['last_sent_at'] ?? ''));
         if ($last === '') {
             return true;
         }
 
         try {
-            $lastDay = (new DateTimeImmutable(substr($last, 0, 10)))->setTime(0, 0);
-            $today = new DateTimeImmutable('today');
-            $daysSince = (int) $lastDay->diff($today)->days;
-            // diff()->days es absoluto; si last es futuro, no reenviar.
+            $tz = new \DateTimeZone((string) config('app.timezone', 'UTC'));
+            $lastDay = (new DateTimeImmutable(substr($last, 0, 10), $tz))->setTime(0, 0);
+            $today = new DateTimeImmutable('today', $tz);
             if ($lastDay > $today) {
                 return false;
             }
+            $daysSince = (int) $lastDay->diff($today)->days;
 
             return $daysSince >= $intervalDays;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** Días enteros desde que caducó (0 = hoy caduca/caducó; null = sin fecha). */
+    private function daysExpired(MediaUser $user): ?int
+    {
+        $daysLeft = days_left($user->expires_at ?? null);
+        if ($daysLeft === null) {
+            return null;
+        }
+        if ($daysLeft >= 0) {
+            return 0;
+        }
+
+        return abs($daysLeft);
+    }
+
+    private function hasRecentReengageMessage(int $mediaUserId, int $intervalDays): bool
+    {
+        $intervalDays = max(1, $intervalDays);
+        try {
+            $row = Database::getInstance()->fetchOne(
+                "SELECT id FROM media_user_messages
+                 WHERE media_user_id = ?
+                   AND message_type IN ('reengage_invite', 'reengage_trial')
+                   AND status = 'sent'
+                   AND sent_at >= DATE_SUB(NOW(), INTERVAL {$intervalDays} DAY)
+                 LIMIT 1",
+                [$mediaUserId]
+            );
+
+            return $row !== null;
         } catch (\Throwable) {
             return false;
         }
@@ -773,7 +818,8 @@ final class ReengageCampaignService
     {
         self::ensureTable();
         $db = Database::getInstance();
-        $now = date('Y-m-d H:i:s');
+        $tz = new \DateTimeZone((string) config('app.timezone', 'UTC'));
+        $now = (new DateTimeImmutable('now', $tz))->format('Y-m-d H:i:s');
         $existing = $db->fetchOne(
             'SELECT id, send_count FROM media_user_reengage WHERE media_user_id = ? LIMIT 1',
             [(int) $user->id]

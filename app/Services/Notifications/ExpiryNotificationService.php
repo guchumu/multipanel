@@ -9,6 +9,8 @@ use App\Services\AlertSettingsService;
 use App\Services\BillingSettingsService;
 use App\Services\MediaUserManagementService;
 use App\Services\NotificationTemplateService;
+use App\Services\SubscriptionPeriod;
+use Core\Cache;
 use Core\Database;
 use Core\Logger;
 use Core\Updater;
@@ -84,7 +86,12 @@ final class ExpiryNotificationService
                 continue;
             }
 
-            $expiresDate = new DateTimeImmutable(substr($expiresAt, 0, 10), $tz);
+            $parsed = SubscriptionPeriod::parseDate($expiresAt);
+            if ($parsed === null) {
+                continue;
+            }
+
+            $expiresDate = new DateTimeImmutable($parsed, $tz);
             $daysLeft = (int) floor(($expiresDate->getTimestamp() - $today->getTimestamp()) / 86400);
 
             if (!in_array($daysLeft, $milestones, true)) {
@@ -95,6 +102,13 @@ final class ExpiryNotificationService
             if ($this->alreadySent((int) $user->id, $milestoneKey)) {
                 continue;
             }
+
+            // Evita dobles envíos el mismo día si el cron corre varias veces o falla el INSERT.
+            $dayLock = 'expiry_notice_' . (int) $user->id . '_' . $milestoneKey . '_' . $today->format('Y-m-d');
+            if (Cache::get($dayLock)) {
+                continue;
+            }
+            Cache::set($dayLock, 1, 86400);
 
             $chatId = normalize_telegram_chat_id($user->telegram_chat_id ?? null);
             $canWhatsApp = $this->clientWhatsApp->canSend($user, $tenantId);

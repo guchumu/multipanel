@@ -105,6 +105,14 @@ $reengagePlaceholders = $reengagePlaceholders ?? '{username}, {trial_days}, {dis
 ?>
 <div class="card border-0 shadow-sm mt-4" id="reengage">
     <div class="card-body">
+        <div class="alert alert-warning small mb-3">
+            <strong>Importante:</strong> este bloque <em>no</em> controla los avisos de los
+            <strong>15 / 30 / 45 días</strong> (están en las plantillas de arriba: una vez cada hito).
+            Aquí solo el reenganche con descuento: a partir de
+            <strong>Caducado mín.</strong>, como máximo <strong>Máx. avisos</strong>,
+            espaciados cada <strong>Cada (días)</strong>.
+            Tras cambiar código en el servidor hace falta <code>git pull</code>.
+        </div>
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
             <div>
                 <h5 class="mb-1"><i class="bi bi-heart me-1 text-danger"></i>Reenganche de caducados</h5>
