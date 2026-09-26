@@ -496,7 +496,7 @@ final class BillingService
             'weekly' => 7,
             'monthly' => 30,
             'quarterly' => 90,
-            'yearly' => 365,
+            'yearly' => 360,
             'lifetime' => null,
             default => 30,
         };
