@@ -345,6 +345,11 @@ final class LegacyRegistrationService
             throw new \InvalidArgumentException('tiempomes debe ser mayor que 0');
         }
 
+        // Año natural: 12×30 = 360 dejaba renovaciones "anuales" 5 días cortas.
+        if (abs($value - 12.0) < 0.01) {
+            return 365;
+        }
+
         return (int) round($value * 30);
     }
 

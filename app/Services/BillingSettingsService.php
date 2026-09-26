@@ -49,11 +49,19 @@ final class BillingSettingsService
             return $this->defaultPresets();
         }
 
-        return array_values(array_map(static fn (array $p): array => [
-            'label' => (string) ($p['label'] ?? ''),
-            'days' => (int) ($p['days'] ?? 0),
-            'price' => (float) ($p['price'] ?? 0),
-        ], $decoded));
+        return array_values(array_map(static function (array $p): array {
+            $days = (int) ($p['days'] ?? 0);
+            // 12×30 = 360: se usaba como «1 año» pero deja 5 días cortos frente a un año natural.
+            if ($days === 360) {
+                $days = 365;
+            }
+
+            return [
+                'label' => (string) ($p['label'] ?? ''),
+                'days' => $days,
+                'price' => (float) ($p['price'] ?? 0),
+            ];
+        }, $decoded));
     }
 
     /** Preset de mayor duración (p. ej. 1 año) para avisos y reenganche. */
@@ -97,6 +105,9 @@ final class BillingSettingsService
             $price = (float) ($p['price'] ?? 0);
             if ($label === '' || $days <= 0 || $price <= 0) {
                 return null;
+            }
+            if ($days === 360) {
+                $days = 365;
             }
 
             return ['label' => $label, 'days' => $days, 'price' => $price];
