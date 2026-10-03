@@ -243,4 +243,109 @@ final class SessionStreamInfoTest extends TestCase
         );
         $this->assertContains('Calidad: 4 Mbps 720p (3.8 Mbps)', $detail);
     }
+
+    public function test_plex_transcode_archivo_uses_source_not_output_resolution(): void
+    {
+        // Caso real: Samsung TV pide 480p; el fichero es 1080p.
+        // Algunas versiones de Plex ponen en TranscodeSession el origen y en
+        // Stream la salida; Media.height a veces viene ya con el alto de salida.
+        $info = SessionStreamInfo::fromPlex(
+            'transcode',
+            [
+                'videoDecision' => 'transcode',
+                'audioDecision' => 'transcode',
+                'subtitleDecision' => 'none',
+                'sourceVideoCodec' => 'h264',
+                'videoCodec' => 'h264',
+                'sourceAudioCodec' => 'ac3',
+                'audioCodec' => 'aac',
+                'sourceAudioChannels' => '6',
+                'audioChannels' => '6',
+                // Tracearr: width/height del TranscodeSession = origen
+                'width' => '1920',
+                'height' => '1080',
+                'container' => 'mp4',
+                'videoBitrate' => '1900',
+                'transcodeHwDecoding' => '1',
+                'transcodeHwEncoding' => '1',
+            ],
+            [
+                'container' => 'mp4',
+                'videoCodec' => 'h264',
+                'audioCodec' => 'ac3',
+                'audioChannels' => '6',
+                // Media “contaminado” con la salida (bug típico al leer sesiones)
+                'width' => '854',
+                'height' => '480',
+            ],
+            ['bandwidth' => '2000'],
+            [
+                'streamType' => '1',
+                'codec' => 'h264',
+                'width' => '854',
+                'height' => '480',
+                'decision' => 'transcode',
+            ],
+            [
+                'streamType' => '2',
+                'codec' => 'ac3',
+                'channels' => '6',
+                'language' => 'español',
+                'decision' => 'transcode',
+            ],
+            [],
+        );
+
+        $this->assertSame('1080p', $info['source']['resolution']);
+        $this->assertSame('480p', $info['output']['resolution']);
+        $this->assertSame('Transcode (H264 (HW) 1080p → H264 (HW) 480p)', $info['video']);
+
+        $detail = SessionStreamInfo::ntfyTranscodeChangeLines($info);
+        $archivo = null;
+        foreach ($detail as $line) {
+            if (str_starts_with($line, 'Archivo:')) {
+                $archivo = $line;
+                break;
+            }
+        }
+        $this->assertNotNull($archivo);
+        $this->assertStringContainsString('1080p', (string) $archivo);
+        $this->assertStringNotContainsString('480p', (string) $archivo);
+        $this->assertContains('Vídeo: H264 (HW) 1080p → H264 (HW) 480p', $detail);
+    }
+
+    public function test_plex_transcode_prefers_media_video_resolution_label(): void
+    {
+        $info = SessionStreamInfo::fromPlex(
+            'transcode',
+            [
+                'videoDecision' => 'transcode',
+                'audioDecision' => 'copy',
+                'width' => '854',
+                'height' => '480',
+                'videoCodec' => 'h264',
+                'sourceVideoCodec' => 'h264',
+            ],
+            [
+                'container' => 'mkv',
+                'videoResolution' => '1080',
+                'width' => '1920',
+                'height' => '1080',
+                'videoCodec' => 'h264',
+            ],
+            ['bandwidth' => '2000'],
+            [
+                'streamType' => '1',
+                'codec' => 'h264',
+                'width' => '854',
+                'height' => '480',
+                'decision' => 'transcode',
+            ],
+            [],
+            [],
+        );
+
+        $this->assertSame('1080p', $info['source']['resolution']);
+        $this->assertSame('480p', $info['output']['resolution']);
+    }
 }

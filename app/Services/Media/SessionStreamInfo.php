@@ -80,31 +80,12 @@ final class SessionStreamInfo
             $targetContainer = $sourceContainer;
         }
 
-        $destHeight = (int) ($transcode['height'] ?? 0);
-        $destWidth = (int) ($transcode['width'] ?? 0);
-        $destRes = self::resolutionLabel('', $destHeight, $destWidth);
-
-        // Origen = metadata del fichero (como Tautulli). El Stream a veces ya trae
-        // el alto/ancho de salida al transcodificar; no usarlo como fuente en ese caso.
-        $sourceRes = self::resolutionLabel(
-            (string) ($media['videoResolution'] ?? ''),
-            (int) ($media['height'] ?? $transcode['sourceVideoHeight'] ?? 0),
-            (int) ($media['width'] ?? $transcode['sourceVideoWidth'] ?? 0),
+        [$sourceRes, $destRes] = self::resolvePlexResolutions(
+            $videoDecision,
+            $media,
+            $transcode,
+            $videoStream,
         );
-        if ($sourceRes === '') {
-            $streamHeight = (int) ($videoStream['height'] ?? 0);
-            $streamWidth = (int) ($videoStream['width'] ?? 0);
-            $streamLooksLikeOutput = $videoDecision === 'transcode'
-                && $destHeight > 0
-                && $streamHeight === $destHeight
-                && ($destWidth === 0 || $streamWidth === $destWidth);
-            if (!$streamLooksLikeOutput) {
-                $sourceRes = self::resolutionLabel('', $streamHeight, $streamWidth);
-            }
-        }
-        if ($destRes === '' || $videoDecision === 'copy' || $videoDecision === 'directplay') {
-            $destRes = $sourceRes;
-        }
 
         $qualityBandwidthKbps = self::toKbps($sessionMeta['bandwidth'] ?? null);
         if ($qualityBandwidthKbps === null) {
@@ -855,15 +836,24 @@ final class SessionStreamInfo
      */
     public static function extractPlexMediaStreams(array $mediaList): array
     {
-        $media = null;
-        if ($mediaList !== []) {
-            $first = array_is_list($mediaList) ? ($mediaList[0] ?? null) : $mediaList;
-            $media = is_array($first) ? $first : null;
-        }
-
         $video = [];
         $audio = [];
         $subtitle = [];
+
+        $candidates = [];
+        if ($mediaList !== []) {
+            if (array_is_list($mediaList)) {
+                foreach ($mediaList as $entry) {
+                    if (is_array($entry)) {
+                        $candidates[] = $entry;
+                    }
+                }
+            } else {
+                $candidates[] = $mediaList;
+            }
+        }
+
+        $media = self::pickActivePlexMedia($candidates);
         if ($media === null) {
             return [null, $video, $audio, $subtitle];
         }
@@ -928,6 +918,63 @@ final class SessionStreamInfo
         }
 
         return [$media, $video, $audio, $subtitle];
+    }
+
+    /**
+     * Elige el Media activo de la sesión (Part selected/decision), no siempre el [0].
+     *
+     * @param list<array<string, mixed>> $candidates
+     * @return array<string, mixed>|null
+     */
+    private static function pickActivePlexMedia(array $candidates): ?array
+    {
+        if ($candidates === []) {
+            return null;
+        }
+
+        $best = null;
+        $bestScore = -1;
+        foreach ($candidates as $entry) {
+            $score = 0;
+            $parts = $entry['Part'] ?? [];
+            if (!is_array($parts)) {
+                $parts = [];
+            }
+            if ($parts !== [] && !array_is_list($parts)) {
+                $parts = [$parts];
+            }
+            foreach ($parts as $part) {
+                if (!is_array($part)) {
+                    continue;
+                }
+                if (self::truthy($part['selected'] ?? false)) {
+                    $score += 100;
+                }
+                $decision = strtolower(trim((string) ($part['decision'] ?? '')));
+                if ($decision !== '') {
+                    $score += 50;
+                }
+            }
+            // Preferir el fichero de mayor resolución como “archivo” real.
+            $res = self::resolutionLabel(
+                (string) ($entry['videoResolution'] ?? ''),
+                (int) ($entry['height'] ?? 0),
+                (int) ($entry['width'] ?? 0),
+            );
+            $score += match ($res) {
+                '8k', '4k' => 40,
+                '1080p' => 30,
+                '720p' => 20,
+                '480p' => 10,
+                default => $res !== '' ? 5 : 0,
+            };
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $entry;
+            }
+        }
+
+        return $best ?? $candidates[0];
     }
 
     /** @return array<string, mixed> */
@@ -1162,6 +1209,115 @@ final class SessionStreamInfo
         }
 
         return $word . ' (' . $lang . ')';
+    }
+
+    /**
+     * Resuelve resolución de archivo (origen) vs cable (salida) en Plex.
+     *
+     * Plex no es consistente entre versiones:
+     * - Clásico / Tautulli: Media = origen, TranscodeSession width/height = salida;
+     *   el Stream a veces sigue con el alto del fichero.
+     * - Otros (p. ej. Tracearr): TranscodeSession = origen, Stream = salida;
+     *   Media.height puede venir ya contaminado con la salida.
+     *
+     * @param array<string, mixed> $media
+     * @param array<string, mixed> $transcode
+     * @param array<string, mixed> $videoStream
+     * @return array{0: string, 1: string} [sourceRes, destRes]
+     */
+    private static function resolvePlexResolutions(
+        string $videoDecision,
+        array $media,
+        array $transcode,
+        array $videoStream,
+    ): array {
+        $mediaRes = self::resolutionLabel(
+            (string) ($media['videoResolution'] ?? ''),
+            (int) ($media['height'] ?? 0),
+            (int) ($media['width'] ?? 0),
+        );
+        $explicitSourceRes = self::resolutionLabel(
+            '',
+            (int) ($transcode['sourceVideoHeight'] ?? 0),
+            (int) ($transcode['sourceVideoWidth'] ?? 0),
+        );
+        $tsRes = self::resolutionLabel(
+            '',
+            (int) ($transcode['height'] ?? 0),
+            (int) ($transcode['width'] ?? 0),
+        );
+        $streamRes = self::resolutionLabel(
+            '',
+            (int) ($videoStream['height'] ?? 0),
+            (int) ($videoStream['width'] ?? 0),
+        );
+
+        if ($videoDecision !== 'transcode') {
+            $sourceRes = $mediaRes !== '' ? $mediaRes : ($streamRes !== '' ? $streamRes : $tsRes);
+
+            return [$sourceRes, $sourceRes];
+        }
+
+        $destRes = '';
+        if ($streamRes !== '' && $mediaRes !== '' && $streamRes !== $mediaRes) {
+            // Stream distinto del fichero → cable de salida.
+            $destRes = $streamRes;
+        } elseif ($tsRes !== '' && $mediaRes !== '' && $tsRes !== $mediaRes) {
+            if (self::resolutionRank($tsRes) < self::resolutionRank($mediaRes)) {
+                // Clásico: TS por debajo del Media = salida (bajada de calidad).
+                $destRes = $tsRes;
+            } else {
+                // TS por encima del Media “contaminado” → TS es origen; cable = Stream/Media.
+                $destRes = $streamRes !== '' ? $streamRes : $mediaRes;
+            }
+        } elseif ($streamRes !== '' && $tsRes !== '' && $streamRes !== $tsRes) {
+            // Sin Media fiable: el más bajo suele ser la salida en un downscale.
+            $destRes = self::resolutionRank($tsRes) > self::resolutionRank($streamRes)
+                ? $streamRes
+                : $tsRes;
+        } elseif ($streamRes !== '') {
+            $destRes = $streamRes;
+        } else {
+            $destRes = $tsRes;
+        }
+
+        $sourceRes = $mediaRes;
+        if ($explicitSourceRes !== '' && ($sourceRes === '' || $sourceRes === $destRes)) {
+            $sourceRes = $explicitSourceRes;
+        }
+        if (($sourceRes === '' || $sourceRes === $destRes) && $tsRes !== '' && $tsRes !== $destRes) {
+            $sourceRes = $tsRes;
+        }
+        if (($sourceRes === '' || $sourceRes === $destRes) && $streamRes !== '' && $streamRes !== $destRes) {
+            $sourceRes = $streamRes;
+        }
+        if ($sourceRes === '') {
+            $sourceRes = $destRes;
+        }
+        if ($destRes === '') {
+            $destRes = $sourceRes;
+        }
+
+        return [$sourceRes, $destRes];
+    }
+
+    private static function resolutionRank(string $label): int
+    {
+        $label = strtolower(trim($label));
+        if ($label === '8k') {
+            return 4320;
+        }
+        if ($label === '4k') {
+            return 2160;
+        }
+        if (preg_match('/^(\d{3,4})p$/', $label, $m)) {
+            return (int) $m[1];
+        }
+        if ($label === 'sd') {
+            return 480;
+        }
+
+        return 0;
     }
 
     private static function resolutionLabel(string $videoResolution, int $height, int $width): string
