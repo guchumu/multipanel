@@ -27,9 +27,6 @@ final class StreamingActivityService
      */
     private const SNAPSHOT_CACHE_TTL = 30;
 
-    /** Segundos tras el aviso admin antes de cortar (ventana para saltar desde ntfy). */
-    private const VIDEO_TRANSCODE_GRACE_SECONDS = 120;
-
     public function __construct(
         private ServerRepository $servers = new ServerRepository(),
         private ServerSyncService $sync = new ServerSyncService(),
@@ -273,7 +270,7 @@ final class StreamingActivityService
 
     /**
      * Corta ahora las sesiones Plex con vídeo en Transcode «salvable» (calidad/ajustes).
-     * Avisa al admin, envía el mensaje al detener y corta tras ~2 min.
+     * Avisa al admin, espera la gracia configurada y corta.
      * No toca Jellyfin, Burn ni cambios de codec por incompatibilidad del dispositivo.
      *
      * @return array{killed: int, failed: int, matched: int, skipped: int}
@@ -316,9 +313,10 @@ final class StreamingActivityService
                 $skipped++;
                 continue;
             }
+            $streamSettings = new StreamLimitSettingsService();
             $sessionMessage = $override !== ''
                 ? $override
-                : (new StreamLimitSettingsService())->getKillMessageVideoTranscode($tenantId);
+                : $streamSettings->getKillMessageVideoTranscode($tenantId);
             if ($this->terminateVideoTranscodeSession(
                 $tenantId,
                 $server,
@@ -326,7 +324,9 @@ final class StreamingActivityService
                 $sessionId,
                 $sessionMessage,
                 true,
-                $this->playbackCounts($sessions, $session)
+                $this->playbackCounts($sessions, $session),
+                false,
+                $streamSettings->getVideoTranscodeGraceSeconds($tenantId)
             )) {
                 $killed++;
             } else {
@@ -338,7 +338,7 @@ final class StreamingActivityService
     }
 
     /**
-     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → ~2 min → corta.
+     * Si el auto-corte está activo (cron streams): notifica admin → mensaje → gracia → corta.
      * Solo Transcodes «salvables» (calidad/ajustes); deja pasar Burn y cambio de codec.
      *
      * @param array<int, array<string, mixed>>|null $sessions Sesiones ya obtenidas; null = snapshot fresco
@@ -398,10 +398,11 @@ final class StreamingActivityService
                 continue;
             }
 
+            $graceSeconds = $settings->getVideoTranscodeGraceSeconds($tenantId);
             // Marcar ya: evita notify+kill en cada tick del cron para la misma sesión.
-            Cache::set($debounceKey, 1, self::VIDEO_TRANSCODE_GRACE_SECONDS + 60);
+            Cache::set($debounceKey, 1, $graceSeconds + 60);
 
-            $sessionMessage = (new StreamLimitSettingsService())->getKillMessageVideoTranscode($tenantId);
+            $sessionMessage = $settings->getKillMessageVideoTranscode($tenantId);
 
             $ok = $this->terminateVideoTranscodeSession(
                 $tenantId,
@@ -411,7 +412,8 @@ final class StreamingActivityService
                 $sessionMessage,
                 true,
                 $this->playbackCounts($sessions, $session),
-                true
+                true,
+                $graceSeconds
             );
             if ($ok === null) {
                 // Pausado durante la ventana de gracia: no cuenta como fallo.
@@ -434,7 +436,7 @@ final class StreamingActivityService
 
     /**
      * Orden: avisar admin (Telegram/WhatsApp/ntfy/email según canales críticos) →
-     * mensaje al reproductor / preparar corte → ~2 min → terminar sesión.
+     * mensaje al reproductor / preparar corte → gracia → terminar sesión.
      *
      * @param array<string, mixed> $session
      * @param array{user_active?: int, total_active?: int} $counts
@@ -449,7 +451,14 @@ final class StreamingActivityService
         bool $notifyAdmin,
         array $counts = [],
         bool $respectPause = false,
+        ?int $graceSeconds = null,
     ): ?bool {
+        $graceSeconds ??= (new StreamLimitSettingsService())->getVideoTranscodeGraceSeconds($tenantId);
+        $graceSeconds = max(
+            StreamLimitSettingsService::MIN_VIDEO_TRANSCODE_GRACE_SECONDS,
+            min(StreamLimitSettingsService::MAX_VIDEO_TRANSCODE_GRACE_SECONDS, $graceSeconds)
+        );
+
         if ($notifyAdmin) {
             $username = trim((string) ($session['user'] ?? '')) ?: 'desconocido';
             $title = trim((string) ($session['title'] ?? '')) ?: 'Sin título';
@@ -463,7 +472,8 @@ final class StreamingActivityService
                     $serverName,
                     $fp,
                     $session,
-                    $counts
+                    $counts,
+                    $graceSeconds
                 );
             } catch (\Throwable $e) {
                 Logger::warning('Video transcode admin notify failed', [
@@ -476,7 +486,7 @@ final class StreamingActivityService
 
         $media = MediaServerFactory::make($server);
         // Ventana tras el aviso admin: mensaje al cliente y posibilidad de saltar desde ntfy.
-        $graceMs = self::VIDEO_TRANSCODE_GRACE_SECONDS * 1000;
+        $graceMs = $graceSeconds * 1000;
         if ($media instanceof JellyfinService) {
             $text = trim($message) !== '' ? $message : PlaybackStopMessageService::DEFAULT_BODY;
             $media->sendSessionMessage(
@@ -486,7 +496,9 @@ final class StreamingActivityService
                 $graceMs
             );
         }
-        usleep(self::VIDEO_TRANSCODE_GRACE_SECONDS * 1_000_000);
+        if ($graceSeconds > 0) {
+            usleep($graceSeconds * 1_000_000);
+        }
 
         if ($respectPause && (new VideoTranscodePauseService())->isPaused($tenantId, $session)) {
             Logger::info('Video transcode kill aborted: user paused', [

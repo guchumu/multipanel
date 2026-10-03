@@ -12,7 +12,7 @@ use Core\Database;
  * Group: streams
  * Keys: enforcement_enabled, default_max_streams, default_max_away_streams,
  * kill_message, kill_message_video_transcode, count_mode, sandbox_alerts,
- * auto_kill_video_transcodes
+ * auto_kill_video_transcodes, video_transcode_grace_seconds
  */
 final class StreamLimitSettingsService
 {
@@ -21,6 +21,13 @@ final class StreamLimitSettingsService
     public const DEFAULT_MAX_STREAMS = 2;
 
     public const DEFAULT_MAX_AWAY = 0;
+
+    /** Segundos entre aviso admin y corte (ventana para saltar desde ntfy). */
+    public const DEFAULT_VIDEO_TRANSCODE_GRACE_SECONDS = 120;
+
+    public const MIN_VIDEO_TRANSCODE_GRACE_SECONDS = 0;
+
+    public const MAX_VIDEO_TRANSCODE_GRACE_SECONDS = 600;
 
     public const COUNT_MODE_DISTINCT_IP = 'distinct_ip';
 
@@ -58,6 +65,29 @@ final class StreamLimitSettingsService
     public function setAutoKillVideoTranscodesEnabled(int $tenantId, bool $enabled): void
     {
         $this->set($tenantId, 'auto_kill_video_transcodes', $enabled ? '1' : '0', 'boolean');
+    }
+
+    /** Segundos de espera tras detectar/avisar un Transcode salvable antes de cortar. */
+    public function getVideoTranscodeGraceSeconds(int $tenantId): int
+    {
+        $value = $this->get($tenantId, 'video_transcode_grace_seconds');
+        if ($value === null || trim($value) === '') {
+            return self::DEFAULT_VIDEO_TRANSCODE_GRACE_SECONDS;
+        }
+
+        return max(
+            self::MIN_VIDEO_TRANSCODE_GRACE_SECONDS,
+            min(self::MAX_VIDEO_TRANSCODE_GRACE_SECONDS, (int) $value)
+        );
+    }
+
+    public function setVideoTranscodeGraceSeconds(int $tenantId, int $seconds): void
+    {
+        $seconds = max(
+            self::MIN_VIDEO_TRANSCODE_GRACE_SECONDS,
+            min(self::MAX_VIDEO_TRANSCODE_GRACE_SECONDS, $seconds)
+        );
+        $this->set($tenantId, 'video_transcode_grace_seconds', (string) $seconds, 'integer');
     }
 
     public function getDefaultMaxStreams(int $tenantId): int
@@ -230,7 +260,8 @@ final class StreamLimitSettingsService
      *   kill_message_video_transcode: string,
      *   count_mode: string,
      *   sandbox_alerts: bool,
-     *   auto_kill_video_transcodes: bool
+     *   auto_kill_video_transcodes: bool,
+     *   video_transcode_grace_seconds: int
      * }
      */
     public function all(int $tenantId): array
@@ -244,6 +275,7 @@ final class StreamLimitSettingsService
             'count_mode' => $this->getCountMode($tenantId),
             'sandbox_alerts' => $this->sandboxAlertsEnabled($tenantId),
             'auto_kill_video_transcodes' => $this->isAutoKillVideoTranscodesEnabled($tenantId),
+            'video_transcode_grace_seconds' => $this->getVideoTranscodeGraceSeconds($tenantId),
         ];
     }
 

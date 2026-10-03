@@ -50,6 +50,7 @@ class ActivityController extends Controller
             'currentServerId' => $serverId,
             'stopMessages' => $this->stopMessages->listForTenant($tenantId),
             'autoKillVideoTranscodes' => (bool) $streamSettings->isAutoKillVideoTranscodesEnabled($tenantId),
+            'videoTranscodeGraceSeconds' => $streamSettings->getVideoTranscodeGraceSeconds($tenantId),
         ]);
     }
 
@@ -65,7 +66,8 @@ class ActivityController extends Controller
         $snapshot = $this->activity->getSnapshot($tenantId, $serverId);
         // Overview reutiliza el mismo snapshot cacheado (TTL 15s).
         $overview = $this->load->getActivityOverview($tenantId);
-        $autoKill = (new \App\Services\StreamLimitSettingsService())->isAutoKillVideoTranscodesEnabled($tenantId);
+        $streamSettings = new \App\Services\StreamLimitSettingsService();
+        $autoKill = $streamSettings->isAutoKillVideoTranscodesEnabled($tenantId);
 
         return $this->json([
             'sessions' => $snapshot['sessions'],
@@ -74,6 +76,7 @@ class ActivityController extends Controller
             'count' => $snapshot['filtered_count'],
             'total_count' => $snapshot['total_count'],
             'auto_kill_video_transcodes' => $autoKill,
+            'video_transcode_grace_seconds' => $streamSettings->getVideoTranscodeGraceSeconds($tenantId),
             'summary' => [
                 'total_streams' => $overview['total_streams'],
                 'total_transcodes' => $overview['total_transcodes'],
@@ -287,6 +290,44 @@ SVG;
             'message' => $persisted
                 ? 'Auto-corte ACTIVADO. El cron streams cortará solo cuando Vídeo diga Transcode.'
                 : 'Auto-corte desactivado.',
+        ]);
+    }
+
+    /** Guarda los segundos de espera entre aviso Transcode y corte. */
+    public function setVideoTranscodeGraceSeconds(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $raw = $request->input('seconds');
+        if ($raw === null || $raw === '') {
+            $body = $request->rawBody();
+            if ($body !== '') {
+                $json = json_decode($body, true);
+                if (is_array($json) && array_key_exists('seconds', $json)) {
+                    $raw = $json['seconds'];
+                }
+            }
+        }
+        $seconds = (int) $raw;
+
+        $settings = new \App\Services\StreamLimitSettingsService();
+        try {
+            $settings->setVideoTranscodeGraceSeconds($tenantId, $seconds);
+        } catch (\Throwable $e) {
+            return $this->json([
+                'success' => false,
+                'seconds' => $settings->getVideoTranscodeGraceSeconds($tenantId),
+                'message' => 'No se pudo guardar la espera: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        $persisted = $settings->getVideoTranscodeGraceSeconds($tenantId);
+
+        return $this->json([
+            'success' => true,
+            'seconds' => $persisted,
+            'message' => $persisted <= 0
+                ? 'Espera: 0 s (corte inmediato tras el aviso).'
+                : 'Espera guardada: ' . $persisted . ' s entre aviso y corte.',
         ]);
     }
 

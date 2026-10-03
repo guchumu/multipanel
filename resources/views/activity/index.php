@@ -46,7 +46,11 @@ ob_start();
         </small>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa (~2 min) y corta solo Transcodes de vídeo «salvables» en Plex (bajada de calidad / mal ajuste). No afecta a Jellyfin. Deja pasar Burn de subtítulos y cambio de codec. Desde ntfy puedes saltar 3h o hasta medianoche (enlaces válidos todo el día).">
+        <?php
+            $graceSeconds = (int) ($videoTranscodeGraceSeconds ?? 120);
+            $graceSeconds = max(0, min(600, $graceSeconds));
+        ?>
+        <div class="form-check form-switch mb-0 me-1" title="Si está activo, el cron streams avisa, espera los segundos configurados y corta solo Transcodes de vídeo «salvables» en Plex (bajada de calidad / mal ajuste). No afecta a Jellyfin. Deja pasar Burn de subtítulos y cambio de codec. Desde ntfy puedes saltar 3h o hasta medianoche (enlaces válidos todo el día).">
             <input class="form-check-input" type="checkbox" role="switch"
                    id="auto-kill-video-transcodes"
                    <?= !empty($autoKillVideoTranscodes) ? 'checked' : '' ?>>
@@ -55,10 +59,17 @@ ob_start();
                 <span id="auto-kill-video-status" class="badge <?= !empty($autoKillVideoTranscodes) ? 'bg-success' : 'bg-secondary' ?>"><?= !empty($autoKillVideoTranscodes) ? 'ON' : 'OFF' ?></span>
             </label>
         </div>
+        <div class="input-group input-group-sm" style="width:auto;max-width:11rem;" title="Segundos entre el aviso (ntfy/Telegram) y el corte. 0 = inmediato. Máx. 600.">
+            <span class="input-group-text">Espera</span>
+            <input type="number" class="form-control" id="video-transcode-grace-seconds"
+                   min="0" max="600" step="1" value="<?= $graceSeconds ?>"
+                   inputmode="numeric">
+            <span class="input-group-text">s</span>
+        </div>
         <button type="button"
                 class="btn btn-warning btn-sm"
                 id="btn-kill-video-transcodes"
-                title="Avisa, espera ~2 min y corta solo Transcodes salvables en Plex (calidad/ajustes). No toca Jellyfin, Burn ni incompatibilidad de codec.">
+                title="Avisa, espera los segundos configurados y corta solo Transcodes salvables en Plex (calidad/ajustes). No toca Jellyfin, Burn ni incompatibilidad de codec.">
             <i class="bi bi-cpu me-1"></i>Cortar ahora
         </button>
         <a href="/media-users/stream-violations" class="btn btn-outline-secondary btn-sm" title="Incumplimientos de streams">
@@ -281,6 +292,15 @@ function syncAutoKillToggle(on) {
     }
 }
 
+function syncGraceSeconds(seconds) {
+    const input = document.getElementById('video-transcode-grace-seconds');
+    if (!input || input.dataset.saving === '1' || document.activeElement === input) {
+        return;
+    }
+    const n = Math.max(0, Math.min(600, parseInt(seconds, 10) || 0));
+    input.value = String(n);
+}
+
 function updateStats(data) {
     const total = data.total_count ?? 0;
     document.getElementById('session-count').textContent = total + ' streams totales';
@@ -291,6 +311,9 @@ function updateStats(data) {
 
     if (typeof data.auto_kill_video_transcodes === 'boolean') {
         syncAutoKillToggle(data.auto_kill_video_transcodes);
+    }
+    if (typeof data.video_transcode_grace_seconds === 'number') {
+        syncGraceSeconds(data.video_transcode_grace_seconds);
     }
 
     (data.server_stats || []).forEach(stat => {
@@ -454,6 +477,73 @@ window.MP_REFRESH_SESSIONS = refreshSessions;
             alert('Error de red al guardar el auto-corte.');
         } finally {
             toggle.disabled = false;
+        }
+    });
+})();
+
+(function bindVideoTranscodeGraceSeconds() {
+    const input = document.getElementById('video-transcode-grace-seconds');
+    if (!input) return;
+
+    let lastSaved = String(Math.max(0, Math.min(600, parseInt(input.value, 10) || 0)));
+    input.value = lastSaved;
+
+    async function saveGrace() {
+        let n = parseInt(input.value, 10);
+        if (Number.isNaN(n)) {
+            n = 0;
+        }
+        n = Math.max(0, Math.min(600, n));
+        input.value = String(n);
+        if (String(n) === lastSaved) {
+            return;
+        }
+        const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            alert('No hay token CSRF. Recarga la página.');
+            input.value = lastSaved;
+            return;
+        }
+        input.dataset.saving = '1';
+        input.disabled = true;
+        try {
+            const body = new URLSearchParams();
+            body.set('_token', csrf);
+            body.set('seconds', String(n));
+            const res = await fetch('/activity/video-transcode-grace', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'X-Csrf-Token': csrf,
+                },
+                body: body.toString(),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false || data.error) {
+                input.value = lastSaved;
+                alert(data.message || ('No se pudo guardar la espera (HTTP ' + res.status + ').'));
+                return;
+            }
+            const saved = typeof data.seconds === 'number' ? data.seconds : n;
+            lastSaved = String(Math.max(0, Math.min(600, saved)));
+            input.value = lastSaved;
+        } catch (err) {
+            input.value = lastSaved;
+            alert('Error de red al guardar la espera.');
+        } finally {
+            input.disabled = false;
+            delete input.dataset.saving;
+        }
+    }
+
+    input.addEventListener('change', saveGrace);
+    input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            input.blur();
         }
     });
 })();

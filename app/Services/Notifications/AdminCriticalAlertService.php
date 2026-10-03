@@ -383,6 +383,7 @@ final class AdminCriticalAlertService
         string $fingerprint,
         array $session = [],
         array $meta = [],
+        ?int $graceSeconds = null,
     ): array {
         $username = trim($username) !== '' ? trim($username) : 'desconocido';
         $title = trim($title) !== '' ? trim($title) : 'Sin título';
@@ -425,7 +426,8 @@ final class AdminCriticalAlertService
         if ($clientBits !== []) {
             $lines[] = 'Cliente: ' . implode(' · ', array_slice($clientBits, 0, 2));
         }
-        $lines[] = '~2 min para saltar el corte';
+        $graceSeconds ??= (new \App\Services\StreamLimitSettingsService())->getVideoTranscodeGraceSeconds($tenantId);
+        $lines[] = self::formatGraceSkipHint($graceSeconds);
         if ($pauseLines !== []) {
             $lines[] = '';
             $lines[] = 'Saltar:';
@@ -480,6 +482,24 @@ final class AdminCriticalAlertService
                 : 'Firma inválida o payload ilegible.',
             ['debounce_minutes' => 60]
         );
+    }
+
+    private static function formatGraceSkipHint(int $graceSeconds): string
+    {
+        $graceSeconds = max(0, $graceSeconds);
+        if ($graceSeconds <= 0) {
+            return 'Corte inmediato (sin ventana para saltar)';
+        }
+        if ($graceSeconds < 60) {
+            return '~' . $graceSeconds . ' s para saltar el corte';
+        }
+        if ($graceSeconds % 60 === 0) {
+            $mins = intdiv($graceSeconds, 60);
+
+            return '~' . $mins . ' min para saltar el corte';
+        }
+
+        return '~' . $graceSeconds . ' s para saltar el corte';
     }
 
     private function noChannelsReason(int $tenantId): string
