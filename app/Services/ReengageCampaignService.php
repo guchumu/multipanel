@@ -230,7 +230,7 @@ final class ReengageCampaignService
                 'year_price' => '0',
                 'discounted_price' => '0',
                 'renew_label' => '1 año',
-                'renew_days' => 360,
+                'renew_days' => 365,
                 'payment_url' => '',
                 'portal_url' => $portalUrl,
             ];

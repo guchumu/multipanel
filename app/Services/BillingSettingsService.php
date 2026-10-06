@@ -600,7 +600,7 @@ final class BillingSettingsService
             ['label' => '1 mes', 'days' => 30, 'price' => 15.0],
             ['label' => '3 meses', 'days' => 90, 'price' => 40.0],
             ['label' => '6 meses', 'days' => 180, 'price' => 70.0],
-            ['label' => '1 año', 'days' => 360, 'price' => 70.0],
+            ['label' => '1 año', 'days' => 365, 'price' => 70.0],
         ];
     }
 

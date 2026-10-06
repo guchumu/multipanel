@@ -312,6 +312,7 @@ final class LegacyRegistrationService
         return [
             'email' => $email,
             'action' => $action,
+            'days_added' => $addDays,
             'end_date' => $endDateStr,
             'server' => (string) $server->name,
             'telegram_line' => $telegramLine,
@@ -335,9 +336,21 @@ final class LegacyRegistrationService
 
     private function monthsToDays(float|string $months): int
     {
-        $value = (float) $months;
+        // Normalizar "0,25" (decimal europeo) → "0.25". En PHP (float)"0,25" === 0
+        // y eso acababa en 0 días / caducidad vacía («infinito» en la ficha).
+        $raw = trim(str_replace(',', '.', (string) $months));
+        if ($raw === '') {
+            throw new \InvalidArgumentException('tiempomes debe ser mayor que 0');
+        }
 
-        if (abs($value - 0.24) < 0.02 || abs($value - 0.25) < 0.02) {
+        $value = (float) $raw;
+
+        // Semana de prueba legacy: 0.24 / 0.25 meses → 7 días (SERVEROLD).
+        if (
+            $raw === '0.25' || $raw === '.25' || $raw === '0.24' || $raw === '.24'
+            || abs($value - 0.25) < 0.02
+            || abs($value - 0.24) < 0.02
+        ) {
             return 7;
         }
 
@@ -345,8 +358,19 @@ final class LegacyRegistrationService
             throw new \InvalidArgumentException('tiempomes debe ser mayor que 0');
         }
 
-        // Año = 12×30 = 360 (mes comercial), no 365.
-        return (int) round($value * 30);
+        // Año natural: 12 meses → 365 días (no 12×30 = 360).
+        if (abs($value - 12.0) < 0.01) {
+            return 365;
+        }
+
+        $days = (int) round($value * 30);
+        if ($days < 1) {
+            throw new \InvalidArgumentException(
+                'tiempomes demasiado pequeño (mínimo ~0.25 = 7 días o 1 mes)'
+            );
+        }
+
+        return $days;
     }
 
     private function formatDateEs(string $isoDate): string
