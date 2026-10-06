@@ -56,6 +56,8 @@ body {
     body.sidebar-collapsed .sidebar .sidebar-label,
     html.sidebar-collapsed body .sidebar .nav-children,
     body.sidebar-collapsed .sidebar .nav-children,
+    html.sidebar-collapsed body .sidebar .collapse,
+    body.sidebar-collapsed .sidebar .collapse,
     html.sidebar-collapsed body .sidebar .nav-item.mt-3,
     body.sidebar-collapsed .sidebar .nav-item.mt-3 {
         display: none !important;

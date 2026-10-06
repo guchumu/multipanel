@@ -6,7 +6,7 @@ return [
     'dashboard' => 'Dashboard',
     'stats' => 'Estadísticas',
     'servers' => 'Servidores',
-    'media_users' => 'Usuarios Media',
+    'media_users' => 'Usuarios',
     'import_export' => 'Import/Export',
     'management' => 'GESTIÓN',
     'integrations' => 'Integraciones',

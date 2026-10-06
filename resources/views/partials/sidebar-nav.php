@@ -25,8 +25,31 @@ $childLinkClass = static function (string $path) use ($currentPath): string {
     return 'nav-link text-white-50 nav-link-child py-1' . ($active ? ' active text-white bg-primary rounded' : '');
 };
 
-$mediaUsersActive = $startsWith('/media-users') && !$startsWith('/media-users/limpieza');
+$mediaUsersListActive = $isExact('/media-users')
+    || (preg_match('#^/media-users/[0-9a-f-]{36}#', $currentPath) === 1);
+
+$mediaUsersToolsPaths = [
+    '/media-users/create',
+    '/media-users/activity',
+    '/media-users/stream-violations',
+    '/media-users/cut-logs',
+    '/media-users/expiring',
+    '/media-users/estimacion',
+    '/media-users/broadcast',
+    '/media-users/bulk',
+    '/media-users/revisar',
+];
+$mediaUsersToolsActive = false;
+foreach ($mediaUsersToolsPaths as $toolPath) {
+    if ($currentPath === $toolPath || str_starts_with($currentPath, $toolPath . '/')) {
+        $mediaUsersToolsActive = true;
+        break;
+    }
+}
+
 $settingsActive = $startsWith('/settings') || $startsWith('/import') || $startsWith('/media-users/limpieza');
+$navIdSuffix = preg_replace('/[^a-z0-9_-]/i', '', (string) ($sidebarNavIdSuffix ?? 'main')) ?: 'main';
+$mediaUsersToolsCollapseId = 'sidebarMediaUsersTools-' . $navIdSuffix;
 ?>
 <ul class="nav flex-column p-2">
     <li class="nav-item"><a class="<?= $linkClass('/dashboard') ?>" href="/dashboard" title="<?= e(__('dashboard')) ?>"><i class="bi bi-speedometer2 me-2"></i><span class="sidebar-label"><?= __('dashboard') ?></span></a></li>
@@ -35,37 +58,39 @@ $settingsActive = $startsWith('/settings') || $startsWith('/import') || $startsW
     <li class="nav-item"><a class="<?= $linkClass('/activity', true) ?>" href="/activity" title="En directo"><i class="bi bi-broadcast-pin me-2"></i><span class="sidebar-label">En directo</span></a></li>
 
     <li class="nav-item">
-        <a class="<?= $linkClass('/media-users', true) ?><?= $mediaUsersActive && !$isExact('/media-users') ? ' text-white' : '' ?>" href="/media-users" title="<?= e(__('media_users')) ?>">
-            <i class="bi bi-people me-2"></i><span class="sidebar-label"><?= __('media_users') ?></span>
+        <a class="nav-link text-white<?= $mediaUsersListActive ? ' active bg-primary rounded' : '' ?>" href="/media-users" title="Usuarios">
+            <i class="bi bi-people me-2"></i><span class="sidebar-label">Usuarios</span>
         </a>
-        <ul class="nav flex-column nav-children ms-3 ps-2 border-start border-secondary">
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/create') ?>" href="/media-users/create"><i class="bi bi-plus-lg me-2"></i><span class="sidebar-label">Nuevo usuario</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/activity') ?>" href="/media-users/activity"><i class="bi bi-clock-history me-2"></i><span class="sidebar-label">Actividad</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/stream-violations') ?>" href="/media-users/stream-violations"><i class="bi bi-exclamation-octagon me-2"></i><span class="sidebar-label">Incumplimientos streams</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/cut-logs') ?>" href="/media-users/cut-logs"><i class="bi bi-scissors me-2"></i><span class="sidebar-label">Log de cortes</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/expiring') ?>" href="/media-users/expiring"><i class="bi bi-hourglass-split me-2"></i><span class="sidebar-label">Vencimientos</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/estimacion') ?>" href="/media-users/estimacion"><i class="bi bi-calendar3 me-2"></i><span class="sidebar-label">Estimación mensual</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/broadcast') ?>" href="/media-users/broadcast"><i class="bi bi-megaphone me-2"></i><span class="sidebar-label">Mensaje masivo</span></a></li>
-            <li class="nav-item"><a class="<?= $childLinkClass('/media-users/bulk') ?>" href="/media-users/bulk"><i class="bi bi-envelope-plus me-2"></i><span class="sidebar-label">Añadir emails</span></a></li>
-        </ul>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link text-white-50<?= $mediaUsersToolsActive ? ' text-white' : '' ?>"
+           href="#<?= e($mediaUsersToolsCollapseId) ?>"
+           data-bs-toggle="collapse"
+           role="button"
+           aria-expanded="<?= $mediaUsersToolsActive ? 'true' : 'false' ?>"
+           aria-controls="<?= e($mediaUsersToolsCollapseId) ?>"
+           title="Más opciones de usuarios">
+            <i class="bi bi-three-dots me-2"></i><span class="sidebar-label">Más usuarios</span>
+            <i class="bi bi-chevron-down float-end small mt-1 sidebar-label"></i>
+        </a>
+        <div class="collapse<?= $mediaUsersToolsActive ? ' show' : '' ?>" id="<?= e($mediaUsersToolsCollapseId) ?>">
+            <ul class="nav flex-column nav-children ms-3 ps-2 border-start border-secondary">
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/create') ?>" href="/media-users/create"><i class="bi bi-plus-lg me-2"></i><span class="sidebar-label">Nuevo usuario</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/activity') ?>" href="/media-users/activity"><i class="bi bi-clock-history me-2"></i><span class="sidebar-label">Actividad</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/stream-violations') ?>" href="/media-users/stream-violations"><i class="bi bi-exclamation-octagon me-2"></i><span class="sidebar-label">Incumplimientos streams</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/cut-logs') ?>" href="/media-users/cut-logs"><i class="bi bi-scissors me-2"></i><span class="sidebar-label">Log de cortes</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/expiring') ?>" href="/media-users/expiring"><i class="bi bi-hourglass-split me-2"></i><span class="sidebar-label">Vencimientos</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/estimacion') ?>" href="/media-users/estimacion"><i class="bi bi-calendar3 me-2"></i><span class="sidebar-label">Estimación mensual</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/broadcast') ?>" href="/media-users/broadcast"><i class="bi bi-megaphone me-2"></i><span class="sidebar-label">Mensaje masivo</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/bulk') ?>" href="/media-users/bulk"><i class="bi bi-envelope-plus me-2"></i><span class="sidebar-label">Añadir emails</span></a></li>
+            </ul>
+        </div>
     </li>
 
     <li class="nav-item"><a class="<?= $linkClass('/peticiones') ?>" href="/peticiones" title="Peticiones"><i class="bi bi-film me-2"></i><span class="sidebar-label">Peticiones</span></a></li>
-    <li class="nav-item mt-3"><small class="text-muted px-3 sidebar-label"><?= __('management') ?></small></li>
-    <li class="nav-item"><a class="<?= $linkClass('/integrations') ?>" href="/integrations" title="<?= e(__('integrations')) ?>"><i class="bi bi-plug me-2"></i><span class="sidebar-label"><?= __('integrations') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/automation') ?>" href="/automation" title="<?= e(__('automation')) ?>"><i class="bi bi-lightning me-2"></i><span class="sidebar-label"><?= __('automation') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/customers') ?>" href="/customers" title="<?= e(__('customers')) ?>"><i class="bi bi-person-vcard me-2"></i><span class="sidebar-label"><?= __('customers') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/billing') ?>" href="/billing" title="<?= e(__('billing')) ?>"><i class="bi bi-credit-card me-2"></i><span class="sidebar-label"><?= __('billing') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/tickets') ?>" href="/tickets" title="<?= e(__('support')) ?>"><i class="bi bi-headset me-2"></i><span class="sidebar-label"><?= __('support') ?></span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/help/atencion-cliente') ?>" href="/help/atencion-cliente" title="Guía atención al cliente"><i class="bi bi-journal-bookmark me-2"></i><span class="sidebar-label">Guía atención cliente</span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/invoices') ?>" href="/invoices" title="<?= e(__('invoices')) ?>"><i class="bi bi-receipt me-2"></i><span class="sidebar-label"><?= __('invoices') ?></span></a></li>
-    <li class="nav-item mt-3"><small class="text-muted px-3 sidebar-label"><?= __('security_section') ?></small></li>
-    <li class="nav-item"><a class="<?= $linkClass('/roles') ?>" href="/roles" title="<?= e(__('roles')) ?>"><i class="bi bi-shield-check me-2"></i><span class="sidebar-label"><?= __('roles') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/api-keys') ?>" href="/api-keys" title="<?= e(__('api_keys')) ?>"><i class="bi bi-key me-2"></i><span class="sidebar-label"><?= __('api_keys') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/security') ?>" href="/security" title="<?= e(__('security')) ?>"><i class="bi bi-shield-exclamation me-2"></i><span class="sidebar-label"><?= __('security') ?></span></a></li>
+
     <li class="nav-item mt-3"><small class="text-muted px-3 sidebar-label"><?= __('system') ?></small></li>
-    <li class="nav-item"><a class="<?= $linkClass('/webhooks') ?>" href="/webhooks" title="<?= e(__('webhooks')) ?>"><i class="bi bi-broadcast me-2"></i><span class="sidebar-label"><?= __('webhooks') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/privacy') ?>" href="/privacy" title="<?= e(__('privacy')) ?>"><i class="bi bi-shield-lock me-2"></i><span class="sidebar-label"><?= __('privacy') ?></span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/logs') ?>" href="/logs" title="<?= e(__('logs')) ?>"><i class="bi bi-journal-text me-2"></i><span class="sidebar-label"><?= __('logs') ?></span></a></li>
 
     <li class="nav-item">
@@ -83,10 +108,6 @@ $settingsActive = $startsWith('/settings') || $startsWith('/import') || $startsW
 
     <li class="nav-item"><a class="<?= $linkClass('/backups') ?>" href="/backups" title="<?= e(__('backups')) ?>"><i class="bi bi-cloud-arrow-up me-2"></i><span class="sidebar-label"><?= __('backups') ?></span></a></li>
     <li class="nav-item"><a class="<?= $linkClass('/updater') ?>" href="/updater" title="<?= e(__('updates')) ?>"><i class="bi bi-arrow-up-circle me-2"></i><span class="sidebar-label"><?= __('updates') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/diagnostics') ?>" href="/diagnostics" title="<?= e(__('diagnostics')) ?>"><i class="bi bi-heart-pulse me-2"></i><span class="sidebar-label"><?= __('diagnostics') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/plugins') ?>" href="/plugins" title="<?= e(__('plugins')) ?>"><i class="bi bi-puzzle me-2"></i><span class="sidebar-label"><?= __('plugins') ?></span></a></li>
-    <li class="nav-item"><a class="<?= $linkClass('/tenants') ?>" href="/tenants" title="<?= e(__('tenants')) ?>"><i class="bi bi-building me-2"></i><span class="sidebar-label"><?= __('tenants') ?></span></a></li>
     <li class="nav-item mt-3"><small class="text-muted px-3 sidebar-label">Enlaces</small></li>
     <li class="nav-item"><a class="nav-link text-white-50" href="/portal/login" target="_blank" title="<?= e(__('portal')) ?>"><i class="bi bi-box-arrow-up-right me-2"></i><span class="sidebar-label"><?= __('portal') ?></span></a></li>
-    <li class="nav-item"><a class="nav-link text-white-50" href="/api/docs" target="_blank" title="<?= e(__('api_docs')) ?>"><i class="bi bi-code-slash me-2"></i><span class="sidebar-label"><?= __('api_docs') ?></span></a></li>
 </ul>

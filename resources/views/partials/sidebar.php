@@ -6,6 +6,9 @@
         <small class="text-muted sidebar-label">ERP v<?= e(config('app.version')) ?></small>
     </div>
     <div class="overflow-auto flex-grow-1">
-        <?php include base_path('resources/views/partials/sidebar-nav.php'); ?>
+        <?php
+        $sidebarNavIdSuffix = 'desktop';
+        include base_path('resources/views/partials/sidebar-nav.php');
+        ?>
     </div>
 </aside>

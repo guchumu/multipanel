@@ -26,7 +26,10 @@
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
         </div>
         <div class="offcanvas-body p-0">
-            <?php include base_path('resources/views/partials/sidebar-nav.php'); ?>
+            <?php
+            $sidebarNavIdSuffix = 'mobile';
+            include base_path('resources/views/partials/sidebar-nav.php');
+            ?>
         </div>
     </div>
 
