@@ -348,4 +348,89 @@ final class SessionStreamInfoTest extends TestCase
         $this->assertSame('1080p', $info['source']['resolution']);
         $this->assertSame('480p', $info['output']['resolution']);
     }
+
+    public function test_plex_transcode_library_source_fixes_fully_polluted_session(): void
+    {
+        // Caso Madre/Androide: sesión con Media/Stream/TS todos a 480p (salida),
+        // pero la ficha de biblioteca dice 1080p MKV H264 AC3 5.1.
+        $polluted = [
+            'container' => 'mkv',
+            'videoCodec' => 'h264',
+            'audioCodec' => 'ac3',
+            'audioChannels' => '6',
+            'width' => '760',
+            'height' => '428',
+        ];
+        $library = [
+            'container' => 'mkv',
+            'videoResolution' => '1080',
+            'width' => '1920',
+            'height' => '1080',
+            'videoCodec' => 'h264',
+            'audioCodec' => 'ac3',
+            'audioChannels' => '6',
+        ];
+        $media = SessionStreamInfo::applyLibrarySourceToMedia($polluted, $library);
+
+        $info = SessionStreamInfo::fromPlex(
+            'transcode',
+            [
+                'videoDecision' => 'transcode',
+                'audioDecision' => 'copy',
+                'subtitleDecision' => 'none',
+                'sourceVideoCodec' => 'h264',
+                'videoCodec' => 'h264',
+                'sourceAudioCodec' => 'ac3',
+                'audioCodec' => 'ac3',
+                'sourceAudioChannels' => '6',
+                'audioChannels' => '6',
+                'width' => '760',
+                'height' => '428',
+                'container' => 'mkv',
+                'videoBitrate' => '1800',
+                'throttled' => '1',
+                'transcodeHwDecoding' => '1',
+                'transcodeHwEncoding' => '1',
+            ],
+            $media,
+            ['bandwidth' => '1900'],
+            [
+                'streamType' => '1',
+                'codec' => 'h264',
+                'width' => '760',
+                'height' => '428',
+                'decision' => 'transcode',
+            ],
+            [
+                'streamType' => '2',
+                'codec' => 'ac3',
+                'channels' => '6',
+                'language' => 'español',
+                'decision' => 'copy',
+            ],
+            [],
+        );
+
+        $this->assertSame('1080p', $info['source']['resolution']);
+        $this->assertSame('MKV', $info['source']['format']);
+        $this->assertSame('H264', $info['source']['video_codec']);
+        $this->assertSame('AC3', $info['source']['audio_codec']);
+        $this->assertSame('5.1', $info['source']['audio_channels']);
+        $this->assertSame('428p', $info['output']['resolution']);
+        $this->assertSame('Transcode (H264 (HW) 1080p → H264 (HW) 428p)', $info['video']);
+
+        $detail = SessionStreamInfo::ntfyTranscodeChangeLines($info);
+        $this->assertContains('Archivo: MKV · 1080p · H264 · AC3 · 5.1', $detail);
+        $this->assertContains('Vídeo: H264 (HW) 1080p → H264 (HW) 428p', $detail);
+        $archivo = null;
+        foreach ($detail as $line) {
+            if (str_starts_with($line, 'Archivo:')) {
+                $archivo = $line;
+                break;
+            }
+        }
+        $this->assertNotNull($archivo);
+        $this->assertStringNotContainsString('428p', (string) $archivo);
+        $this->assertStringNotContainsString('480p', (string) $archivo);
+    }
 }

@@ -106,8 +106,9 @@ final class SessionStreamInfo
 
         $container = self::formatContainerLine($playMethod, $sourceContainer, $targetContainer, $videoDecision, $audioDecision);
 
+        // Origen: Media (ficha/biblioteca) antes que Stream (a menudo ya es la salida).
         $sourceVideoCodec = self::codecLabel(
-            (string) ($transcode['sourceVideoCodec'] ?? $videoStream['codec'] ?? $media['videoCodec'] ?? '')
+            (string) ($transcode['sourceVideoCodec'] ?? $media['videoCodec'] ?? $videoStream['codec'] ?? '')
         );
         $destVideoCodec = self::codecLabel(
             (string) ($transcode['videoCodec'] ?? $sourceVideoCodec)
@@ -129,13 +130,13 @@ final class SessionStreamInfo
             (string) ($audioStream['displayTitle'] ?? ''),
         );
         $sourceAudioCodec = self::codecLabel(
-            (string) ($transcode['sourceAudioCodec'] ?? $audioStream['codec'] ?? $media['audioCodec'] ?? '')
+            (string) ($transcode['sourceAudioCodec'] ?? $media['audioCodec'] ?? $audioStream['codec'] ?? '')
         );
         $destAudioCodec = self::codecLabel(
             (string) ($transcode['audioCodec'] ?? $sourceAudioCodec)
         );
         $sourceChannels = self::channelsLabel(
-            (int) ($transcode['sourceAudioChannels'] ?? $audioStream['channels'] ?? $media['audioChannels'] ?? 0)
+            (int) ($transcode['sourceAudioChannels'] ?? $media['audioChannels'] ?? $audioStream['channels'] ?? 0)
         );
         $destChannelsRaw = (int) ($transcode['audioChannels'] ?? $audioStream['channels'] ?? $media['audioChannels'] ?? 0);
         $destChannels = self::channelsLabel($destChannelsRaw);
@@ -595,13 +596,15 @@ final class SessionStreamInfo
         $source = is_array($streamInfo['source'] ?? null) ? $streamInfo['source'] : [];
         $output = is_array($streamInfo['output'] ?? null) ? $streamInfo['output'] : [];
 
+        // Archivo = fichero real (contenedor · resolución · codec vídeo · audio · canales)
         $origBits = array_values(array_filter([
             self::dashless((string) ($source['format'] ?? '')),
-            self::dashless((string) ($source['video_codec'] ?? '')),
             self::dashless((string) ($source['resolution'] ?? '')),
+            self::dashless((string) ($source['video_codec'] ?? '')),
             self::dashless((string) ($source['audio_codec'] ?? '')),
             self::dashless((string) ($source['audio_channels'] ?? '')),
         ], static fn (string $v): bool => $v !== ''));
+        // Vídeo/salida = a lo que pide el cliente (codec · resolución · …)
         $reqBits = array_values(array_filter([
             self::dashless((string) ($output['video_codec'] ?? '')),
             self::dashless((string) ($output['resolution'] ?? '')),
@@ -1212,6 +1215,33 @@ final class SessionStreamInfo
     }
 
     /**
+     * Sobrescribe atributos de origen del Media de sesión con los de la ficha
+     * de biblioteca (más fiables que width/height de /status/sessions al
+     * transcodificar).
+     *
+     * @param array<string, mixed>|null $media
+     * @param array<string, mixed>|null $librarySource
+     * @return array<string, mixed>|null
+     */
+    public static function applyLibrarySourceToMedia(?array $media, ?array $librarySource): ?array
+    {
+        if ($librarySource === null || $librarySource === []) {
+            return $media;
+        }
+        $media = $media ?? [];
+
+        foreach (['videoResolution', 'width', 'height', 'videoCodec', 'audioCodec', 'audioChannels', 'container'] as $key) {
+            $val = $librarySource[$key] ?? null;
+            if ($val === null || $val === '') {
+                continue;
+            }
+            $media[$key] = $val;
+        }
+
+        return $media;
+    }
+
+    /**
      * Resuelve resolución de archivo (origen) vs cable (salida) en Plex.
      *
      * Plex no es consistente entre versiones:
@@ -1219,6 +1249,8 @@ final class SessionStreamInfo
      *   el Stream a veces sigue con el alto del fichero.
      * - Otros (p. ej. Tracearr): TranscodeSession = origen, Stream = salida;
      *   Media.height puede venir ya contaminado con la salida.
+     * Por eso, si hay videoResolution/dims de biblioteca (applyLibrarySource),
+     * se usan como origen autoritativo.
      *
      * @param array<string, mixed> $media
      * @param array<string, mixed> $transcode
@@ -1231,11 +1263,26 @@ final class SessionStreamInfo
         array $transcode,
         array $videoStream,
     ): array {
-        $mediaRes = self::resolutionLabel(
-            (string) ($media['videoResolution'] ?? ''),
+        // Preferir etiqueta de biblioteca (videoResolution) sobre height contaminado.
+        $mediaLabelRes = self::resolutionLabel((string) ($media['videoResolution'] ?? ''), 0, 0);
+        $mediaDimRes = self::resolutionLabel(
+            '',
             (int) ($media['height'] ?? 0),
             (int) ($media['width'] ?? 0),
         );
+        $mediaRes = $mediaLabelRes !== '' ? $mediaLabelRes : $mediaDimRes;
+        // Si la etiqueta y el alto discrepan (p. ej. videoResolution=1080 pero height=480
+        // de la salida), quedarse con la mayor: es el fichero real.
+        if ($mediaLabelRes !== '' && $mediaDimRes !== ''
+            && self::resolutionRank($mediaLabelRes) > self::resolutionRank($mediaDimRes)
+        ) {
+            $mediaRes = $mediaLabelRes;
+        } elseif ($mediaLabelRes !== '' && $mediaDimRes !== ''
+            && self::resolutionRank($mediaDimRes) > self::resolutionRank($mediaLabelRes)
+        ) {
+            $mediaRes = $mediaDimRes;
+        }
+
         $explicitSourceRes = self::resolutionLabel(
             '',
             (int) ($transcode['sourceVideoHeight'] ?? 0),
@@ -1258,20 +1305,21 @@ final class SessionStreamInfo
             return [$sourceRes, $sourceRes];
         }
 
+        // Salida = lo más bajo entre Stream y TS cuando Media (fichero) es mayor.
         $destRes = '';
-        if ($streamRes !== '' && $mediaRes !== '' && $streamRes !== $mediaRes) {
-            // Stream distinto del fichero → cable de salida.
+        if ($streamRes !== '' && $mediaRes !== '' && self::resolutionRank($streamRes) < self::resolutionRank($mediaRes)) {
+            $destRes = $streamRes;
+        } elseif ($tsRes !== '' && $mediaRes !== '' && self::resolutionRank($tsRes) < self::resolutionRank($mediaRes)) {
+            $destRes = $tsRes;
+        } elseif ($streamRes !== '' && $mediaRes !== '' && $streamRes !== $mediaRes) {
             $destRes = $streamRes;
         } elseif ($tsRes !== '' && $mediaRes !== '' && $tsRes !== $mediaRes) {
             if (self::resolutionRank($tsRes) < self::resolutionRank($mediaRes)) {
-                // Clásico: TS por debajo del Media = salida (bajada de calidad).
                 $destRes = $tsRes;
             } else {
-                // TS por encima del Media “contaminado” → TS es origen; cable = Stream/Media.
                 $destRes = $streamRes !== '' ? $streamRes : $mediaRes;
             }
         } elseif ($streamRes !== '' && $tsRes !== '' && $streamRes !== $tsRes) {
-            // Sin Media fiable: el más bajo suele ser la salida en un downscale.
             $destRes = self::resolutionRank($tsRes) > self::resolutionRank($streamRes)
                 ? $streamRes
                 : $tsRes;
@@ -1282,14 +1330,17 @@ final class SessionStreamInfo
         }
 
         $sourceRes = $mediaRes;
-        if ($explicitSourceRes !== '' && ($sourceRes === '' || $sourceRes === $destRes)) {
+        if ($explicitSourceRes !== '' && (
+            $sourceRes === ''
+            || $sourceRes === $destRes
+            || self::resolutionRank($explicitSourceRes) > self::resolutionRank($sourceRes)
+        )) {
             $sourceRes = $explicitSourceRes;
         }
-        if (($sourceRes === '' || $sourceRes === $destRes) && $tsRes !== '' && $tsRes !== $destRes) {
+        if (($sourceRes === '' || $sourceRes === $destRes) && $tsRes !== '' && $tsRes !== $destRes
+            && self::resolutionRank($tsRes) > self::resolutionRank($destRes)
+        ) {
             $sourceRes = $tsRes;
-        }
-        if (($sourceRes === '' || $sourceRes === $destRes) && $streamRes !== '' && $streamRes !== $destRes) {
-            $sourceRes = $streamRes;
         }
         if ($sourceRes === '') {
             $sourceRes = $destRes;

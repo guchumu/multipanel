@@ -7,6 +7,7 @@ namespace App\Services\Media;
 use App\Models\Server;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Core\Cache;
 use Core\Logger;
 
 /**
@@ -24,6 +25,13 @@ final class PlexService
     private ?string $lastError = null;
 
     private ?string $lastArtworkError = null;
+
+    /**
+     * Cache en memoria de /library/metadata/{ratingKey} → atributos del fichero.
+     *
+     * @var array<string, array<string, mixed>|false>
+     */
+    private array $libraryMediaSourceMemo = [];
 
     public function __construct(
         private Server $server,
@@ -584,6 +592,12 @@ final class PlexService
         }
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreams($mediaList);
         [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
+        if ($videoDecision === 'transcode') {
+            $media = SessionStreamInfo::applyLibrarySourceToMedia(
+                $media,
+                $this->fetchLibraryMediaSource((string) ($session['ratingKey'] ?? '')),
+            );
+        }
         $streamInfo = SessionStreamInfo::fromPlex(
             $playMethod,
             $transcode,
@@ -675,6 +689,12 @@ final class PlexService
 
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreamsFromXml($session);
         [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
+        if ($videoDecision === 'transcode') {
+            $media = SessionStreamInfo::applyLibrarySourceToMedia(
+                $media,
+                $this->fetchLibraryMediaSource((string) ($session['ratingKey'] ?? '')),
+            );
+        }
         $streamInfo = SessionStreamInfo::fromPlex(
             $playMethod,
             $transcode,
@@ -718,6 +738,141 @@ final class PlexService
             'art_path' => $thumb,
             'thumb_url' => $this->mediaUrl($thumb),
         ];
+    }
+
+    /**
+     * Lee el Media de la ficha de biblioteca (origen real del fichero).
+     * /status/sessions a menudo contamina width/height/videoResolution con la salida.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function fetchLibraryMediaSource(string $ratingKey): ?array
+    {
+        $ratingKey = trim($ratingKey);
+        if ($ratingKey === '' || !ctype_digit($ratingKey)) {
+            return null;
+        }
+
+        if (array_key_exists($ratingKey, $this->libraryMediaSourceMemo)) {
+            $memo = $this->libraryMediaSourceMemo[$ratingKey];
+
+            return $memo === false ? null : $memo;
+        }
+
+        $cacheKey = 'plex_lib_src_' . (int) $this->server->id . '_' . $ratingKey;
+        $cached = Cache::get($cacheKey, '__miss__');
+        if ($cached !== '__miss__') {
+            $parsed = (is_array($cached) && $cached !== []) ? $cached : null;
+            $this->libraryMediaSourceMemo[$ratingKey] = $parsed ?? false;
+
+            return $parsed;
+        }
+
+        try {
+            $response = $this->client->get('/library/metadata/' . $ratingKey, [
+                'headers' => array_merge($this->authHeaders(), [
+                    'Accept' => 'application/json, application/xml',
+                ]),
+                'timeout' => $this->quick ? 5 : 10,
+                'connect_timeout' => $this->quick ? 3 : 5,
+            ]);
+            $body = trim($response->getBody()->getContents());
+            $parsed = $this->parseLibraryMediaSourceBody($body);
+        } catch (GuzzleException $e) {
+            Logger::warning('Plex library metadata fetch failed', [
+                'server_id' => $this->server->id,
+                'rating_key' => $ratingKey,
+                'error' => $e->getMessage(),
+            ]);
+            $parsed = null;
+        }
+
+        Cache::set($cacheKey, $parsed ?? [], 300);
+        $this->libraryMediaSourceMemo[$ratingKey] = $parsed ?? false;
+
+        return $parsed;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function parseLibraryMediaSourceBody(string $body): ?array
+    {
+        if ($body === '') {
+            return null;
+        }
+
+        if ($body[0] === '{' || $body[0] === '[') {
+            $json = json_decode($body, true);
+            if (!is_array($json)) {
+                return null;
+            }
+            $container = $json['MediaContainer'] ?? $json;
+            if (!is_array($container)) {
+                return null;
+            }
+            $items = $container['Metadata'] ?? $container['Video'] ?? [];
+            if (!is_array($items) || $items === []) {
+                return null;
+            }
+            if (!array_is_list($items)) {
+                $items = [$items];
+            }
+            $meta = $items[0] ?? null;
+            if (!is_array($meta)) {
+                return null;
+            }
+            $mediaList = $meta['Media'] ?? [];
+            if (!is_array($mediaList) || $mediaList === []) {
+                return null;
+            }
+            if (!array_is_list($mediaList)) {
+                $mediaList = [$mediaList];
+            }
+            $media = $mediaList[0] ?? null;
+
+            return is_array($media) ? $this->normalizeLibraryMediaSource($media) : null;
+        }
+
+        $xml = @simplexml_load_string($body);
+        if ($xml === false) {
+            return null;
+        }
+        $node = $xml->Video[0] ?? $xml->Metadata[0] ?? $xml->Directory[0] ?? null;
+        if (!$node instanceof \SimpleXMLElement) {
+            foreach (['Video', 'Track', 'Metadata'] as $tag) {
+                if (isset($xml->{$tag}[0]) && $xml->{$tag}[0] instanceof \SimpleXMLElement) {
+                    $node = $xml->{$tag}[0];
+                    break;
+                }
+            }
+        }
+        if (!$node instanceof \SimpleXMLElement) {
+            return null;
+        }
+        $mediaNode = $node->Media[0] ?? null;
+        if (!$mediaNode instanceof \SimpleXMLElement) {
+            return null;
+        }
+
+        return $this->normalizeLibraryMediaSource(SessionStreamInfo::simpleXmlAttributes($mediaNode));
+    }
+
+    /**
+     * @param array<string, mixed> $media
+     * @return array<string, mixed>|null
+     */
+    private function normalizeLibraryMediaSource(array $media): ?array
+    {
+        $out = [];
+        foreach (['videoResolution', 'width', 'height', 'videoCodec', 'audioCodec', 'audioChannels', 'container'] as $key) {
+            if (!array_key_exists($key, $media) || $media[$key] === null || $media[$key] === '') {
+                continue;
+            }
+            $out[$key] = $media[$key];
+        }
+
+        return $out === [] ? null : $out;
     }
 
     /** Formato estilo Tautulli: kbps / Mbps / Gbps. */
