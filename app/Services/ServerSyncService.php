@@ -328,24 +328,42 @@ final class ServerSyncService
                 continue;
             }
 
-            // Autoaceptar: si había una invitación pendiente con este email (sin external_id aún),
-            // se vincula en vez de crear un usuario duplicado; así se detecta la aceptación sin
-            // intervención manual del administrador.
+            // Autoaceptar: invitación pendiente con este email o mismo username
+            // (sin external_id aún) → vincular en vez de crear duplicado.
             $email = trim((string) ($remoteUser['email'] ?? ''));
-            $pending = $email !== '' ? $db->fetchOne(
-                "SELECT id FROM media_users
-                 WHERE server_id = ? AND deleted_at IS NULL AND email = ?
-                   AND (external_id IS NULL OR external_id = '')
-                   AND status IN ('invited', 'pending')
-                 LIMIT 1",
-                [$server->id, $email]
-            ) : null;
+            $pending = null;
+            if ($email !== '') {
+                $pending = $db->fetchOne(
+                    "SELECT id FROM media_users
+                     WHERE server_id = ? AND deleted_at IS NULL AND LOWER(email) = LOWER(?)
+                       AND (external_id IS NULL OR external_id = '')
+                       AND status IN ('invited', 'pending', 'active', 'suspended')
+                     LIMIT 1",
+                    [$server->id, $email]
+                );
+            }
+            if ($pending === null && $username !== '') {
+                $emailLocal = $email !== '' && str_contains($email, '@')
+                    ? strtolower(trim((string) strstr($email, '@', true)))
+                    : '';
+                $pending = $db->fetchOne(
+                    "SELECT id FROM media_users
+                     WHERE server_id = ? AND deleted_at IS NULL
+                       AND (external_id IS NULL OR external_id = '')
+                       AND (
+                         LOWER(username) = LOWER(?)
+                         OR (? != '' AND LOWER(SUBSTRING_INDEX(TRIM(email), '@', 1)) = ?)
+                       )
+                     LIMIT 1",
+                    [$server->id, $username, $emailLocal, $emailLocal]
+                );
+            }
 
             if ($pending) {
                 $pendingRow = $db->fetchOne(
-                    'SELECT id, email, display_name, avatar FROM media_users WHERE id = ? LIMIT 1',
+                    'SELECT id, email, display_name, avatar, username FROM media_users WHERE id = ? LIMIT 1',
                     [$pending['id']]
-                ) ?: ['id' => $pending['id'], 'email' => $email, 'display_name' => null, 'avatar' => null];
+                ) ?: ['id' => $pending['id'], 'email' => $email, 'display_name' => null, 'avatar' => null, 'username' => null];
                 $payload = array_merge(
                     [
                         'external_id' => $externalId,
@@ -357,6 +375,14 @@ final class ServerSyncService
                     $payload['on_server'] = 1;
                     $payload['membership_synced_at'] = $now;
                 }
+                // Rellenar username si la ficha local lo tenía vacío o era un nombre con espacios.
+                $localUser = trim((string) ($pendingRow['username'] ?? ''));
+                if ($localUser === '' || (str_contains($localUser, ' ') && $username !== '')) {
+                    $payload['username'] = $username;
+                }
+                if (trim((string) ($pendingRow['display_name'] ?? '')) === '' && $username !== '') {
+                    $payload['display_name'] = $username;
+                }
                 $db->update('media_users', $payload, 'id = ?', [$pending['id']]);
                 Logger::info('Media user invite auto-accepted', ['media_user_id' => $pending['id'], 'server_id' => $server->id, 'email' => $email]);
                 $updated++;
@@ -364,14 +390,63 @@ final class ServerSyncService
             }
 
             $remoteEmail = trim((string) ($remoteUser['email'] ?? ''));
+            // Evitar segundo alta si ya existe en el servidor con ese email/username
+            // (p. ej. ficha de panel con días y sync de Plex con otro username).
+            $twinLive = null;
+            if ($remoteEmail !== '') {
+                $twinLive = $db->fetchOne(
+                    "SELECT id FROM media_users
+                     WHERE server_id = ? AND deleted_at IS NULL
+                       AND LOWER(email) = LOWER(?)
+                     LIMIT 1",
+                    [$server->id, $remoteEmail]
+                );
+            }
+            if ($twinLive === null && $username !== '') {
+                $twinLive = $db->fetchOne(
+                    "SELECT id FROM media_users
+                     WHERE server_id = ? AND deleted_at IS NULL
+                       AND (LOWER(username) = LOWER(?)
+                            OR LOWER(SUBSTRING_INDEX(TRIM(email), '@', 1)) = LOWER(?))
+                     LIMIT 1",
+                    [$server->id, $username, $username]
+                );
+            }
+            if ($twinLive) {
+                $twinRow = $db->fetchOne(
+                    'SELECT id, email, display_name, avatar, username FROM media_users WHERE id = ? LIMIT 1',
+                    [$twinLive['id']]
+                ) ?: ['id' => $twinLive['id']];
+                $payload = array_merge(
+                    ['external_id' => $externalId, 'status' => 'active'],
+                    self::mergeRemoteIntoLocalUser($remoteUser, $twinRow, $username)
+                );
+                if ($hasMembershipCols) {
+                    $payload['on_server'] = 1;
+                    $payload['membership_synced_at'] = $now;
+                }
+                $localUser = trim((string) ($twinRow['username'] ?? ''));
+                if ($localUser === '' || (str_contains($localUser, ' ') && $username !== '')) {
+                    $payload['username'] = $username;
+                    if (trim((string) ($twinRow['display_name'] ?? '')) === '' || str_contains($localUser, ' ')) {
+                        $payload['display_name'] = trim((string) ($twinRow['display_name'] ?? '')) !== ''
+                            ? $twinRow['display_name']
+                            : $localUser;
+                    }
+                }
+                $db->update('media_users', $payload, 'id = ?', [$twinLive['id']]);
+                $updated++;
+                continue;
+            }
+
             $insert = [
                 'tenant_id' => $server->tenant_id,
                 'uuid' => Uuid::uuid4()->toString(),
                 'server_id' => $server->id,
                 'external_id' => $externalId,
-                'username' => $username,
+                'username' => $username !== '' ? $username : ('user' . substr($externalId, 0, 8)),
                 'email' => $remoteEmail !== '' ? $remoteEmail : null,
-                'display_name' => $username,
+                'display_name' => $username !== '' ? $username : null,
                 'avatar' => $remoteUser['thumb'] ?? null,
                 'status' => 'active',
                 'expires_at' => null,

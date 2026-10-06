@@ -28,9 +28,11 @@ $childLinkClass = static function (string $path) use ($currentPath): string {
 $mediaUsersListActive = $isExact('/media-users')
     || (preg_match('#^/media-users/[0-9a-f-]{36}#', $currentPath) === 1);
 
-$mediaUsersToolsPaths = [
+        $mediaUsersToolsPaths = [
     '/media-users/create',
     '/media-users/activity',
+    '/media-users/recent',
+    '/media-users/duplicates',
     '/media-users/stream-violations',
     '/media-users/cut-logs',
     '/media-users/expiring',
@@ -76,6 +78,8 @@ $mediaUsersToolsCollapseId = 'sidebarMediaUsersTools-' . $navIdSuffix;
         <div class="collapse<?= $mediaUsersToolsActive ? ' show' : '' ?>" id="<?= e($mediaUsersToolsCollapseId) ?>">
             <ul class="nav flex-column nav-children ms-3 ps-2 border-start border-secondary">
                 <li class="nav-item"><a class="<?= $childLinkClass('/media-users/create') ?>" href="/media-users/create"><i class="bi bi-plus-lg me-2"></i><span class="sidebar-label">Nuevo usuario</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/recent') ?>" href="/media-users/recent"><i class="bi bi-clock me-2"></i><span class="sidebar-label">Últimos añadidos</span></a></li>
+                <li class="nav-item"><a class="<?= $childLinkClass('/media-users/duplicates') ?>" href="/media-users/duplicates"><i class="bi bi-intersect me-2"></i><span class="sidebar-label">Duplicados</span></a></li>
                 <li class="nav-item"><a class="<?= $childLinkClass('/media-users/activity') ?>" href="/media-users/activity"><i class="bi bi-clock-history me-2"></i><span class="sidebar-label">Actividad</span></a></li>
                 <li class="nav-item"><a class="<?= $childLinkClass('/media-users/stream-violations') ?>" href="/media-users/stream-violations"><i class="bi bi-exclamation-octagon me-2"></i><span class="sidebar-label">Incumplimientos streams</span></a></li>
                 <li class="nav-item"><a class="<?= $childLinkClass('/media-users/cut-logs') ?>" href="/media-users/cut-logs"><i class="bi bi-scissors me-2"></i><span class="sidebar-label">Log de cortes</span></a></li>

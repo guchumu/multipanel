@@ -26,6 +26,8 @@ class MediaUserRepository
         'expires_at' => 'mu.`expires_at`',
         'telegram' => 'mu.`telegram_chat_id`',
         'max_streams' => 'mu.`max_streams`',
+        'created' => 'mu.`created_at`',
+        'created_at' => 'mu.`created_at`',
     ];
 
     /**
@@ -394,6 +396,30 @@ class MediaUserRepository
 
         $sql .= ' HAVING `days_left` <= ? ORDER BY mu.`expires_at` ASC LIMIT 500';
         $params[] = $days;
+
+        $rows = Database::getInstance()->fetchAll($sql, $params);
+
+        return array_map(fn ($row) => new MediaUser($row), $rows);
+    }
+
+    /**
+     * Últimos usuarios creados en el panel (altas / sync / registro).
+     *
+     * @return array<int, MediaUser>
+     */
+    public function recentCreated(int $tenantId, int $limit = 50, ?int $serverId = null): array
+    {
+        $limit = max(1, min(200, $limit));
+        $params = [$tenantId];
+        $sql = 'SELECT mu.*, s.name AS server_name, s.uuid AS server_uuid, s.type AS server_type
+                FROM `media_users` mu
+                LEFT JOIN `servers` s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                WHERE mu.`tenant_id` = ? AND mu.`deleted_at` IS NULL';
+        if ($serverId !== null && $serverId > 0) {
+            $sql .= ' AND mu.`server_id` = ?';
+            $params[] = $serverId;
+        }
+        $sql .= ' ORDER BY mu.`created_at` DESC, mu.`id` DESC LIMIT ' . $limit;
 
         $rows = Database::getInstance()->fetchAll($sql, $params);
 

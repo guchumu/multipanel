@@ -142,6 +142,63 @@ class MediaUserController extends Controller
         ]);
     }
 
+    public function recent(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $limit = max(20, min(100, (int) $request->input('limit', 50)));
+
+        return $this->view('media_users.recent', [
+            'title' => 'Últimos añadidos',
+            'users' => $this->mediaUsers->recentCreated($tenantId, $limit, $serverId),
+            'servers' => $this->servers->allByTenant($tenantId),
+            'currentServerId' => $serverId,
+            'limit' => $limit,
+        ]);
+    }
+
+    public function duplicates(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        if ($request->input('run') === '1') {
+            $stats = $this->dedupe->mergeDuplicatesForTenant($tenantId, true);
+            Session::getInstance()->flash(
+                'success',
+                sprintf(
+                    'Auto-fusión: %d grupos, %d fichas archivadas, %d usernames rellenados.',
+                    (int) ($stats['groups_merged'] ?? 0),
+                    (int) ($stats['records_removed'] ?? 0),
+                    (int) ($stats['usernames_fixed'] ?? 0)
+                )
+            );
+
+            return $this->redirect('/media-users/duplicates');
+        }
+
+        return $this->view('media_users.duplicates', [
+            'title' => 'Duplicados',
+            'pairs' => $this->dedupe->listSuspectedPairs($tenantId, 80),
+        ]);
+    }
+
+    public function mergeDuplicates(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $keepId = (int) $request->input('keep_id', 0);
+        $removeId = (int) $request->input('remove_id', 0);
+        $result = $this->dedupe->mergePair($tenantId, $keepId, $removeId);
+        Session::getInstance()->flash(
+            $result['success'] ? 'success' : 'error',
+            $result['message']
+        );
+        $kept = MediaUser::find((int) ($result['kept_id'] ?? 0));
+        if ($result['success'] && $kept !== null) {
+            return $this->redirect('/media-users/' . $kept->uuid);
+        }
+
+        return $this->redirect('/media-users/duplicates');
+    }
+
     public function expiring(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
@@ -642,7 +699,7 @@ class MediaUserController extends Controller
         $defaultMaxStreams = (new StreamLimitSettingsService())->getDefaultMaxStreams($tenantId);
 
         return $this->view('media_users.index', [
-            'title' => 'Usuarios Media',
+            'title' => 'Usuarios',
             'users' => $users,
             'servers' => $this->servers->allByTenant($tenantId),
             'currentStatus' => $status,
