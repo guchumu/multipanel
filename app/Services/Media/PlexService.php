@@ -33,6 +33,12 @@ final class PlexService
      */
     private array $libraryMediaSourceMemo = [];
 
+    /**
+     * Si false, no se llama a /library/metadata al parsear sesiones
+     * (p. ej. al resolver/cortar: hace falta rapidez, no detalle ntfy).
+     */
+    private bool $enrichLibrarySource = true;
+
     public function __construct(
         private Server $server,
         private bool $quick = false,
@@ -592,7 +598,7 @@ final class PlexService
         }
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreams($mediaList);
         [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
-        if ($videoDecision === 'transcode') {
+        if ($this->enrichLibrarySource && $videoDecision === 'transcode') {
             $media = SessionStreamInfo::applyLibrarySourceToMedia(
                 $media,
                 $this->fetchLibraryMediaSource((string) ($session['ratingKey'] ?? '')),
@@ -689,7 +695,7 @@ final class PlexService
 
         [$media, $videoStream, $audioStream, $subtitleStream] = SessionStreamInfo::extractPlexMediaStreamsFromXml($session);
         [$videoDecision, $audioDecision, $playMethod] = $this->resolvePlexDecisions($transcode, $videoStream, $audioStream);
-        if ($videoDecision === 'transcode') {
+        if ($this->enrichLibrarySource && $videoDecision === 'transcode') {
             $media = SessionStreamInfo::applyLibrarySourceToMedia(
                 $media,
                 $this->fetchLibraryMediaSource((string) ($session['ratingKey'] ?? '')),
@@ -1339,20 +1345,34 @@ final class PlexService
             $reason = \App\Services\PlaybackStopMessageService::DEFAULT_BODY;
         }
 
-        // Preferir Session.id real: el UI/caché puede seguir mandando sessionKey.
-        $targetId = $this->resolveTerminateSessionId($sessionId) ?? $sessionId;
+        // Cortar no necesita metadata de biblioteca; evita N+1 lentos / timeouts.
+        $prevEnrich = $this->enrichLibrarySource;
+        $this->enrichLibrarySource = false;
+        // Aunque el sondeo inicial fallara, hay que intentar el terminate.
+        $prevError = $this->lastError;
+        $this->lastError = null;
 
-        if ($this->requestTerminate($targetId, $reason)) {
-            return true;
+        try {
+            // Preferir Session.id real: el UI/caché puede seguir mandando sessionKey.
+            $targetId = $this->resolveTerminateSessionId($sessionId) ?? $sessionId;
+
+            if ($this->requestTerminate($targetId, $reason)) {
+                return true;
+            }
+
+            if ($targetId !== $sessionId && $this->requestTerminate($sessionId, $reason)) {
+                return true;
+            }
+
+            // Si ya no aparece en /status/sessions, el objetivo se cumplió
+            // (sesión expirada o cortada pese a respuesta ambigua).
+            return !$this->sessionStillActive($sessionId);
+        } finally {
+            $this->enrichLibrarySource = $prevEnrich;
+            if ($this->lastError === null) {
+                $this->lastError = $prevError;
+            }
         }
-
-        if ($targetId !== $sessionId && $this->requestTerminate($sessionId, $reason)) {
-            return true;
-        }
-
-        // Si ya no aparece en /status/sessions, el objetivo se cumplió
-        // (sesión expirada o cortada pese a respuesta ambigua).
-        return !$this->sessionStillActive($sessionId);
     }
 
     private function requestTerminate(string $sessionId, string $reason): bool

@@ -462,14 +462,29 @@ SVG;
             return $this->json(['success' => false, 'message' => 'Datos de sesión incompletos.'], 422);
         }
 
-        $snapshot = $this->activity->getSnapshot($tenantId);
-        $session = null;
-        foreach ($snapshot['sessions'] as $row) {
-            if ((int) ($row['server_id'] ?? 0) === $serverId
-                && (string) ($row['session_id'] ?? '') === $sessionId) {
-                $session = $row;
-                break;
+        $findSession = static function (array $sessions) use ($serverId, $sessionId): ?array {
+            foreach ($sessions as $row) {
+                if ((int) ($row['server_id'] ?? 0) !== $serverId) {
+                    continue;
+                }
+                $sid = (string) ($row['session_id'] ?? '');
+                $skey = (string) ($row['session_key'] ?? '');
+                if ($sid === $sessionId || ($skey !== '' && $skey === $sessionId)) {
+                    return $row;
+                }
             }
+
+            return null;
+        };
+
+        $snapshot = $this->activity->getSnapshot($tenantId);
+        $session = $findSession($snapshot['sessions'] ?? []);
+
+        // Caché obsoleta o sessionKey vs Session.id: forzar snapshot fresco.
+        if ($session === null) {
+            Cache::forget('activity_snapshot_' . $tenantId);
+            $snapshot = $this->activity->getSnapshot($tenantId);
+            $session = $findSession($snapshot['sessions'] ?? []);
         }
 
         if ($session === null) {

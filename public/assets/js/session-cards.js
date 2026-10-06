@@ -178,34 +178,55 @@
         btn.title = (home ? 'Casa' : 'Fuera') + ' — clic para cambiar';
     }
 
+    function applyHouseholdBadgesForSession(sessionId, kind) {
+        document.querySelectorAll(
+            `.session-household-badge[data-toggle-kind][data-session-id="${CSS.escape(String(sessionId))}"]`
+        ).forEach((el) => applyHouseholdBadge(el, kind));
+    }
+
     async function toggleSessionHousehold(btn) {
         if (btn.disabled || btn.dataset.busy === '1') return;
         const serverId = Number(btn.dataset.serverId || 0);
         const sessionId = String(btn.dataset.sessionId || '');
         const kind = String(btn.dataset.kind || '');
-        if (!serverId || !sessionId || !kind) return;
+        if (!serverId || !sessionId || !kind) {
+            window.alert('No se puede cambiar Casa/Fuera: faltan datos de la sesión.');
+            return;
+        }
 
         const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+        if (!csrf) {
+            window.alert('No hay token CSRF. Recarga la página (F5).');
+            return;
+        }
         btn.dataset.busy = '1';
         btn.disabled = true;
 
         try {
+            const body = new URLSearchParams({
+                _token: csrf,
+                server_id: String(serverId),
+                session_id: sessionId,
+                kind,
+            });
             const res = await fetch('/activity/session-kind', {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': csrf,
                     'X-Csrf-Token': csrf,
                 },
-                body: JSON.stringify({ _token: csrf, server_id: serverId, session_id: sessionId, kind }),
+                body: body.toString(),
             });
-            const data = await res.json();
-            if (!data.success) {
-                window.alert(data.message || 'No se pudo guardar.');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.success === false || data.error) {
+                window.alert(data.message || ('No se pudo guardar (HTTP ' + res.status + ').'));
                 return;
             }
-            applyHouseholdBadge(btn, String(data.kind || kind));
+            const savedKind = String(data.kind || kind);
+            applyHouseholdBadgesForSession(sessionId, savedKind);
             if (typeof window.MP_REFRESH_SESSIONS === 'function') {
                 window.MP_REFRESH_SESSIONS();
             }

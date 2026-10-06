@@ -200,6 +200,25 @@ final class MediaUserEndpointServiceTest extends TestCase
         $this->assertSame('mobile', $meta['device_class']);
     }
 
+    public function testLockedManualHomeBeatsAwayIpList(): void
+    {
+        $svc = new MediaUserEndpointService();
+        // Sin BD: findLockedKindForSessionIps devuelve null; comprobamos que
+        // con homeIps la clasificación sigue siendo hogar (móvil en WAN).
+        $phone = [
+            'media_user_id' => 11,
+            'product' => 'Plex for iOS',
+            'platform' => 'iOS',
+            'player' => 'iPhone',
+            'public_ip' => '203.0.113.77',
+            'client_ip' => '203.0.113.77',
+            'location' => 'wan',
+        ];
+        $meta = $svc->classifyPlaybackMeta($phone, ['203.0.113.77'], 11, ['203.0.113.77']);
+        $this->assertSame('home', $meta['kind']);
+        $this->assertSame('home_ip', $meta['source']);
+    }
+
     public function testHomeIpRankingPrefersBusySharedIpOverRareFriendTv(): void
     {
         $endpoints = [
