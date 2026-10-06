@@ -79,9 +79,10 @@
             + `<img class="session-poster-img-probe" src="${escapeHtml(url)}" alt="" decoding="async" onerror="onSessionThumbError(this)">`;
     }
 
-    function infoItemHtml(label, value, warn) {
+    function infoItemHtml(label, value, warn, valueHtml) {
         const v = String(value ?? '').trim() || '—';
-        return `<li class="session-info-item"><span class="session-info-key">${escapeHtml(label)}</span><span class="session-info-val${warn ? ' session-info-val--warn' : ''}">${escapeHtml(v)}</span></li>`;
+        const body = valueHtml != null ? valueHtml : escapeHtml(v);
+        return `<li class="session-info-item"><span class="session-info-key">${escapeHtml(label)}</span><span class="session-info-val${warn ? ' session-info-val--warn' : ''}">${body}</span></li>`;
     }
 
     function streamInfoPanelHtml(s) {
@@ -107,6 +108,7 @@
         const cls = 'session-info-panel session-stream-info' + (isTranscode ? ' session-stream-info--transcode expanded' : '');
         const aria = isTranscode ? 'true' : 'false';
         const title = isTranscode ? 'Detalle de Transcode' : 'Clic para ampliar detalle';
+        const locationHtml = escapeHtml(locationLine || '—') + ' ' + householdBadgeHtml(s);
 
         return `<div class="${cls}" role="button" tabindex="0" aria-expanded="${aria}" title="${title}">
         <div class="session-info-scroller">
@@ -123,7 +125,7 @@
                 ${infoItemHtml('Subtitle', subtitle)}
             </ul>
             <ul class="session-info-list">
-                ${infoItemHtml('Dónde', (String(s.household || '') === 'home' ? 'Casa' : 'Fuera') + (locationLine ? ' · ' + locationLine : ''))}
+                ${infoItemHtml('Location', locationLine || '—', false, locationHtml)}
                 ${infoItemHtml('Bandwidth', bandwidth)}
             </ul>
         </div>
@@ -245,10 +247,10 @@
         const name = escapeHtml(s.user || '-');
         const uuid = String(s.media_user_uuid || '').trim();
         const badge = householdBadgeHtml(s);
-        if (uuid) {
-            return `${badge} <a href="/media-users/${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">${name}</a>`;
-        }
-        return `${badge} <span class="session-user-name">${name}</span>`;
+        const label = uuid
+            ? `<a href="/media-users/${encodeURIComponent(uuid)}" class="session-user-link text-decoration-none">${name}</a>`
+            : `<span class="session-user-name">${name}</span>`;
+        return `${badge}<span class="session-user-label">${label}</span>`;
     }
 
     function sessionCardHtml(s) {

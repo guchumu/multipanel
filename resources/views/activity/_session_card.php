@@ -137,8 +137,10 @@ $infoRowsStream = [
     ['Audio', $audioLine !== '' ? $audioLine : '—', false],
     ['Subtitle', $subtitleLine !== '' ? $subtitleLine : 'None', false],
 ];
+$canToggleHousehold = (int) ($session['media_user_id'] ?? 0) > 0 && $sessionKey !== '';
+$nextKind = $household === 'home' ? 'away' : 'home';
 $infoRowsFoot = [
-    ['Location', ($locationLine !== '' ? $locationLine : '—') . ($householdLabel !== '' ? ' · ' . $householdLabel : '')],
+    ['Location', $locationLine !== '' ? $locationLine : '—'],
     ['Bandwidth', $bandwidth !== '' ? $bandwidth : ((string) ($session['server_name'] ?? '—'))],
 ];
 ?>
@@ -202,7 +204,22 @@ $infoRowsFoot = [
                             <?php foreach ($infoRowsFoot as [$label, $value]): ?>
                             <li class="session-info-item">
                                 <span class="session-info-key"><?= e($label) ?></span>
-                                <span class="session-info-val"><?= e($value) ?></span>
+                                <span class="session-info-val">
+                                    <?= e($value) ?>
+                                    <?php if ($label === 'Location'): ?>
+                                        <?php if ($canToggleHousehold): ?>
+                                        <button type="button"
+                                                class="badge session-household-badge <?= e($householdClass) ?>"
+                                                data-toggle-kind="1"
+                                                data-server-id="<?= (int) ($session['server_id'] ?? 0) ?>"
+                                                data-session-id="<?= e($sessionKey) ?>"
+                                                data-kind="<?= e($nextKind) ?>"
+                                                title="<?= e($householdTitle . ' — clic para cambiar') ?>"><?= e($householdLabel) ?></button>
+                                        <?php else: ?>
+                                        <span class="badge session-household-badge <?= e($householdClass) ?>" title="<?= e($householdTitle) ?>"><?= e($householdLabel) ?></span>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </span>
                             </li>
                             <?php endforeach; ?>
                         </ul>
@@ -248,10 +265,6 @@ $infoRowsFoot = [
                 <span class="session-subtitle text-truncate"><?= e((string) ($session['server_name'] ?? '')) ?></span>
                 <?php endif; ?>
                 <span class="session-meta-user">
-                    <?php
-                    $canToggleHousehold = (int) ($session['media_user_id'] ?? 0) > 0 && $sessionKey !== '';
-                    $nextKind = $household === 'home' ? 'away' : 'home';
-                    ?>
                     <?php if ($canToggleHousehold): ?>
                     <button type="button"
                             class="badge session-household-badge <?= e($householdClass) ?>"
@@ -263,11 +276,13 @@ $infoRowsFoot = [
                     <?php else: ?>
                     <span class="badge session-household-badge <?= e($householdClass) ?>" title="<?= e($householdTitle) ?>"><?= e($householdLabel) ?></span>
                     <?php endif; ?>
+                    <span class="session-user-label">
                     <?php if ($mediaUserUuid !== ''): ?>
                     <a href="/media-users/<?= e($mediaUserUuid) ?>" class="session-user-link text-decoration-none"><?= e($userName) ?></a>
                     <?php else: ?>
                     <span class="session-user-name"><?= e($userName) ?></span>
                     <?php endif; ?>
+                    </span>
                 </span>
             </div>
         </div>

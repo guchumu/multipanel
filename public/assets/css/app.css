@@ -594,10 +594,22 @@ body {
 }
 
 .session-meta-user {
-    flex: 0 1 124px;
-    max-width: 124px;
+    flex: 0 1 auto;
+    max-width: min(52%, 200px);
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    min-width: 0;
+    /* El badge Casa/Fuera no debe recortarse: solo el nombre hace ellipsis */
+    overflow: visible;
+    white-space: nowrap;
     text-align: right;
+}
+
+.session-user-label {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -615,13 +627,16 @@ body {
 }
 
 .session-household-badge {
+    flex: 0 0 auto;
     font-size: 0.62rem;
     padding: 0.15em 0.4em;
-    margin-right: 0.3rem;
+    margin-right: 0;
     vertical-align: middle;
     border: none;
     line-height: 1.2;
     cursor: default;
+    position: relative;
+    z-index: 2;
 }
 
 button.session-household-badge {
@@ -716,8 +731,7 @@ button.session-household-badge:disabled {
     }
 
     .session-meta-user {
-        max-width: 96px;
-        flex-basis: 96px;
+        max-width: min(58%, 160px);
     }
 }
 
