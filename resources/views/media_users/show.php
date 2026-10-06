@@ -433,6 +433,18 @@ ob_start();
             <div class="section-title"><i class="bi bi-journal-text"></i>Notas privadas</div>
             <textarea id="userNotes" class="form-control form-control-sm mb-4" rows="4" placeholder="Ej: cliente habitual, pagó por Bizum el día 3, tuvo problema de buffering…"><?= e($mediaUser->notes ?? '') ?></textarea>
 
+            <div class="section-title"><i class="bi bi-intersect"></i>Fusionar con otra ficha</div>
+            <p class="small text-muted mb-2">
+                Si la misma persona tiene dos entradas (p. ej. nombre completo y usuario Plex),
+                indícala aquí por <strong>ID</strong>, email o username. No hace falta poner el mismo email en ambas.
+            </p>
+            <div class="input-group input-group-sm mb-4" style="max-width:32rem;">
+                <input type="text" id="mergeWithTarget" class="form-control" placeholder="Ej. 8655 · jordiprtl · email@…">
+                <button type="button" class="btn btn-warning" id="btnMergeWith">
+                    <i class="bi bi-intersect me-1"></i>Fusionar
+                </button>
+            </div>
+
             <div class="section-title"><i class="bi bi-tools"></i>Acciones avanzadas</div>
             <div class="d-flex flex-wrap gap-2">
                 <button type="button" class="btn btn-outline-info btn-sm" id="btnDiscoverIdentity" title="Buscar email/usuario en servidor, clientes o registros previos">

@@ -370,6 +370,66 @@ class MediaUserRepository
     }
 
     /**
+     * Busca una ficha por id, uuid, email o username (para fusión manual).
+     */
+    public function findLooseMatch(int $tenantId, string $query, ?int $excludeId = null): ?MediaUser
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return null;
+        }
+
+        $db = Database::getInstance();
+        $excludeSql = $excludeId !== null && $excludeId > 0 ? ' AND mu.id != ?' : '';
+        $excludeParams = $excludeId !== null && $excludeId > 0 ? [$excludeId] : [];
+
+        if (ctype_digit($query)) {
+            $row = $db->fetchOne(
+                'SELECT mu.*, s.name AS server_name
+                 FROM media_users mu
+                 LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND mu.id = ?' . $excludeSql . '
+                 LIMIT 1',
+                array_merge([$tenantId, (int) $query], $excludeParams)
+            );
+            if ($row) {
+                return new MediaUser($row);
+            }
+        }
+
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $query) === 1) {
+            $row = $db->fetchOne(
+                'SELECT mu.*, s.name AS server_name
+                 FROM media_users mu
+                 LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
+                 WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL AND mu.uuid = ?' . $excludeSql . '
+                 LIMIT 1',
+                array_merge([$tenantId, $query], $excludeParams)
+            );
+            if ($row) {
+                return new MediaUser($row);
+            }
+        }
+
+        $row = $db->fetchOne(
+            'SELECT mu.*, s.name AS server_name
+             FROM media_users mu
+             LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
+             WHERE mu.tenant_id = ? AND mu.deleted_at IS NULL
+               AND (
+                 LOWER(TRIM(mu.email)) = LOWER(?)
+                 OR LOWER(TRIM(mu.username)) = LOWER(?)
+                 OR LOWER(TRIM(mu.display_name)) = LOWER(?)
+               )' . $excludeSql . '
+             ORDER BY (mu.expires_at IS NULL) ASC, mu.expires_at DESC, mu.id DESC
+             LIMIT 1',
+            array_merge([$tenantId, $query, $query, $query], $excludeParams)
+        );
+
+        return $row ? new MediaUser($row) : null;
+    }
+
+    /**
      * Usuarios cuya suscripción vence dentro de X días (incluye ya caducados si $includeExpired).
      *
      * @return array<int, MediaUser>

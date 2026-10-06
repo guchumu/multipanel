@@ -175,6 +175,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/recent', [MediaUserController::class, 'recent'], 'media_users.recent');
     $router->get('/media-users/duplicates', [MediaUserController::class, 'duplicates'], 'media_users.duplicates');
     $router->post('/media-users/duplicates/merge', [MediaUserController::class, 'mergeDuplicates'], 'media_users.duplicates.merge', [CsrfMiddleware::class]);
+    $router->post('/media-users/{uuid}/merge-with', [MediaUserController::class, 'mergeWith'], 'media_users.merge_with', [CsrfMiddleware::class]);
     $router->get('/media-users/stream-violations', [StreamLimitController::class, 'violations'], 'media_users.stream_violations');
     $router->get('/media-users/cut-logs', [StreamLimitController::class, 'cutLogs'], 'media_users.cut_logs');
     $router->get('/media-users/expiring', [MediaUserController::class, 'expiring'], 'media_users.expiring');

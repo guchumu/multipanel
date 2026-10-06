@@ -186,6 +186,24 @@ class MediaUserController extends Controller
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $keepId = (int) $request->input('keep_id', 0);
         $removeId = (int) $request->input('remove_id', 0);
+
+        $keepQuery = trim((string) ($request->input('keep_query') ?? ''));
+        $removeQuery = trim((string) ($request->input('remove_query') ?? ''));
+        if (($keepId <= 0 || $removeId <= 0) && ($keepQuery !== '' || $removeQuery !== '')) {
+            $keep = $keepQuery !== '' ? $this->mediaUsers->findLooseMatch($tenantId, $keepQuery) : null;
+            $remove = $removeQuery !== '' ? $this->mediaUsers->findLooseMatch($tenantId, $removeQuery) : null;
+            if ($keep === null || $remove === null) {
+                Session::getInstance()->flash(
+                    'error',
+                    'No se encontraron ambas fichas. Revisa ID / username / email.'
+                );
+
+                return $this->redirect('/media-users/duplicates');
+            }
+            $keepId = (int) $keep->id;
+            $removeId = (int) $remove->id;
+        }
+
         $result = $this->dedupe->mergePair($tenantId, $keepId, $removeId);
         Session::getInstance()->flash(
             $result['success'] ? 'success' : 'error',
@@ -1063,9 +1081,42 @@ class MediaUserController extends Controller
             'max_home_streams' => $request->input('max_home_streams', $user->max_home_streams ?? null),
             'max_away_streams' => $request->input('max_away_streams', $user->max_away_streams ?? null),
             'max_devices' => $request->input('max_devices', $user->max_devices),
+            'merge_if_duplicate' => $request->input('merge_if_duplicate') === '1'
+                || $request->input('merge_if_duplicate') === 1
+                || $request->input('merge_if_duplicate') === true,
         ]);
 
         return $this->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /** Fusiona esta ficha con otra (por id, uuid, email o username). No hace falta compartir email. */
+    public function mergeWith(Request $request, string $uuid): Response
+    {
+        $user = $this->mediaUsers->findByUuid($uuid);
+        if ($user === null) {
+            return $this->json(['success' => false, 'message' => 'Usuario no encontrado'], 404);
+        }
+
+        $tenantId = (int) ($user->tenant_id ?? 1);
+        $query = trim((string) ($request->input('target') ?? $request->input('query') ?? ''));
+        if ($query === '') {
+            return $this->json(['success' => false, 'message' => 'Indica ID, UUID, email o username de la otra ficha.'], 422);
+        }
+
+        $other = $this->mediaUsers->findLooseMatch($tenantId, $query, (int) $user->id);
+        if ($other === null) {
+            return $this->json(['success' => false, 'message' => 'No se encontró otra ficha con «' . $query . '».'], 404);
+        }
+
+        $result = $this->dedupe->mergePair($tenantId, (int) $user->id, (int) $other->id);
+        if (!$result['success']) {
+            return $this->json($result, 422);
+        }
+
+        $kept = MediaUser::find((int) ($result['kept_id'] ?? 0));
+        $result['redirect'] = $kept !== null ? '/media-users/' . $kept->uuid : '/media-users/duplicates';
+
+        return $this->json($result);
     }
 
     public function setEndpointKind(Request $request, string $uuid, string $id): Response

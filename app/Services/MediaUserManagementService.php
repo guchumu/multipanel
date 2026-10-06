@@ -960,13 +960,51 @@ final class MediaUserManagementService
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return ['success' => false, 'message' => 'El email no es válido.'];
         }
-        $user->email = $email ?: null;
+
+        $mergeIfDuplicate = !empty($data['merge_if_duplicate']);
         if ($email !== '') {
             $dup = $this->users->findDuplicate((int) ($user->tenant_id ?? 1), '', $email, (int) $user->id);
             if ($dup !== null) {
-                return ['success' => false, 'message' => 'Ese email ya está en otra ficha. No se duplica.'];
+                $dupLabel = trim((string) ($dup->display_name ?: $dup->username ?: $dup->email ?: ('#' . $dup->id)));
+                if ($mergeIfDuplicate) {
+                    $merged = (new MediaUserDedupeService())->mergePair(
+                        (int) ($user->tenant_id ?? 1),
+                        (int) $user->id,
+                        (int) $dup->id
+                    );
+                    if (!$merged['success']) {
+                        return ['success' => false, 'message' => $merged['message']];
+                    }
+                    $kept = MediaUser::find((int) ($merged['kept_id'] ?? 0));
+
+                    return [
+                        'success' => true,
+                        'merged' => true,
+                        'redirect' => $kept !== null ? '/media-users/' . $kept->uuid : null,
+                        'message' => $merged['message'],
+                    ];
+                }
+
+                return [
+                    'success' => false,
+                    'can_merge' => true,
+                    'duplicate' => [
+                        'id' => (int) $dup->id,
+                        'uuid' => (string) $dup->uuid,
+                        'label' => $dupLabel,
+                        'email' => (string) ($dup->email ?? ''),
+                        'status' => (string) ($dup->status ?? ''),
+                    ],
+                    'message' => sprintf(
+                        'Ese email ya está en «%s» (#%d). No hace falta copiarlo: puedes fusionar las dos fichas.',
+                        $dupLabel,
+                        (int) $dup->id
+                    ),
+                ];
             }
         }
+
+        $user->email = $email ?: null;
         if (array_key_exists('max_streams', $data)) {
             $rawStreams = $data['max_streams'];
             $user->max_streams = ($rawStreams === null || $rawStreams === '')

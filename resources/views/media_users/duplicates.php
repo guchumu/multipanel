@@ -19,6 +19,31 @@ $pairs = is_array($pairs ?? null) ? $pairs : [];
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <h6 class="mb-2"><i class="bi bi-intersect me-1"></i>Fusionar a mano (sin compartir email)</h6>
+        <p class="small text-muted mb-3">
+            Escribe el <strong>ID</strong>, username o email de cada ficha y elige cuál conservar.
+            Ejemplo: conservar <code>jordiprtl</code> y archivar <code>8655</code>.
+        </p>
+        <form method="post" action="/media-users/duplicates/merge" class="row g-2 align-items-end"
+              onsubmit="return confirm('¿Fusionar estas dos fichas?');">
+            <?= csrf_field() ?>
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Conservar (ID / usuario / email)</label>
+                <input type="text" name="keep_query" class="form-control form-control-sm" required placeholder="jordiprtl o 1234">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Archivar (ID / usuario / email)</label>
+                <input type="text" name="remove_query" class="form-control form-control-sm" required placeholder="8655">
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-warning btn-sm"><i class="bi bi-intersect me-1"></i>Fusionar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php if ($pairs === []): ?>
 <div class="alert alert-success border-0 shadow-sm">
     <i class="bi bi-check-circle me-1"></i>No hay parejas sospechosas pendientes.

@@ -201,7 +201,7 @@
         try {
             const homeRaw = (document.getElementById('editMaxHomeStreams')?.value || '').trim();
             const awayRaw = (document.getElementById('editMaxAwayStreams')?.value || '').trim();
-            const data = await post(`/media-users/${uuid}/profile`, {
+            const payload = {
                 username: document.getElementById('editUsername')?.value || '',
                 display_name: document.getElementById('editDisplayName')?.value || '',
                 email: document.getElementById('editEmail')?.value || '',
@@ -209,9 +209,54 @@
                 max_home_streams: homeRaw === '' ? '' : Number(homeRaw),
                 max_away_streams: awayRaw === '' ? '' : Number(awayRaw),
                 max_devices: Number(document.getElementById('editMaxDevices')?.value || 5),
-            });
+            };
+            let data = await post(`/media-users/${uuid}/profile`, payload);
+            if (data.success === false && data.can_merge && data.duplicate) {
+                const label = data.duplicate.label || ('#' + data.duplicate.id);
+                if (confirm(
+                    (data.message || 'Ese email ya está en otra ficha.') +
+                    '\n\n¿Fusionar esta ficha con «' + label + '»?\n' +
+                    'Se conservan email, Telegram, la fecha más lejana y el mejor username.'
+                )) {
+                    data = await post(`/media-users/${uuid}/profile`, {
+                        ...payload,
+                        merge_if_duplicate: '1',
+                    });
+                } else {
+                    throw new Error(data.message || 'Email ya usado en otra ficha');
+                }
+            }
             if (data.success === false) throw new Error(data.message || 'Error');
             toast(data.message || 'Datos guardados');
+            if (data.redirect) {
+                setTimeout(() => { location.href = data.redirect; }, 600);
+            } else if (data.merged) {
+                setTimeout(() => location.reload(), 600);
+            }
+        } catch (err) {
+            toast(err.message);
+        }
+    });
+
+    document.getElementById('btnMergeWith')?.addEventListener('click', async () => {
+        const target = (document.getElementById('mergeWithTarget')?.value || '').trim();
+        if (!target) {
+            toast('Indica ID, email o username de la otra ficha');
+            return;
+        }
+        if (!confirm(
+            '¿Fusionar esta ficha con «' + target + '»?\n\n' +
+            'Se archiva una y se conserva la más completa (días, email, Telegram, username Plex).'
+        )) {
+            return;
+        }
+        try {
+            const data = await post(`/media-users/${uuid}/merge-with`, { target });
+            if (data.success === false) throw new Error(data.message || 'No se pudo fusionar');
+            toast(data.message || 'Fusionado');
+            setTimeout(() => {
+                location.href = data.redirect || '/media-users';
+            }, 700);
         } catch (err) {
             toast(err.message);
         }
