@@ -26,6 +26,7 @@ use App\Services\PasswordService;
 use App\Services\PortalDefaultPasswordService;
 use App\Services\PortalLoginLinkService;
 use App\Services\ReengageCampaignService;
+use App\Services\SeriesClientesOverlayService;
 use App\Services\ServerSyncService;
 use App\Services\StreamLimitSettingsService;
 use App\Services\SubscriptionPeriod;
@@ -1390,19 +1391,34 @@ class MediaUserController extends Controller
     {
         $emails = 0;
         $telegrams = 0;
+        $overlayTg = 0;
+        $overlayExp = 0;
         try {
             $this->mediaUsers->scrubLiteralNullTelegram($tenantId);
             $emails = $this->mediaUsers->backfillEmailsFromCustomers($tenantId);
             $telegrams = $this->mediaUsers->backfillTelegramChatIds($tenantId);
+            $overlay = (new SeriesClientesOverlayService())->syncFromRemote($tenantId, false);
+            if (!empty($overlay['ok'])) {
+                $overlayTg = (int) ($overlay['telegram_filled'] ?? 0);
+                $overlayExp = (int) ($overlay['expires_filled'] ?? 0);
+            }
         } catch (\Throwable) {
             return '';
         }
 
-        if ($emails <= 0 && $telegrams <= 0) {
+        if ($emails <= 0 && $telegrams <= 0 && $overlayTg <= 0 && $overlayExp <= 0) {
             return '';
         }
 
-        return sprintf(' Recuperados: %d emails, %d Telegram desde clientes.', $emails, $telegrams);
+        $parts = [];
+        if ($emails > 0 || $telegrams > 0) {
+            $parts[] = sprintf('%d emails, %d Telegram (clientes locales)', $emails, $telegrams);
+        }
+        if ($overlayTg > 0 || $overlayExp > 0) {
+            $parts[] = sprintf('%d Telegram, %d caducidades (series.clientes)', $overlayTg, $overlayExp);
+        }
+
+        return ' Recuperados: ' . implode('; ', $parts) . '.';
     }
 
     /**

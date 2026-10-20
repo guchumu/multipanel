@@ -24,6 +24,7 @@ caducidades del importador (solo servicio 1 y 5).
    - Mapa columnas: `email`←`users.email`, `telegram_chat_id`←coalesce(`telegram_chat_id`,`telegram_id`), `expires_at`←`end_date`, `notes`←`private_notes`.
    - El flash muestra «Telegram escritos» (writes) **y** «BD tras import» (conteo real en `media_users`).
    - **Overlay remoto** (`POST /import/series-clientes`): misma BD que Peticiones; `idusuariotelegram`→Telegram, `email1..4` match, `fechafinal` solo servicio 1/5 (MAX), IPTV solo Telegram.
+   - El cron **sync** (y «Forzar sincronización») ejecuta ese overlay automáticamente (rellena huecos; caducidad también si la remota es más reciente). Debounce 1 h en cron.
 
 ## Filtro servicio
 

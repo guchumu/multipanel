@@ -8,6 +8,7 @@ use App\Repositories\ServerRepository;
 use App\Services\Notifications\AdminCriticalAlertService;
 use App\Services\Notifications\AdminDigestService;
 use App\Services\Notifications\ExpiryNotificationService;
+use Core\Cache;
 use Core\Database;
 use Core\Updater;
 
@@ -35,7 +36,7 @@ final class CronService
             ],
             'sync' => [
                 'title' => 'Sincronizar servidores',
-                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones. FAIL → alerta admin (con tipo Plex/Jellyfin).',
+                'description' => 'Consulta Plex/Jellyfin: estado, bibliotecas, usuarios/membresía y sesiones. Luego rellena Telegram/caducidad desde series.clientes (por email, servicio 1/5). FAIL → alerta admin.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'automation' => [
@@ -338,6 +339,46 @@ final class CronService
             $alert = (new AdminCriticalAlertService())->notifySyncFailures($tenantId, $failures);
             $names = array_column($failures, 'name');
             $this->logAlertResult($out, 'sync FAIL (' . implode(', ', $names) . ')', $alert);
+        }
+
+        $this->runSeriesClientesOverlay($tenantId, $out);
+    }
+
+    /**
+     * Rellena telegram_chat_id / expires_at (servicio 1 y 5) desde series.clientes por email.
+     * Debounce 1h para no martillar la BD remota en cada tick del cron.
+     *
+     * @param callable(string): void $out
+     */
+    private function runSeriesClientesOverlay(int $tenantId, callable $out): void
+    {
+        $cacheKey = 'series_clientes_overlay_cron_' . $tenantId;
+        if (Cache::get($cacheKey) !== null) {
+            $out('  series.clientes overlay: omitido (ya corrido en la última hora).');
+
+            return;
+        }
+
+        $out('Overlay series.clientes (Telegram + caducidad Plex por email)...');
+        try {
+            $result = (new SeriesClientesOverlayService())->syncFromRemote($tenantId, false);
+            Cache::set($cacheKey, 1, 3600);
+            if (!($result['ok'] ?? false)) {
+                $out('  ' . (string) ($result['message'] ?? 'Overlay falló.'));
+
+                return;
+            }
+            $out(sprintf(
+                '  Actualizados %d (Telegram %d, caducidad %d, email %d). Match %d / sin match %d.',
+                (int) ($result['updated'] ?? 0),
+                (int) ($result['telegram_filled'] ?? 0),
+                (int) ($result['expires_filled'] ?? 0),
+                (int) ($result['email_filled'] ?? 0),
+                (int) ($result['matched'] ?? 0),
+                (int) ($result['unmatched_profiles'] ?? 0)
+            ));
+        } catch (\Throwable $e) {
+            $out('  series.clientes overlay failed: ' . $e->getMessage());
         }
     }
 
