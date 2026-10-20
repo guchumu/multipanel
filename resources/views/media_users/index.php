@@ -139,6 +139,9 @@ ob_start();
         <a href="/media-users/revisar?filter_empty=expires,telegram" class="btn btn-outline-primary btn-sm" title="Revisar uno a uno usuarios sin fecha/Telegram">
             <i class="bi bi-list-check me-1"></i><span class="d-none d-lg-inline">Revisar</span>
         </a>
+        <a href="/media-users/plex-vs-panel" class="btn btn-outline-dark btn-sm" title="Comparar shares de Plex con fichas del panel">
+            <i class="bi bi-diagram-3 me-1"></i><span class="d-none d-lg-inline">Plex vs panel</span>
+        </a>
         <a href="/media-users/activity" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history me-1"></i><span class="d-none d-lg-inline">Actividad</span></a>
         <a href="/media-users/expiring" class="btn btn-outline-warning btn-sm"><i class="bi bi-hourglass-split me-1"></i><span class="d-none d-lg-inline">Próximos vencimientos</span><span class="d-lg-none">Vencen</span></a>
         <a href="/media-users/expiring?bucket=d180" class="btn btn-outline-dark btn-sm"><i class="bi bi-archive me-1"></i><span class="d-none d-lg-inline">180+ días</span><span class="d-lg-none">180+</span></a>

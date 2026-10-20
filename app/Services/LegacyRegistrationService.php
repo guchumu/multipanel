@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\MediaUser;
+use App\Models\Server;
 use App\Repositories\ServerRepository;
+use App\Services\Import\ServicioServerMapper;
 use App\Services\Media\MediaServerFactory;
 use App\Services\Media\PlexService;
 use App\Services\Notifications\NotificationService;
@@ -207,10 +209,7 @@ final class LegacyRegistrationService
         ]);
 
         $serverType = $this->resolveServiceType($service);
-        $defaultServer = $this->servers->findDefaultByTenant($tenantId, $serverType);
-        if ($defaultServer === null) {
-            throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
-        }
+        $servicioCode = $this->parseServicioCode($service);
 
         $existing = $db->fetchOne(
             'SELECT * FROM media_users
@@ -221,27 +220,7 @@ final class LegacyRegistrationService
 
         $today = new DateTimeImmutable('today');
         $isNewUser = $existing === null;
-        $server = $defaultServer;
-
-        if ($existing && !empty($existing['server_id'])) {
-            $serverRow = $db->fetchOne(
-                'SELECT * FROM servers WHERE id = ? AND deleted_at IS NULL',
-                [$existing['server_id']]
-            );
-            if ($serverRow) {
-                $server = new \App\Models\Server($serverRow);
-            }
-        } elseif ($existing === null) {
-            $placed = (new ServerPlacementService())->place($tenantId, $serverType, 0, 1);
-            if (empty($placed['ok']) || empty($placed['server_id'])) {
-                throw new \RuntimeException($placed['error'] ?? 'No hay plaza en el servidor.');
-            }
-            $picked = \App\Models\Server::find((int) $placed['server_id']);
-            if ($picked === null) {
-                throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
-            }
-            $server = $picked;
-        }
+        $server = $this->resolveTargetServer($tenantId, $serverType, $servicioCode, $existing);
 
         if ($existing) {
             $newEndDate = $this->calculateNewEndDate($existing, $addDays, $today);
@@ -287,27 +266,45 @@ final class LegacyRegistrationService
             $this->audit->log('media_user.legacy_renewed', 'media_user', $mediaUserId);
         }
 
-        // SERVEROLD solo invitaba en altas nuevas; en renovación no fallaba si Plex fallaba.
-        // MultiPanel intenta reinvitar también al renovar (restaurar share), pero solo
-        // aborta la transacción si falla la invitación de un usuario nuevo.
+        // Alta en panel siempre; la invitación a Plex no debe deshacer el registro.
+        // Antes un fallo de invite hacía rollback y la prueba «desaparecía» del panel.
+        $inviteOk = true;
+        $inviteError = null;
         $libraryKeys = $this->librarySectionIds((int) $server->id);
         if ($server->isPlex()) {
-            $plex = MediaServerFactory::make($server);
-            if ($plex instanceof PlexService && !$plex->inviteUserByEmail($email, $libraryKeys)) {
-                if ($action === 'created') {
-                    throw new \RuntimeException("Error al enviar invitación a Plex para: {$email}");
-                }
-                Logger::warning('Plex invite failed on renew; subscription updated anyway', [
+            if ($libraryKeys === []) {
+                $inviteOk = false;
+                $inviteError = 'Sin bibliotecas habilitadas en el servidor (libraries.is_enabled).';
+                Logger::error('Plex invite skipped: no library sections', [
                     'email' => $email,
                     'server_id' => $server->id,
+                    'action' => $action,
                 ]);
+            } else {
+                $plex = MediaServerFactory::make($server);
+                if ($plex instanceof PlexService && !$plex->inviteUserByEmail($email, $libraryKeys)) {
+                    $inviteOk = false;
+                    $inviteError = 'Plex rechazó o no respondió a la invitación.';
+                    Logger::warning('Plex invite failed; subscription kept in panel', [
+                        'email' => $email,
+                        'server_id' => $server->id,
+                        'action' => $action,
+                    ]);
+                }
             }
         }
 
         $fechaFinal = $this->formatDateEs($endDateStr);
-        $telegramLine = $isNewUser
-            ? "✅ {$email}\n Invitación al servidor \"{$server->name}\". Alta hasta el {$fechaFinal}"
-            : "✅ {$email}\n Acceso actualizado en \"{$server->name}\" hasta {$fechaFinal}";
+        if ($isNewUser) {
+            $telegramLine = $inviteOk
+                ? "✅ {$email}\n Invitación al servidor \"{$server->name}\". Alta hasta el {$fechaFinal}"
+                : "⚠️ {$email}\n Alta en panel hasta {$fechaFinal} en \"{$server->name}\", pero falló la invitación Plex"
+                    . ($inviteError !== null ? " ({$inviteError})" : '');
+        } else {
+            $telegramLine = $inviteOk
+                ? "✅ {$email}\n Acceso actualizado en \"{$server->name}\" hasta {$fechaFinal}"
+                : "⚠️ {$email}\n Caducidad actualizada en \"{$server->name}\" hasta {$fechaFinal}, pero falló reinvitar en Plex";
+        }
 
         return [
             'email' => $email,
@@ -315,8 +312,77 @@ final class LegacyRegistrationService
             'days_added' => $addDays,
             'end_date' => $endDateStr,
             'server' => (string) $server->name,
+            'invite_ok' => $inviteOk,
+            'invite_error' => $inviteError,
             'telegram_line' => $telegramLine,
         ];
+    }
+
+    /**
+     * servicio=1 → Server10, servicio=5 → NucBox (mismo mapa que el importador).
+     * Si no hay código numérico, cupo + servidor por defecto del tipo plex/jellyfin.
+     *
+     * @param array<string, mixed>|null $existing
+     */
+    private function resolveTargetServer(
+        int $tenantId,
+        string $serverType,
+        ?int $servicioCode,
+        ?array $existing,
+    ): Server {
+        if ($existing && !empty($existing['server_id'])) {
+            $serverRow = Database::getInstance()->fetchOne(
+                'SELECT * FROM servers WHERE id = ? AND deleted_at IS NULL',
+                [$existing['server_id']]
+            );
+            if ($serverRow) {
+                return new Server($serverRow);
+            }
+        }
+
+        if ($servicioCode !== null && ServicioServerMapper::isAllowed($servicioCode)) {
+            $mapped = (new ServicioServerMapper())->resolveTenantServer($tenantId, $servicioCode);
+            if (!empty($mapped['server_id'])) {
+                $picked = Server::find((int) $mapped['server_id']);
+                if ($picked !== null) {
+                    return $picked;
+                }
+            }
+            throw new \RuntimeException(
+                'No hay servidor mapeado para servicio=' . $servicioCode
+                . ' (' . ServicioServerMapper::label($servicioCode) . '). Revisa el nombre del servidor en Ajustes.'
+            );
+        }
+
+        $defaultServer = $this->servers->findDefaultByTenant($tenantId, $serverType);
+        if ($defaultServer === null) {
+            throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
+        }
+
+        if ($existing !== null) {
+            return $defaultServer;
+        }
+
+        $placed = (new ServerPlacementService())->place($tenantId, $serverType, 0, 1);
+        if (empty($placed['ok']) || empty($placed['server_id'])) {
+            throw new \RuntimeException($placed['error'] ?? 'No hay plaza en el servidor.');
+        }
+        $picked = Server::find((int) $placed['server_id']);
+        if ($picked === null) {
+            throw new \RuntimeException('No hay servidor predeterminado configurado para ' . strtoupper($serverType));
+        }
+
+        return $picked;
+    }
+
+    private function parseServicioCode(string $service): ?int
+    {
+        $raw = trim($service);
+        if ($raw !== '' && ctype_digit($raw)) {
+            return (int) $raw;
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $userRow */

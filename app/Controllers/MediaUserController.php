@@ -21,6 +21,7 @@ use App\Services\MediaUserMessageService;
 use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
 use App\Services\MediaUserProvisioningService;
+use App\Services\MediaUserServerDiffService;
 use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\PortalDefaultPasswordService;
@@ -65,7 +66,32 @@ class MediaUserController extends Controller
         private PortalDefaultPasswordService $portalPasswords = new PortalDefaultPasswordService(),
         private PortalLoginLinkService $portalLinks = new PortalLoginLinkService(),
         private ReengageCampaignService $reengage = new ReengageCampaignService(),
+        private MediaUserServerDiffService $plexPanelDiff = new MediaUserServerDiffService(),
     ) {
+    }
+
+    /** Compara friends/shares de Plex con fichas del panel (por servidor). */
+    public function serverDiff(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $serverIdRaw = $request->input('server_id');
+        $serverId = ($serverIdRaw !== null && $serverIdRaw !== '') ? (int) $serverIdRaw : null;
+        if ($serverId !== null && $serverId <= 0) {
+            $serverId = null;
+        }
+
+        $diff = $this->plexPanelDiff->compare($tenantId, $serverId);
+        $plexServers = array_values(array_filter(
+            $this->servers->allByTenant($tenantId),
+            static fn (Server $s): bool => $s->isPlex()
+        ));
+
+        return $this->view('media_users.server_diff', [
+            'title' => 'Plex vs panel',
+            'diff' => $diff,
+            'servers' => $plexServers,
+            'currentServerId' => $serverId,
+        ]);
     }
 
     /** Hub: borrar todos → sync servidores → importar fechas (servicio 1/5). */
