@@ -74,6 +74,106 @@ final class MediaUserDedupeService
     }
 
     /**
+     * Archiva fichas fantasma: on_server=0 en un servidor cuando el mismo email
+     * (o external_id) está on_server=1 en otro. Típico tras sync con lista global.
+     *
+     * @return array{archived: int}
+     */
+    public function archiveCrossServerGhosts(int $tenantId, ?int $onlyServerId = null): array
+    {
+        $db = Database::getInstance();
+        $now = date('Y-m-d H:i:s');
+        $archived = 0;
+
+        $serverFilter = '';
+        $params = [$tenantId];
+        if ($onlyServerId !== null && $onlyServerId > 0) {
+            $serverFilter = ' AND ghost.server_id = ?';
+            $params[] = $onlyServerId;
+        }
+
+        // Mismo email: fantasma fuera / gemelo en biblioteca en otro server.
+        $emailGhosts = $db->fetchAll(
+            "SELECT ghost.id
+             FROM media_users ghost
+             INNER JOIN media_users live
+               ON live.tenant_id = ghost.tenant_id
+              AND live.deleted_at IS NULL
+              AND live.on_server = 1
+              AND live.server_id IS NOT NULL
+              AND live.server_id != ghost.server_id
+              AND ghost.email IS NOT NULL AND TRIM(ghost.email) != ''
+              AND live.email IS NOT NULL AND TRIM(live.email) != ''
+              AND LOWER(TRIM(live.email)) = LOWER(TRIM(ghost.email))
+             WHERE ghost.tenant_id = ?
+               AND ghost.deleted_at IS NULL
+               AND ghost.on_server = 0
+               AND ghost.server_id IS NOT NULL
+               {$serverFilter}",
+            $params
+        );
+
+        $extParams = [$tenantId];
+        $extFilter = '';
+        if ($onlyServerId !== null && $onlyServerId > 0) {
+            $extFilter = ' AND ghost.server_id = ?';
+            $extParams[] = $onlyServerId;
+        }
+        $extGhosts = $db->fetchAll(
+            "SELECT ghost.id
+             FROM media_users ghost
+             INNER JOIN media_users live
+               ON live.tenant_id = ghost.tenant_id
+              AND live.deleted_at IS NULL
+              AND live.on_server = 1
+              AND live.server_id IS NOT NULL
+              AND live.server_id != ghost.server_id
+              AND ghost.external_id IS NOT NULL AND TRIM(ghost.external_id) != ''
+              AND live.external_id IS NOT NULL AND TRIM(live.external_id) != ''
+              AND live.external_id = ghost.external_id
+             WHERE ghost.tenant_id = ?
+               AND ghost.deleted_at IS NULL
+               AND ghost.on_server = 0
+               AND ghost.server_id IS NOT NULL
+               {$extFilter}",
+            $extParams
+        );
+
+        $ids = [];
+        foreach (array_merge($emailGhosts, $extGhosts) as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id > 0) {
+                $ids[$id] = true;
+            }
+        }
+
+        foreach (array_keys($ids) as $id) {
+            $user = MediaUser::find($id);
+            if ($user === null || $user->deleted_at !== null || (int) ($user->on_server ?? -1) !== 0) {
+                continue;
+            }
+            $user->deleted_at = $now;
+            $user->metaSet('archived_as_cross_server_ghost', $now);
+            $user->save();
+            $archived++;
+            AuditService::log('media_user.ghost_archived', 'media_user', $id, null, [
+                'reason' => 'cross_server_on_server_0',
+            ]);
+        }
+
+        if ($archived > 0) {
+            Cache::forget('media_user_dedupe_ran_' . $tenantId);
+            Logger::info('Archived cross-server ghost media users', [
+                'tenant_id' => $tenantId,
+                'server_id' => $onlyServerId,
+                'archived' => $archived,
+            ]);
+        }
+
+        return ['archived' => $archived];
+    }
+
+    /**
      * Fusiona dos fichas concretas (p. ej. desde la UI de duplicados).
      * Conserva la de mayor score y soft-borra la otra.
      *
@@ -167,7 +267,8 @@ final class MediaUserDedupeService
             $pairs[] = ['reason' => $reason, 'a' => $a, 'b' => $b];
         };
 
-        // Mismo email (no deberían quedar tras auto-merge; por si el cache lo bloqueó).
+        // Mismo email (cross-server o same-server). Auto-merge solo une same-server;
+        // aquí se listan también NucBox↔Server10 para revisión manual.
         $rows = $db->fetchAll(
             "SELECT LOWER(TRIM(email)) AS k, GROUP_CONCAT(id ORDER BY id) AS ids
              FROM media_users
@@ -181,7 +282,12 @@ final class MediaUserDedupeService
             $ids = array_map('intval', explode(',', (string) ($row['ids'] ?? '')));
             $users = $this->loadSummaryRows($ids);
             if (count($users) >= 2) {
-                $add($users[0], $users[1], 'Mismo email');
+                $serverA = (int) ($users[0]['server_id'] ?? 0);
+                $serverB = (int) ($users[1]['server_id'] ?? 0);
+                $reason = ($serverA > 0 && $serverB > 0 && $serverA !== $serverB)
+                    ? 'Mismo email (otro servidor — fusionar solo si sobra uno)'
+                    : 'Mismo email';
+                $add($users[0], $users[1], $reason);
             }
         }
 
@@ -244,7 +350,7 @@ final class MediaUserDedupeService
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $rows = $db->fetchAll(
             "SELECT mu.id, mu.uuid, mu.username, mu.display_name, mu.email, mu.status,
-                    mu.expires_at, mu.telegram_chat_id, mu.external_id, mu.on_server,
+                    mu.expires_at, mu.telegram_chat_id, mu.external_id, mu.on_server, mu.server_id,
                     s.name AS server_name
              FROM media_users mu
              LEFT JOIN servers s ON s.id = mu.server_id AND s.deleted_at IS NULL
@@ -261,25 +367,27 @@ final class MediaUserDedupeService
     {
         $db = Database::getInstance();
 
+        // Solo dentro del mismo servidor: el mismo email en NucBox y Server10
+        // puede ser share real en ambos; no auto-fusionar cross-server.
         if ($field === 'telegram') {
             $rows = $db->fetchAll(
-                "SELECT TRIM(telegram_chat_id) AS key_value, GROUP_CONCAT(id ORDER BY id) AS ids
+                "SELECT server_id, TRIM(telegram_chat_id) AS key_value, GROUP_CONCAT(id ORDER BY id) AS ids
                  FROM `media_users`
                  WHERE `tenant_id` = ? AND `deleted_at` IS NULL
                    AND telegram_chat_id IS NOT NULL AND TRIM(telegram_chat_id) != ''
                    AND LOWER(TRIM(telegram_chat_id)) != 'null'
-                 GROUP BY key_value
+                 GROUP BY server_id, key_value
                  HAVING COUNT(*) > 1",
                 [$tenantId]
             );
         } else {
             $column = $field === 'email' ? 'email' : 'username';
             $rows = $db->fetchAll(
-                "SELECT LOWER(TRIM(`{$column}`)) AS key_value, GROUP_CONCAT(id ORDER BY id) AS ids
+                "SELECT server_id, LOWER(TRIM(`{$column}`)) AS key_value, GROUP_CONCAT(id ORDER BY id) AS ids
                  FROM `media_users`
                  WHERE `tenant_id` = ? AND `deleted_at` IS NULL
                    AND `{$column}` IS NOT NULL AND TRIM(`{$column}`) != ''
-                 GROUP BY key_value
+                 GROUP BY server_id, key_value
                  HAVING COUNT(*) > 1",
                 [$tenantId]
             );
@@ -309,6 +417,7 @@ final class MediaUserDedupeService
              FROM media_users a
              INNER JOIN media_users b
                ON a.tenant_id = b.tenant_id
+              AND a.server_id <=> b.server_id
               AND a.id < b.id
               AND a.deleted_at IS NULL AND b.deleted_at IS NULL
              WHERE a.tenant_id = ?

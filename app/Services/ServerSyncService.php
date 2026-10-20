@@ -24,12 +24,13 @@ final class ServerSyncService
 
     private const HEALTH_FAIL_THRESHOLD = 3;
 
-    /** @var array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string} */
+    /** @var array{imported: int, updated: int, missing: int, restored: int, archived_ghosts: int, total: int, warning: ?string} */
     private array $lastUserSyncStats = [
         'imported' => 0,
         'updated' => 0,
         'missing' => 0,
         'restored' => 0,
+        'archived_ghosts' => 0,
         'total' => 0,
         'warning' => null,
     ];
@@ -279,7 +280,7 @@ final class ServerSyncService
      * Reconsulta la lista real de usuarios del servidor (Plex/Jellyfin), importa/actualiza
      * y marca quién sigue en la biblioteca (`on_server`) sin borrar filas del panel.
      *
-     * @return array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string}
+     * @return array{imported: int, updated: int, missing: int, restored: int, archived_ghosts: int, total: int, warning: ?string}
      */
     private function syncUsers(Server $server, PlexService|JellyfinService $media): array
     {
@@ -291,8 +292,35 @@ final class ServerSyncService
         $seenExternalIds = [];
         $now = now()->format('Y-m-d H:i:s');
         $hasMembershipCols = $this->hasMembershipColumns();
+        $warning = null;
 
-        foreach ($media->getUsers() as $remoteUser) {
+        // Plex: membership por máquina (shared_servers). Si falla la API, no tocar on_server.
+        $remoteUsers = [];
+        if ($media instanceof PlexService) {
+            $membership = $media->fetchMembershipUsers();
+            if (empty($membership['ok'])) {
+                $count = $db->fetchOne(
+                    'SELECT COUNT(*) AS total FROM media_users WHERE server_id = ? AND deleted_at IS NULL',
+                    [$server->id]
+                );
+
+                return [
+                    'imported' => 0,
+                    'updated' => 0,
+                    'missing' => 0,
+                    'restored' => 0,
+                    'archived_ghosts' => 0,
+                    'total' => (int) ($count['total'] ?? 0),
+                    'warning' => 'Membership Plex no fiable (' . (string) ($membership['error'] ?? 'error')
+                        . '). No se importó ni se marcaron ausentes.',
+                ];
+            }
+            $remoteUsers = $membership['users'];
+        } else {
+            $remoteUsers = $media->getUsers();
+        }
+
+        foreach ($remoteUsers as $remoteUser) {
             $externalId = (string) ($remoteUser['external_id'] ?? '');
             $username = trim((string) ($remoteUser['username'] ?? ''));
 
@@ -476,9 +504,8 @@ final class ServerSyncService
         }
 
         $missing = 0;
-        $warning = null;
+        $archivedGhosts = 0;
 
-        // Lista vacía es ambigua (API fallida vs servidor sin shares): no marcar ausentes.
         if ($hasMembershipCols && $seenExternalIds !== []) {
             $placeholders = implode(',', array_fill(0, count($seenExternalIds), '?'));
             $seenIds = array_keys($seenExternalIds);
@@ -519,9 +546,33 @@ final class ServerSyncService
                 [$server->id]
             );
             $missing = (int) ($missingRow['total'] ?? 0);
+        } elseif ($hasMembershipCols && $seenExternalIds === [] && $media instanceof PlexService) {
+            // shared_servers OK con 0 shares: marcar ausentes con external_id.
+            $db->query(
+                "UPDATE media_users
+                 SET on_server = 0, membership_synced_at = ?
+                 WHERE server_id = ?
+                   AND deleted_at IS NULL
+                   AND external_id IS NOT NULL AND external_id != ''",
+                [$now, $server->id]
+            );
+            $missingRow = $db->fetchOne(
+                'SELECT COUNT(*) AS total FROM media_users
+                 WHERE server_id = ? AND deleted_at IS NULL AND on_server = 0
+                   AND external_id IS NOT NULL AND external_id != \'\'',
+                [$server->id]
+            );
+            $missing = (int) ($missingRow['total'] ?? 0);
         } elseif ($hasMembershipCols && $seenExternalIds === []) {
             $warning = 'El servidor no devolvió usuarios: no se marcaron ausentes (evita falsos positivos).';
         }
+
+        // Fantasmas: fuera aquí pero el mismo email/external_id sigue en el otro Plex.
+        $ghost = (new MediaUserDedupeService())->archiveCrossServerGhosts(
+            (int) $server->tenant_id,
+            (int) $server->id
+        );
+        $archivedGhosts = (int) ($ghost['archived'] ?? 0);
 
         $count = $db->fetchOne(
             'SELECT COUNT(*) AS total FROM media_users WHERE server_id = ? AND deleted_at IS NULL',
@@ -535,12 +586,13 @@ final class ServerSyncService
             'updated' => $updated,
             'missing' => $missing,
             'restored' => $restored,
+            'archived_ghosts' => $archivedGhosts,
             'total' => $server->total_users,
             'warning' => $warning,
         ];
     }
 
-    /** @return array{imported: int, updated: int, missing: int, restored: int, total: int, warning: ?string} */
+    /** @return array{imported: int, updated: int, missing: int, restored: int, archived_ghosts: int, total: int, warning: ?string} */
     public function lastUserSyncStats(): array
     {
         return $this->lastUserSyncStats;
@@ -778,6 +830,7 @@ final class ServerSyncService
             'updated' => 0,
             'missing' => 0,
             'restored' => 0,
+            'archived_ghosts' => 0,
             'total' => 0,
             'warning' => null,
         ];
@@ -790,6 +843,7 @@ final class ServerSyncService
                 $aggregate['updated'] += (int) ($stats['updated'] ?? 0);
                 $aggregate['missing'] += (int) ($stats['missing'] ?? 0);
                 $aggregate['restored'] += (int) ($stats['restored'] ?? 0);
+                $aggregate['archived_ghosts'] += (int) ($stats['archived_ghosts'] ?? 0);
                 $aggregate['total'] += (int) ($stats['total'] ?? 0);
                 if (!empty($stats['warning'])) {
                     $aggregate['warning'] = (string) $stats['warning'];
@@ -845,8 +899,9 @@ final class ServerSyncService
     }
 
     /**
-     * Busca email/telegram/expires/notes en un usuario soft-deleted o sin external_id
-     * del mismo tenant (típico tras wipe+sync o import previo).
+     * Recupera email/telegram/expires/notes solo de fichas del MISMO servidor
+     * (soft-deleted o huérfanas). No copiar caducidad desde el otro Plex:
+     * eso clonaba datos y hacía parecer reales los duplicados cross-server.
      *
      * @return array{email?: ?string, telegram_chat_id?: ?string, expires_at?: ?string, notes?: ?string}|null
      */
@@ -858,9 +913,9 @@ final class ServerSyncService
         if ($externalId !== '') {
             $row = $db->fetchOne(
                 'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
-                 WHERE tenant_id = ? AND external_id = ?
+                 WHERE tenant_id = ? AND server_id = ? AND external_id = ?
                  ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
-                [$tenantId, $externalId]
+                [$tenantId, $serverId, $externalId]
             );
             if ($row) {
                 $candidates[] = $row;
@@ -870,9 +925,9 @@ final class ServerSyncService
         if ($email !== '') {
             $row = $db->fetchOne(
                 'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
-                 WHERE tenant_id = ? AND LOWER(email) = LOWER(?)
-                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
-                [$tenantId, $email, $serverId]
+                 WHERE tenant_id = ? AND server_id = ? AND LOWER(email) = LOWER(?)
+                 ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                [$tenantId, $serverId, $email]
             );
             if ($row) {
                 $candidates[] = $row;
@@ -882,9 +937,9 @@ final class ServerSyncService
         if ($username !== '') {
             $row = $db->fetchOne(
                 'SELECT email, telegram_chat_id, expires_at, notes FROM media_users
-                 WHERE tenant_id = ? AND LOWER(username) = LOWER(?)
-                 ORDER BY (server_id = ?) DESC, (deleted_at IS NULL) DESC, id DESC LIMIT 1',
-                [$tenantId, $username, $serverId]
+                 WHERE tenant_id = ? AND server_id = ? AND LOWER(username) = LOWER(?)
+                 ORDER BY (deleted_at IS NULL) DESC, id DESC LIMIT 1',
+                [$tenantId, $serverId, $username]
             );
             if ($row) {
                 $candidates[] = $row;

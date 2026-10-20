@@ -256,7 +256,7 @@ ob_start();
                     <i class="bi bi-trash me-1"></i>Eliminar del panel (todos fuera)
                 </button>
             </form>
-            <span class="small text-muted">Automático en cron si OFF_SERVER_AUTO_SUSPEND=true · soft-delete solo panel</span>
+            <span class="small text-muted">Suspensión automática desactivada por defecto (OFF_SERVER_AUTO_SUSPEND). Soft-delete = solo panel.</span>
         </div>
         <?php endif; ?>
     </div>

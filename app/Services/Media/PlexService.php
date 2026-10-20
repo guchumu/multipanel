@@ -147,48 +147,64 @@ final class PlexService
     /** @return array<int, array<string, mixed>> */
     public function getUsers(): array
     {
-        if ($this->lastError !== null) {
-            return [];
-        }
-
-        // Preferir shares reales de ESTA máquina (plex.tv shared_servers).
-        // Antes se consultaba primero /api/users y /accounts del PMS local: con el
-        // mismo token de cuenta podían devolver casi todos los friends en ambos
-        // servidores → el sync creaba ficha duplicada (mismo email en NucBox y Server10).
-        $fromShares = $this->usersFromSharedServers();
-        if ($fromShares !== []) {
-            return $fromShares;
-        }
-
-        $fromPlexTv = $this->fetchUsersFromPlexTv();
-        if ($fromPlexTv !== []) {
-            return $fromPlexTv;
-        }
-
-        foreach (['/accounts', '/api/users'] as $path) {
-            $users = $this->fetchUsersFromPath($path);
-            if ($users !== []) {
-                return $users;
-            }
-        }
-
-        return [];
+        return $this->fetchMembershipUsers()['users'];
     }
 
     /**
-     * Usuarios con share activo en este machine_id (fuente de verdad para membresía).
+     * Lista de membresía para sync: solo shares de ESTA máquina.
+     * Si shared_servers responde OK (aunque esté vacío), NO se cae a /api/users
+     * (lista global de la cuenta → duplicados NucBox/Server10).
      *
-     * @return array<int, array<string, mixed>>
+     * @return array{ok: bool, users: array<int, array<string, mixed>>, source: string, error: ?string}
      */
-    private function usersFromSharedServers(): array
+    public function fetchMembershipUsers(): array
     {
-        $fetch = $this->fetchSharedServers();
-        if (empty($fetch['ok']) || ($fetch['shares'] ?? []) === []) {
-            return [];
+        if ($this->lastError !== null) {
+            return [
+                'ok' => false,
+                'users' => [],
+                'source' => 'offline',
+                'error' => $this->lastError,
+            ];
         }
 
+        $fetch = $this->fetchSharedServers();
+        if (!empty($fetch['ok'])) {
+            return [
+                'ok' => true,
+                'users' => $this->mapSharesToUsers($fetch['shares'] ?? []),
+                'source' => 'shared_servers',
+                'error' => null,
+            ];
+        }
+
+        // Solo fallback machine-scoped (no /api/users global).
+        $fromTv = $this->fetchUsersFromPlexTv();
+        if ($fromTv !== []) {
+            return [
+                'ok' => true,
+                'users' => $fromTv,
+                'source' => 'plex_tv_server_users',
+                'error' => null,
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'users' => [],
+            'source' => 'shared_servers',
+            'error' => (string) ($fetch['error'] ?? 'No se pudo leer shared_servers de plex.tv'),
+        ];
+    }
+
+    /**
+     * @param list<array{id?: int, user_id?: string, username?: string, email?: string}> $shares
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapSharesToUsers(array $shares): array
+    {
         $users = [];
-        foreach ($fetch['shares'] as $share) {
+        foreach ($shares as $share) {
             $userId = trim((string) ($share['user_id'] ?? ''));
             $username = trim((string) ($share['username'] ?? ''));
             if ($userId === '' && $username === '') {

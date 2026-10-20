@@ -1348,15 +1348,18 @@ class MediaUserController extends Controller
             $ok = $this->serverSync->sync($server);
             $stats = $this->serverSync->lastUserSyncStats();
             $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
+            $warn = !empty($stats['warning']) ? ' ⚠ ' . (string) $stats['warning'] : '';
             $msg = $ok
                 ? sprintf(
-                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s Estado de biblioteca reaplicado (En biblioteca / No está).',
+                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados, %d fantasmas archivados.%s%s',
                     $server->name,
                     (int) ($stats['imported'] ?? 0),
                     (int) ($stats['updated'] ?? 0),
                     (int) ($stats['missing'] ?? 0),
                     (int) ($stats['restored'] ?? 0),
-                    $recovered
+                    (int) ($stats['archived_ghosts'] ?? 0),
+                    $recovered,
+                    $warn
                 )
                 : 'Sync fallido: ' . ($server->last_error ?? 'sin conexión');
             Session::getInstance()->flash($ok ? 'success' : 'error', $msg);
@@ -1367,15 +1370,18 @@ class MediaUserController extends Controller
         $total = count($this->servers->allByTenant($tenantId));
         $stats = $this->serverSync->lastUserSyncStats();
         $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
+        $warn = !empty($stats['warning']) ? ' ⚠ ' . (string) $stats['warning'] : '';
         Session::getInstance()->flash('success', sprintf(
-            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s Estado de biblioteca reaplicado.',
+            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados, %d fantasmas archivados.%s%s',
             $synced,
             $total,
             (int) ($stats['imported'] ?? 0),
             (int) ($stats['updated'] ?? 0),
             (int) ($stats['missing'] ?? 0),
             (int) ($stats['restored'] ?? 0),
-            $recovered
+            (int) ($stats['archived_ghosts'] ?? 0),
+            $recovered,
+            $warn
         ));
 
         return $this->redirect($redirect);
