@@ -3,14 +3,23 @@
 /** @var list<\App\Models\Server> $servers */
 $currentServerId = $currentServerId ?? null;
 $totals = $diff['totals'] ?? [];
+$statusBadge = static function (string $status): string {
+    return match ($status) {
+        'active' => 'bg-success',
+        'invited' => 'bg-info text-dark',
+        'suspended' => 'bg-warning text-dark',
+        'expired' => 'bg-secondary',
+        default => 'bg-light text-dark border',
+    };
+};
 ob_start();
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div>
         <h4 class="mb-1">Plex vs panel</h4>
         <p class="text-muted small mb-0">
-            Compara los shares reales de plex.tv (<code>shared_servers</code>) con las fichas del panel.
-            Prioridad de match: email → external_id → username.
+            Compara shares reales de plex.tv con fichas del panel.
+            Match por email → external_id → username.
         </p>
     </div>
     <a href="/media-users" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i>Usuarios</a>
@@ -31,40 +40,49 @@ ob_start();
     </div>
 </form>
 
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-3">
     <div class="col-6 col-md">
         <div class="card border-0 shadow-sm h-100"><div class="card-body py-3">
-            <div class="text-muted small">En Plex</div>
+            <div class="text-muted small">Shares en Plex</div>
             <div class="fs-4 fw-semibold"><?= (int) ($totals['plex'] ?? 0) ?></div>
         </div></div>
     </div>
     <div class="col-6 col-md">
         <div class="card border-0 shadow-sm h-100"><div class="card-body py-3">
-            <div class="text-muted small">En panel</div>
+            <div class="text-muted small">Fichas en panel</div>
             <div class="fs-4 fw-semibold"><?= (int) ($totals['panel'] ?? 0) ?></div>
         </div></div>
     </div>
     <div class="col-6 col-md">
-        <div class="card border-0 shadow-sm h-100"><div class="card-body py-3">
-            <div class="text-muted small">Coinciden</div>
+        <div class="card border-0 shadow-sm h-100 border-success border-opacity-25"><div class="card-body py-3">
+            <div class="text-muted small">En ambos (OK)</div>
             <div class="fs-4 fw-semibold text-success"><?= (int) ($totals['matched'] ?? 0) ?></div>
         </div></div>
     </div>
     <div class="col-6 col-md">
         <div class="card border-0 shadow-sm h-100"><div class="card-body py-3">
-            <div class="text-muted small">Solo en Plex</div>
+            <div class="text-muted small">Huérfanos en Plex</div>
             <div class="fs-4 fw-semibold text-danger"><?= (int) ($totals['only_on_plex'] ?? 0) ?></div>
+            <div class="small text-muted">share sin ficha</div>
         </div></div>
     </div>
     <div class="col-6 col-md">
         <div class="card border-0 shadow-sm h-100"><div class="card-body py-3">
-            <div class="text-muted small">Solo en panel</div>
+            <div class="text-muted small">Sobrantes en panel</div>
             <div class="fs-4 fw-semibold text-warning"><?= (int) ($totals['only_on_panel'] ?? 0) ?></div>
+            <div class="small text-muted">ficha sin share</div>
         </div></div>
     </div>
 </div>
 
 <?php foreach (($diff['servers'] ?? []) as $block): ?>
+<?php
+    $plexN = (int) ($block['plex_total'] ?? 0);
+    $matchN = (int) ($block['matched'] ?? 0);
+    $orphanPlex = count($block['only_on_plex'] ?? []);
+    $orphanPanel = count($block['only_on_panel'] ?? []);
+    $collapseId = 'matched-' . (int) ($block['server_id'] ?? 0);
+?>
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white d-flex flex-wrap justify-content-between gap-2 align-items-center">
         <strong><?= e((string) ($block['server_name'] ?? '')) ?></strong>
@@ -72,8 +90,8 @@ ob_start();
         <span class="badge bg-danger">Error</span>
         <?php else: ?>
         <span class="small text-muted">
-            Plex <?= (int) ($block['plex_total'] ?? 0) ?> · Panel <?= (int) ($block['panel_total'] ?? 0) ?> ·
-            Match <?= (int) ($block['matched'] ?? 0) ?>
+            Plex <?= $plexN ?> · Panel <?= (int) ($block['panel_total'] ?? 0) ?> ·
+            En ambos <?= $matchN ?>
         </span>
         <?php endif; ?>
     </div>
@@ -81,12 +99,59 @@ ob_start();
         <?php if (empty($block['ok'])): ?>
         <div class="alert alert-danger mb-0"><?= e((string) ($block['error'] ?? 'Error desconocido')) ?></div>
         <?php else: ?>
+
+        <?php if ($plexN > 0 && $orphanPlex === 0): ?>
+        <div class="alert alert-success py-2">
+            <strong>Los <?= $plexN ?> usuarios de Plex tienen ficha en el panel.</strong>
+            «Huérfanos en Plex = 0» es bueno: nadie compartido se ha escapado del panel.
+            <?php if ($orphanPanel > 0): ?>
+            Los <?= $orphanPanel ?> de «sobrantes en panel» son fichas sin share activo (caducados, invitados, duplicados de otro servidor, etc.).
+            <?php endif; ?>
+        </div>
+        <?php elseif ($plexN === 0): ?>
+        <div class="alert alert-warning py-2 mb-3">
+            plex.tv no devolvió ningún share para este servidor (¿machine_id/token?).
+        </div>
+        <?php endif; ?>
+
+        <div class="mb-4">
+            <button class="btn btn-outline-success btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#<?= e($collapseId) ?>" aria-expanded="false">
+                <i class="bi bi-check2-circle me-1"></i>Ver los <?= $matchN ?> que están en ambos
+            </button>
+            <div class="collapse mt-2" id="<?= e($collapseId) ?>">
+                <?php if (($block['matched_rows'] ?? []) === []): ?>
+                <p class="small text-muted mb-0">Ninguno emparejado.</p>
+                <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead><tr><th>Email</th><th>Usuario</th><th>Estado</th><th>Match</th><th></th></tr></thead>
+                        <tbody>
+                        <?php foreach ($block['matched_rows'] as $row): ?>
+                            <tr>
+                                <td><?= e((string) ($row['email'] ?? '')) ?></td>
+                                <td><?= e((string) ($row['username'] ?? '')) ?></td>
+                                <td><span class="badge <?= e($statusBadge((string) ($row['status'] ?? ''))) ?>"><?= e((string) ($row['status'] ?? '')) ?></span></td>
+                                <td class="small text-muted"><?= e((string) ($row['match_by'] ?? '')) ?></td>
+                                <td>
+                                    <?php if (!empty($row['uuid'])): ?>
+                                    <a class="btn btn-outline-secondary btn-sm py-0" href="/media-users/<?= e((string) $row['uuid']) ?>">Ver</a>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="row g-3">
             <div class="col-lg-6">
-                <h6 class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Solo en Plex (<?= count($block['only_on_plex'] ?? []) ?>)</h6>
-                <p class="small text-muted">Están compartidos en el servidor y no hay ficha en el panel (o no matchea por email).</p>
-                <?php if (($block['only_on_plex'] ?? []) === []): ?>
-                <p class="small text-success mb-0">Ninguno.</p>
+                <h6 class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Huérfanos en Plex (<?= $orphanPlex ?>)</h6>
+                <p class="small text-muted">Share en plex.tv <em>sin</em> ficha en el panel. Si es 0, perfecto.</p>
+                <?php if ($orphanPlex === 0): ?>
+                <p class="small text-success mb-0">Ninguno — nadie se escapó del panel.</p>
                 <?php else: ?>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0">
@@ -105,20 +170,20 @@ ob_start();
                 <?php endif; ?>
             </div>
             <div class="col-lg-6">
-                <h6 class="text-warning"><i class="bi bi-person-x me-1"></i>Solo en panel (<?= count($block['only_on_panel'] ?? []) ?>)</h6>
-                <p class="small text-muted">Ficha en el panel sin share coincidente en plex.tv (invitado pendiente, caducado sin cortar, o email distinto).</p>
-                <?php if (($block['only_on_panel'] ?? []) === []): ?>
+                <h6 class="text-warning"><i class="bi bi-person-x me-1"></i>Sobrantes en panel (<?= $orphanPanel ?>)</h6>
+                <p class="small text-muted">Ficha sin share en plex.tv (invitado, caducado, email distinto, o duplicado de otro servidor).</p>
+                <?php if ($orphanPanel === 0): ?>
                 <p class="small text-success mb-0">Ninguno.</p>
                 <?php else: ?>
-                <div class="table-responsive">
+                <div class="table-responsive" style="max-height: 28rem; overflow: auto">
                     <table class="table table-sm table-hover align-middle mb-0">
                         <thead><tr><th>Email</th><th>Usuario</th><th>Estado</th><th></th></tr></thead>
                         <tbody>
                         <?php foreach ($block['only_on_panel'] as $row): ?>
                             <tr>
-                                <td><?= e((string) ($row['email'] ?? '')) ?></td>
+                                <td><?= e((string) ($row['email'] ?? '')) ?: '<span class="text-muted">—</span>' ?></td>
                                 <td><?= e((string) ($row['username'] ?? '')) ?></td>
-                                <td><span class="badge bg-light text-dark border"><?= e((string) ($row['status'] ?? '')) ?></span></td>
+                                <td><span class="badge <?= e($statusBadge((string) ($row['status'] ?? ''))) ?>"><?= e((string) ($row['status'] ?? '')) ?></span></td>
                                 <td>
                                     <?php if (!empty($row['uuid'])): ?>
                                     <a class="btn btn-outline-secondary btn-sm py-0" href="/media-users/<?= e((string) $row['uuid']) ?>">Ver</a>

@@ -30,6 +30,7 @@ final class MediaUserServerDiffService
      *     plex_total: int,
      *     panel_total: int,
      *     matched: int,
+     *     matched_rows: list<array{email: string, username: string, uuid: string, status: string, match_by: string}>,
      *     only_on_plex: list<array{email: string, username: string, user_id: string, share_id: int}>,
      *     only_on_panel: list<array{uuid: string, email: string, username: string, status: string, on_server: ?int, expires_at: ?string}>
      *   }>,
@@ -75,6 +76,7 @@ final class MediaUserServerDiffService
      *   plex_total: int,
      *   panel_total: int,
      *   matched: int,
+     *   matched_rows: list<array{email: string, username: string, uuid: string, status: string, match_by: string}>,
      *   only_on_plex: list<array{email: string, username: string, user_id: string, share_id: int}>,
      *   only_on_panel: list<array{uuid: string, email: string, username: string, status: string, on_server: ?int, expires_at: ?string}>
      * }
@@ -89,6 +91,7 @@ final class MediaUserServerDiffService
             'plex_total' => 0,
             'panel_total' => 0,
             'matched' => 0,
+            'matched_rows' => [],
             'only_on_plex' => [],
             'only_on_panel' => [],
         ];
@@ -118,16 +121,24 @@ final class MediaUserServerDiffService
         );
 
         $matchedPanelIds = [];
+        $matchedRows = [];
         $onlyOnPlex = [];
 
         foreach ($shares as $share) {
             $email = strtolower(trim((string) ($share['email'] ?? '')));
             $username = strtolower(trim((string) ($share['username'] ?? '')));
             $userId = trim((string) ($share['user_id'] ?? ''));
-            $panelMatch = $this->findPanelMatch($panelRows, $email, $username, $userId);
+            $found = $this->findPanelMatch($panelRows, $email, $username, $userId);
 
-            if ($panelMatch !== null) {
-                $matchedPanelIds[$panelMatch['_idx']] = true;
+            if ($found !== null) {
+                $matchedPanelIds[$found['_idx']] = true;
+                $matchedRows[] = [
+                    'email' => (string) ($found['email'] ?? $share['email'] ?? ''),
+                    'username' => (string) ($found['username'] ?? $share['username'] ?? ''),
+                    'uuid' => (string) ($found['uuid'] ?? ''),
+                    'status' => (string) ($found['status'] ?? ''),
+                    'match_by' => (string) ($found['_by'] ?? 'email'),
+                ];
                 continue;
             }
 
@@ -154,7 +165,7 @@ final class MediaUserServerDiffService
             ];
         }
 
-        $matched = count($matchedPanelIds);
+        usort($matchedRows, static fn (array $a, array $b): int => strcasecmp((string) $a['email'], (string) $b['email']));
 
         return [
             'server_id' => (int) $server->id,
@@ -163,7 +174,8 @@ final class MediaUserServerDiffService
             'error' => null,
             'plex_total' => count($shares),
             'panel_total' => count($panelRows),
-            'matched' => $matched,
+            'matched' => count($matchedPanelIds),
+            'matched_rows' => $matchedRows,
             'only_on_plex' => $onlyOnPlex,
             'only_on_panel' => $onlyOnPanel,
         ];
@@ -182,16 +194,19 @@ final class MediaUserServerDiffService
 
             if ($email !== '' && $rowEmail !== '' && $email === $rowEmail) {
                 $row['_idx'] = $idx;
+                $row['_by'] = 'email';
 
                 return $row;
             }
             if ($userId !== '' && $rowExt !== '' && $userId === $rowExt) {
                 $row['_idx'] = $idx;
+                $row['_by'] = 'external_id';
 
                 return $row;
             }
             if ($username !== '' && $rowUser !== '' && $username === $rowUser) {
                 $row['_idx'] = $idx;
+                $row['_by'] = 'username';
 
                 return $row;
             }
