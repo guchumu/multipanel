@@ -22,6 +22,7 @@ use App\Services\MediaUserManagementService;
 use App\Services\MediaUserActivityService;
 use App\Services\MediaUserProvisioningService;
 use App\Services\MediaUserServerDiffService;
+use App\Services\MediaUserAccessEnforcementService;
 use App\Services\MonthlyRenewalEstimateService;
 use App\Services\PasswordService;
 use App\Services\PortalDefaultPasswordService;
@@ -1589,13 +1590,7 @@ class MediaUserController extends Controller
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
-        $rawUuids = $request->input('uuids');
-        $uuids = null;
-        if (is_array($rawUuids)) {
-            $uuids = $rawUuids;
-        } elseif (is_string($rawUuids) && trim($rawUuids) !== '') {
-            $uuids = preg_split('/[\s,]+/', trim($rawUuids)) ?: [];
-        }
+        $uuids = $this->parseUuidList($request->input('uuids'));
 
         $deleted = $this->mediaUsers->softDeleteOffServer($tenantId, $uuids, $serverId);
         $this->audit->log('media_user.bulk_soft_deleted_off_server', 'media_user', null, null, [
@@ -1609,6 +1604,134 @@ class MediaUserController extends Controller
         );
 
         return $this->redirect($this->mediaUsersListRedirect($request));
+    }
+
+    /**
+     * Acciones masivas sobre la selección del listado (o todos los on_server=0).
+     * action: suspend | expire | soft_delete | suspend_off_server
+     */
+    public function bulkAction(Request $request): Response
+    {
+        $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
+        $action = trim((string) $request->input('action', ''));
+        $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
+        $uuids = $this->parseUuidList($request->input('uuids')) ?? [];
+        $back = $this->mediaUsersListRedirect($request);
+
+        if ($action === 'suspend_off_server') {
+            $access = new MediaUserAccessEnforcementService($this->management);
+            $result = $access->suspendMissingOnServer($tenantId, $serverId, force: true);
+            $this->audit->log('media_user.bulk_suspend_off_server', 'media_user', null, null, $result);
+            Session::getInstance()->flash('success', sprintf(
+                'Fuera del servidor: %d suspendidos, %d errores (solo active/invited con on_server=0).',
+                (int) ($result['suspended'] ?? 0),
+                (int) ($result['errors'] ?? 0)
+            ));
+
+            return $this->redirect($back);
+        }
+
+        if ($uuids === []) {
+            Session::getInstance()->flash('error', 'Selecciona al menos un usuario.');
+
+            return $this->redirect($back);
+        }
+
+        if (!in_array($action, ['suspend', 'expire', 'soft_delete'], true)) {
+            Session::getInstance()->flash('error', 'Acción no válida.');
+
+            return $this->redirect($back);
+        }
+
+        if ($action === 'soft_delete') {
+            $deleted = $this->softDeleteByUuids($tenantId, $uuids);
+            $this->audit->log('media_user.bulk_soft_deleted', 'media_user', null, null, [
+                'deleted' => $deleted,
+                'action' => $action,
+            ]);
+            Session::getInstance()->flash(
+                'success',
+                sprintf('Eliminados del panel: %d (no se tocó Plex/Jellyfin).', $deleted)
+            );
+
+            return $this->redirect($back);
+        }
+
+        $users = $this->mediaUsers->findByUuids($tenantId, $uuids);
+        $ok = 0;
+        $fail = 0;
+        foreach ($users as $user) {
+            if ($action === 'suspend') {
+                if ((string) $user->status === 'suspended') {
+                    $ok++;
+                    continue;
+                }
+                $result = $this->management->suspend($user);
+            } else {
+                if ((string) $user->status === 'expired') {
+                    $ok++;
+                    continue;
+                }
+                $result = $this->management->updateStatus($user, 'expired');
+            }
+            if (!empty($result['success'])) {
+                $ok++;
+            } else {
+                $fail++;
+            }
+        }
+        $missing = max(0, count($uuids) - count($users));
+        $label = $action === 'suspend' ? 'Suspensión' : 'Caducidad';
+        Session::getInstance()->flash('success', sprintf(
+            '%s: %d ok, %d fallidos%s.',
+            $label,
+            $ok,
+            $fail,
+            $missing > 0 ? ", {$missing} no encontrados" : ''
+        ));
+
+        return $this->redirect($back);
+    }
+
+    /** @return list<string>|null */
+    private function parseUuidList(mixed $raw): ?array
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (is_array($raw)) {
+            $list = $raw;
+        } elseif (is_string($raw)) {
+            $list = preg_split('/[\s,]+/', trim($raw)) ?: [];
+        } else {
+            return null;
+        }
+
+        $uuids = array_values(array_unique(array_filter(array_map(
+            static fn ($u) => trim((string) $u),
+            $list
+        ), static fn (string $u) => $u !== '')));
+
+        return $uuids;
+    }
+
+    /** @param list<string> $uuids */
+    private function softDeleteByUuids(int $tenantId, array $uuids): int
+    {
+        if ($uuids === []) {
+            return 0;
+        }
+        $db = \Core\Database::getInstance();
+        $now = date('Y-m-d H:i:s');
+        $placeholders = implode(',', array_fill(0, count($uuids), '?'));
+        $params = array_merge([$now, $tenantId], $uuids);
+        $stmt = $db->query(
+            "UPDATE media_users SET deleted_at = ?
+             WHERE tenant_id = ? AND deleted_at IS NULL AND uuid IN ({$placeholders})",
+            $params
+        );
+
+        return (int) $stmt->rowCount();
     }
 
     /**

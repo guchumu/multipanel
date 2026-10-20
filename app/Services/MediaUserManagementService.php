@@ -39,6 +39,16 @@ final class MediaUserManagementService
 
         $syncResult = $this->syncServerAccessDetailed($user, disable: true);
         $sync = (bool) ($syncResult['ok'] ?? false);
+        $alreadyOff = (int) ($user->on_server ?? -1) === 0;
+        if ($alreadyOff && !$sync) {
+            // Sync de membresía ya dijo que no está; marcar revocado sin exigir DELETE en plex.tv.
+            $user->metaSet('access_revoked_at', date('Y-m-d H:i:s'));
+            $user->save();
+            $sync = true;
+            $syncResult['ok'] = true;
+            $syncResult['skipped'] = true;
+            $syncResult['message'] = 'Ya estaba fuera del servidor (on_server=0).';
+        }
         AuditService::log('media_user.suspended', 'media_user', (int) $user->id, $old, [
             'status' => 'suspended',
             'server_sync' => $sync,
@@ -51,7 +61,9 @@ final class MediaUserManagementService
             // Si hay servidor asociado, el éxito real depende de cortar el acceso allí.
             'success' => !$hasServer || $sync,
             'message' => $sync
-                ? 'Usuario suspendido. Acceso a la biblioteca cortado y sesiones activas terminadas.'
+                ? ($alreadyOff
+                    ? 'Usuario suspendido. Ya no estaba en el servidor.'
+                    : 'Usuario suspendido. Acceso a la biblioteca cortado y sesiones activas terminadas.')
                 : ($hasServer
                     ? 'Usuario marcado como suspendido en el panel, pero NO se pudo cortar el acceso en el servidor. '
                         . (string) ($syncResult['message'] ?? 'Revisa token, machine_id y que el usuario exista como friend en plex.tv.')
@@ -1175,6 +1187,22 @@ final class MediaUserManagementService
 
         if ($share === null && $cachedId <= 0) {
             $killed = $plex->terminateSessionsForUser($username, (string) ($user->display_name ?? ''), $email);
+            // Tras un sync de membresía, on_server=0 confirma que ya no hay share.
+            if ((int) ($user->on_server ?? -1) === 0) {
+                $user->on_server = 0;
+                $user->membership_synced_at = now()->format('Y-m-d H:i:s');
+                $user->metaSet('plex_shared_server_id', null);
+                $user->save();
+
+                return [
+                    'ok' => true,
+                    'verified' => true,
+                    'method' => 'already_off_server',
+                    'sessions_killed' => $killed,
+                    'attempts' => [],
+                    'message' => 'No hay share en plex.tv; ya estaba fuera del servidor.',
+                ];
+            }
 
             return [
                 'ok' => false,

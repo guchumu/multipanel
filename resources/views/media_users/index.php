@@ -227,6 +227,18 @@ ob_start();
         </div>
         <?php if ($currentOnServer === false): ?>
         <div class="d-flex flex-wrap gap-2 align-items-center mt-2 pt-2 border-top">
+            <form method="POST" action="/media-users/bulk-action" class="d-inline"
+                  onsubmit="return confirm('¿Suspender TODOS los active/invited marcados fuera del servidor? Se cortará el acceso si aún queda share.');">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="suspend_off_server">
+                <?php if ($currentServerId): ?>
+                <input type="hidden" name="server_id" value="<?= (int) $currentServerId ?>">
+                <?php endif; ?>
+                <input type="hidden" name="on_server" value="0">
+                <button type="submit" class="btn btn-sm btn-warning">
+                    <i class="bi bi-pause-circle me-1"></i>Suspender todos fuera del servidor
+                </button>
+            </form>
             <form method="POST" action="/media-users/soft-delete-off-server" class="d-inline"
                   onsubmit="return confirm('¿Eliminar del panel TODOS los usuarios marcados fuera del servidor<?= $currentServerId ? ' de este servidor' : '' ?>? No toca Plex/Jellyfin.');">
                 <?= csrf_field() ?>
@@ -241,12 +253,28 @@ ob_start();
                 <input type="hidden" name="filter_empty" value="<?= e(implode(',', $emptyFilters)) ?>">
                 <?php endif; ?>
                 <button type="submit" class="btn btn-sm btn-danger">
-                    <i class="bi bi-trash me-1"></i>Eliminar del panel (todos fuera del servidor)
+                    <i class="bi bi-trash me-1"></i>Eliminar del panel (todos fuera)
                 </button>
             </form>
-            <span class="small text-muted">Solo panel · no borra cuentas en Plex/Jellyfin</span>
+            <span class="small text-muted">Automático en cron si OFF_SERVER_AUTO_SUSPEND=true · soft-delete solo panel</span>
         </div>
         <?php endif; ?>
+    </div>
+</div>
+
+<div id="mediaUsersBulkBar" class="card border-0 shadow-sm mb-3 d-none sticky-top" style="top: 0.5rem; z-index: 1020">
+    <div class="card-body py-2 d-flex flex-wrap align-items-center gap-2">
+        <strong class="small me-1"><span id="mediaUsersBulkCount">0</span> seleccionado(s)</strong>
+        <button type="button" class="btn btn-warning btn-sm" id="mediaUsersBulkSuspend" title="Suspender y cortar acceso">
+            <i class="bi bi-pause me-1"></i>Suspender
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="mediaUsersBulkExpire" title="Marcar caducado">
+            <i class="bi bi-hourglass-bottom me-1"></i>Caducar
+        </button>
+        <button type="button" class="btn btn-danger btn-sm" id="mediaUsersBulkSoftDelete" title="Quitar del panel (no toca Plex)">
+            <i class="bi bi-trash me-1"></i>Eliminar del panel
+        </button>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" id="mediaUsersBulkClear">Limpiar</button>
     </div>
 </div>
 
@@ -264,6 +292,9 @@ ob_start();
         <table class="table table-hover mb-0 align-middle media-users-table">
             <thead class="table-light">
                 <tr>
+                    <th style="width: 2.25rem">
+                        <input type="checkbox" class="form-check-input m-0" id="mediaUsersSelectAll" title="Seleccionar página">
+                    </th>
                     <th class="media-users-col-id">
                         <a class="media-users-sort-link text-decoration-none text-body" href="<?= e($sortUrl('id')) ?>">ID<?= $sortIcon('id') ?></a>
                     </th>
@@ -295,7 +326,7 @@ ob_start();
             </thead>
             <tbody id="usersTableBody">
                 <?php if (empty($users)): ?>
-                <tr><td colspan="11" class="text-center text-muted py-4">No hay usuarios</td></tr>
+                <tr><td colspan="12" class="text-center text-muted py-4">No hay usuarios</td></tr>
                 <?php else: ?>
                 <?php foreach ($users as $u): ?>
                 <?php
@@ -310,7 +341,10 @@ ob_start();
                     $isExpiredStatus = $dbStatus === 'expired';
                     $expiresValue = expires_date_input($u->expires_at);
                 ?>
-                <tr>
+                <tr class="media-users-row" data-uuid="<?= e($u->uuid) ?>">
+                    <td>
+                        <input type="checkbox" class="form-check-input m-0 media-users-select" value="<?= e($u->uuid) ?>" aria-label="Seleccionar">
+                    </td>
                     <td class="small text-muted media-users-col-id"><?= (int) $u->id ?></td>
                     <td class="min-w-0">
                         <a href="/media-users/<?= e($u->uuid) ?>" class="fw-medium text-decoration-none text-truncate d-inline-block media-users-name">
@@ -615,4 +649,5 @@ document.addEventListener('click', (e) => {
 </script>
 JS;
 $scripts .= '<script src="' . e(asset('js/media-users-search.js')) . '"></script>';
+$scripts .= '<script src="' . e(asset('js/media-users-bulk.js')) . '"></script>';
 include base_path('resources/views/layouts/app.php');

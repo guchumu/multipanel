@@ -41,7 +41,7 @@ final class CronService
             ],
             'automation' => [
                 'title' => 'Automatizaciones',
-                'description' => 'Reglas activas; caducados/suspendidos: corta acceso Plex/Jellyfin si sigue activo; servidor caído: Telegram / email / WhatsApp.',
+                'description' => 'Reglas activas; caducados/suspendidos: corta acceso Plex/Jellyfin; active/invited con on_server=0 → suspender; servidor caído: Telegram / email / WhatsApp.',
                 'schedule' => 'Cada 5–15 minutos',
             ],
             'expiry' => [
@@ -389,7 +389,7 @@ final class CronService
         try {
             $access = (new MediaUserAccessEnforcementService())->run($tenantId);
             if (!empty($access['disabled'])) {
-                $out('  Skipped: deactivate_on_expiry desactivado en config.');
+                $out('  Skipped expiry revoke: deactivate_on_expiry desactivado.');
             } else {
                 $out(sprintf(
                     '  Expired access: checked=%d marked_expired=%d revoked=%d skipped=%d errors=%d',
@@ -398,6 +398,15 @@ final class CronService
                     $access['revoked'],
                     $access['skipped'],
                     $access['errors']
+                ));
+            }
+            if (!empty($access['off_server_disabled'])) {
+                $out('  Skipped off-server suspend: OFF_SERVER_AUTO_SUSPEND desactivado.');
+            } else {
+                $out(sprintf(
+                    '  Off-server suspend: suspended=%d errors=%d',
+                    (int) ($access['off_server_suspended'] ?? 0),
+                    (int) ($access['off_server_errors'] ?? 0)
                 ));
             }
         } catch (\Throwable $e) {

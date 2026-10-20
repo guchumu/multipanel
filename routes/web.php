@@ -201,6 +201,7 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->get('/media-users/search', [MediaUserController::class, 'search'], 'media_users.search');
     $router->post('/media-users/sync-membership', [MediaUserController::class, 'syncMembershipAll'], 'media_users.sync_membership_all', [CsrfMiddleware::class]);
     $router->post('/media-users/soft-delete-off-server', [MediaUserController::class, 'softDeleteOffServer'], 'media_users.soft_delete_off_server', [CsrfMiddleware::class]);
+    $router->post('/media-users/bulk-action', [MediaUserController::class, 'bulkAction'], 'media_users.bulk_action', [CsrfMiddleware::class]);
     $router->get('/media-users/revisar', [MediaUserController::class, 'review'], 'media_users.review');
     $router->post('/media-users/revisar', [MediaUserController::class, 'reviewAction'], 'media_users.review.action', [CsrfMiddleware::class]);
     $router->get('/media-users/plex-vs-panel', [MediaUserController::class, 'serverDiff'], 'media_users.server_diff');

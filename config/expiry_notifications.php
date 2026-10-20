@@ -17,6 +17,10 @@ return [
     'notify_admin' => env('EXPIRY_NOTIFY_ADMIN', true),
     'deactivate_on_expiry' => env('EXPIRY_DEACTIVATE_USER', true),
 
+    // Tras sync de membresía: suspender automáticamente fichas con on_server=0
+    // que sigan active/invited (ya no están en Plex/Jellyfin).
+    'suspend_off_server' => env('OFF_SERVER_AUTO_SUSPEND', true),
+
     // Solo enviar avisos a usuarios en esta hora local (p. ej. 9 = 09:00–09:59).
     // Así el cron */5 all no dispara caducidades a medianoche.
     'notify_hour' => (int) env('EXPIRY_NOTIFY_HOUR', 9),
