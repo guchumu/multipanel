@@ -457,6 +457,7 @@ class SettingsController extends Controller
                 'peticiones_db_password',
                 'peticiones_tmdb_api_key',
                 'peticiones_scraper_api_key',
+                'peticiones_telegram_bot_token',
             ],
             'discord' => ['discord_webhook_url'],
             'security' => ['rate_limit_max', 'session_lifetime'],
@@ -472,6 +473,7 @@ class SettingsController extends Controller
                 'peticiones_db_password' => $request->input('peticiones_db_password'),
                 'peticiones_tmdb_api_key' => $request->input('peticiones_tmdb_api_key'),
                 'peticiones_scraper_api_key' => $request->input('peticiones_scraper_api_key'),
+                'peticiones_telegram_bot_token' => $request->input('peticiones_telegram_bot_token'),
             ]);
             PeticionesDatabase::reset();
             Session::getInstance()->flash('success', 'Configuración de peticiones guardada.');

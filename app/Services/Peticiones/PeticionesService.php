@@ -37,7 +37,16 @@ final class PeticionesService
 
     private function telegram(): TelegramChannel
     {
-        return $this->telegram ??= new TelegramChannel();
+        if ($this->telegram !== null) {
+            return $this->telegram;
+        }
+        // Bot dedicado de peticiones si está configurado; si no, el general del panel.
+        $token = PeticionesConfig::telegramBotToken();
+        $this->telegram = $token !== ''
+            ? new TelegramChannel($token)
+            : new TelegramChannel();
+
+        return $this->telegram;
     }
 
     /**

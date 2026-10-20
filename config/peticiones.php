@@ -18,4 +18,7 @@ return [
     'tmdb_api_key' => env('PETICIONES_TMDB_API_KEY', env('TMDB_API_KEY', '')),
     // Opcional: ScraperAPI si Filmaffinity bloquea el VPS
     'scraper_api_key' => env('PETICIONES_SCRAPER_API_KEY', ''),
+    // Bot Telegram solo para avisos de peticiones (aceptada / subida / denegada).
+    // Vacío = se usa el bot general de Configuración → Telegram.
+    'telegram_bot_token' => env('PETICIONES_TELEGRAM_BOT_TOKEN', ''),
 ];

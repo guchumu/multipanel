@@ -478,6 +478,23 @@
                         <div class="form-text">Para carátulas desde enlaces de Filmaffinity si el servidor no puede abrir la ficha.</div>
                     </div>
                     <div class="col-12">
+                        <hr class="my-1">
+                        <h6 class="mb-2 mt-2"><i class="bi bi-telegram me-1"></i>Bot Telegram de peticiones</h6>
+                        <p class="small text-muted mb-2">
+                            Avisos al usuario al <strong>aceptar</strong>, <strong>subir</strong> o <strong>denegar</strong>.
+                            Si lo dejas vacío, se usa el bot general de <a href="#telegram">Telegram</a>.
+                        </p>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Bot Token (peticiones)</label>
+                        <input type="password" name="peticiones_telegram_bot_token" class="form-control" autocomplete="off"
+                               placeholder="<?= !empty($pet['peticiones_telegram_bot_token_set']) ? '•••••••••• (dejar vacío = no cambiar)' : 'Token del bot de peticiones' ?>">
+                        <div class="form-text">
+                            También <code>PETICIONES_TELEGRAM_BOT_TOKEN</code> en <code>.env</code>.
+                            El usuario debe haber hablado antes con ese bot (el <code>chat_id</code> de la petición es por bot).
+                        </div>
+                    </div>
+                    <div class="col-12">
                         <div class="alert alert-light border small mb-0">
                             <strong>Firewall:</strong> MySQL en el host remoto debe aceptar conexiones desde la IP del VPS MultiPanel al puerto 3306
                             (el legacy usaba <code>localhost</code> en esa máquina; MultiPanel conecta por red).

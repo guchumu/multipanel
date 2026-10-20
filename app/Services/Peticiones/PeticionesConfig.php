@@ -24,6 +24,7 @@ final class PeticionesConfig
      *   charset: string,
      *   tmdb_api_key: string,
      *   scraper_api_key: string,
+     *   telegram_bot_token: string,
      *   configured: bool,
      *   password_set: bool
      * }
@@ -64,6 +65,13 @@ final class PeticionesConfig
             $scraper = (string) ($crypt->decrypt($scraper) ?? $scraper);
         }
 
+        $tgBot = trim((string) ($stored['peticiones_telegram_bot_token'] ?? ''));
+        if ($tgBot === '') {
+            $tgBot = trim((string) config('peticiones.telegram_bot_token', ''));
+        } else {
+            $tgBot = trim((string) ($crypt->decrypt($tgBot) ?? $tgBot));
+        }
+
         $configured = $host !== '' && $database !== '' && $username !== '' && $password !== '';
 
         return [
@@ -75,9 +83,19 @@ final class PeticionesConfig
             'charset' => $charset,
             'tmdb_api_key' => $tmdb,
             'scraper_api_key' => $scraper,
+            'telegram_bot_token' => $tgBot,
             'configured' => $configured,
             'password_set' => $password !== '',
         ];
+    }
+
+    /**
+     * Token del bot de avisos de peticiones.
+     * Vacío = usar el bot general (Configuración → Telegram).
+     */
+    public static function telegramBotToken(?int $tenantId = null): string
+    {
+        return trim((string) (self::forTenant($tenantId)['telegram_bot_token'] ?? ''));
     }
 
     /**
@@ -97,6 +115,7 @@ final class PeticionesConfig
             'peticiones_db_password_set' => $cfg['password_set'],
             'peticiones_tmdb_api_key_set' => $cfg['tmdb_api_key'] !== '',
             'peticiones_scraper_api_key_set' => $cfg['scraper_api_key'] !== '',
+            'peticiones_telegram_bot_token_set' => $cfg['telegram_bot_token'] !== '',
         ];
     }
 
@@ -123,7 +142,12 @@ final class PeticionesConfig
             self::upsert($tenantId, $key, $value, 'string');
         }
 
-        foreach (['peticiones_db_password', 'peticiones_tmdb_api_key', 'peticiones_scraper_api_key'] as $secretKey) {
+        foreach ([
+            'peticiones_db_password',
+            'peticiones_tmdb_api_key',
+            'peticiones_scraper_api_key',
+            'peticiones_telegram_bot_token',
+        ] as $secretKey) {
             if (!array_key_exists($secretKey, $input)) {
                 continue;
             }

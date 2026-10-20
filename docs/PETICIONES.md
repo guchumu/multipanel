@@ -14,7 +14,8 @@ MultiPanel puede gestionar las **peticiones de contenido** del panel antiguo ley
 3. Pulsa **Probar conexión**.
 4. Opcional: clave TMDb v3 (carátulas + plataformas de streaming en España). Vacío = se omiten.
 5. Opcional: ScraperAPI si Filmaffinity bloquea el VPS al leer la ficha.
-6. Opcional en `.env` local (gitignored):
+6. Opcional: token del **bot Telegram de peticiones** (avisos aceptada / subida / denegada). Vacío = bot general del panel.
+7. Opcional en `.env` local (gitignored):
 
 ```env
 PETICIONES_DB_HOST=servidor.masquecero.net
@@ -24,6 +25,7 @@ PETICIONES_DB_USERNAME=user_series
 PETICIONES_DB_PASSWORD=
 PETICIONES_TMDB_API_KEY=
 PETICIONES_SCRAPER_API_KEY=
+PETICIONES_TELEGRAM_BOT_TOKEN=
 ```
 
 La UI de settings tiene prioridad sobre `.env` cuando hay valores guardados.
