@@ -151,14 +151,61 @@ final class PlexService
             return [];
         }
 
-        foreach (['/api/users', '/accounts'] as $path) {
+        // Preferir shares reales de ESTA máquina (plex.tv shared_servers).
+        // Antes se consultaba primero /api/users y /accounts del PMS local: con el
+        // mismo token de cuenta podían devolver casi todos los friends en ambos
+        // servidores → el sync creaba ficha duplicada (mismo email en NucBox y Server10).
+        $fromShares = $this->usersFromSharedServers();
+        if ($fromShares !== []) {
+            return $fromShares;
+        }
+
+        $fromPlexTv = $this->fetchUsersFromPlexTv();
+        if ($fromPlexTv !== []) {
+            return $fromPlexTv;
+        }
+
+        foreach (['/accounts', '/api/users'] as $path) {
             $users = $this->fetchUsersFromPath($path);
             if ($users !== []) {
                 return $users;
             }
         }
 
-        return $this->fetchUsersFromPlexTv();
+        return [];
+    }
+
+    /**
+     * Usuarios con share activo en este machine_id (fuente de verdad para membresía).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function usersFromSharedServers(): array
+    {
+        $fetch = $this->fetchSharedServers();
+        if (empty($fetch['ok']) || ($fetch['shares'] ?? []) === []) {
+            return [];
+        }
+
+        $users = [];
+        foreach ($fetch['shares'] as $share) {
+            $userId = trim((string) ($share['user_id'] ?? ''));
+            $username = trim((string) ($share['username'] ?? ''));
+            if ($userId === '' && $username === '') {
+                continue;
+            }
+            $users[] = [
+                'external_id' => $userId !== '' ? $userId : ('share:' . (int) ($share['id'] ?? 0)),
+                'username' => $username !== '' ? $username : ('user' . substr($userId, 0, 8)),
+                'email' => ($share['email'] ?? null) !== null && trim((string) $share['email']) !== ''
+                    ? trim((string) $share['email'])
+                    : null,
+                'thumb' => null,
+                'restricted' => false,
+            ];
+        }
+
+        return $users;
     }
 
     /** @return array<int, array<string, mixed>> */
