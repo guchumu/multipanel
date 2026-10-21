@@ -187,11 +187,108 @@ class PeticionesRepository
         );
     }
 
+    /** Todos los motivos (activos e inactivos) para gestionar mensajes de denegación. */
+    /** @return array<int, array<string, mixed>> */
+    public function allMotivos(): array
+    {
+        return $this->db()->fetchAll(
+            "SELECT * FROM motivo ORDER BY activo DESC, nombre ASC"
+        );
+    }
+
     public function motivoNombre(int $id): string
     {
         $row = $this->db()->fetchOne('SELECT nombre FROM motivo WHERE id = ? LIMIT 1', [$id]);
 
         return (string) ($row['nombre'] ?? 'Sin motivo');
+    }
+
+    /**
+     * @return array{ok: bool, message: string, id?: int}
+     */
+    public function createMotivo(string $nombre): array
+    {
+        $nombre = trim($nombre);
+        if ($nombre === '') {
+            return ['ok' => false, 'message' => 'Escribe el texto del mensaje / motivo'];
+        }
+        if (mb_strlen($nombre) > 500) {
+            return ['ok' => false, 'message' => 'Máximo 500 caracteres'];
+        }
+
+        $dup = $this->db()->fetchOne(
+            'SELECT id FROM motivo WHERE LOWER(TRIM(nombre)) = LOWER(?) LIMIT 1',
+            [$nombre]
+        );
+        if ($dup) {
+            return ['ok' => false, 'message' => 'Ya existe un motivo con ese texto (id ' . (int) $dup['id'] . ')'];
+        }
+
+        $this->db()->query(
+            "INSERT INTO motivo (nombre, activo) VALUES (?, '1')",
+            [$nombre]
+        );
+        $id = (int) $this->db()->pdo()->lastInsertId();
+
+        return ['ok' => true, 'message' => 'Motivo creado', 'id' => $id];
+    }
+
+    /**
+     * @return array{ok: bool, message: string}
+     */
+    public function setMotivoActivo(int $id, bool $activo): array
+    {
+        if ($id <= 0) {
+            return ['ok' => false, 'message' => 'Motivo no válido'];
+        }
+        $row = $this->db()->fetchOne('SELECT id FROM motivo WHERE id = ? LIMIT 1', [$id]);
+        if ($row === null) {
+            return ['ok' => false, 'message' => 'Motivo no encontrado'];
+        }
+
+        $this->db()->query(
+            "UPDATE motivo SET activo = ? WHERE id = ?",
+            [$activo ? '1' : '0', $id]
+        );
+
+        return [
+            'ok' => true,
+            'message' => $activo ? 'Motivo activado' : 'Motivo desactivado',
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, message: string}
+     */
+    public function updateMotivoNombre(int $id, string $nombre): array
+    {
+        $nombre = trim($nombre);
+        if ($id <= 0) {
+            return ['ok' => false, 'message' => 'Motivo no válido'];
+        }
+        if ($nombre === '') {
+            return ['ok' => false, 'message' => 'Escribe el texto del mensaje / motivo'];
+        }
+        if (mb_strlen($nombre) > 500) {
+            return ['ok' => false, 'message' => 'Máximo 500 caracteres'];
+        }
+
+        $row = $this->db()->fetchOne('SELECT id FROM motivo WHERE id = ? LIMIT 1', [$id]);
+        if ($row === null) {
+            return ['ok' => false, 'message' => 'Motivo no encontrado'];
+        }
+
+        $dup = $this->db()->fetchOne(
+            'SELECT id FROM motivo WHERE LOWER(TRIM(nombre)) = LOWER(?) AND id != ? LIMIT 1',
+            [$nombre, $id]
+        );
+        if ($dup) {
+            return ['ok' => false, 'message' => 'Ya existe otro motivo con ese texto'];
+        }
+
+        $this->db()->query('UPDATE motivo SET nombre = ? WHERE id = ?', [$nombre, $id]);
+
+        return ['ok' => true, 'message' => 'Motivo actualizado'];
     }
 
     /**

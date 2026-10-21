@@ -51,6 +51,7 @@ class PeticionesController extends Controller
         $items = [];
         $counts = ['pendientes' => 0, 'proceso' => 0, 'denegadas' => 0, 'todas' => 0];
         $motivos = [];
+        $allMotivos = [];
         $platformsById = [];
         $needsTmdbIds = [];
         $hasFa = false;
@@ -64,6 +65,7 @@ class PeticionesController extends Controller
                 $counts = $board['counts'];
                 $items = $board['items'];
                 $motivos = $this->repo->activeMotivos();
+                $allMotivos = $this->repo->allMotivos();
 
                 $hasFa = false;
                 foreach ($items as $row) {
@@ -90,6 +92,7 @@ class PeticionesController extends Controller
             'items' => $items,
             'counts' => $counts,
             'motivos' => $motivos,
+            'allMotivos' => $allMotivos,
             'platformsById' => $platformsById,
             'needsTmdbIds' => $needsTmdbIds,
             'error' => $error,
@@ -130,6 +133,19 @@ class PeticionesController extends Controller
                         ? (string) $request->input('username')
                         : null,
                 ),
+                'motivo-crear' => $this->service->createMotivo((string) ($request->input('nombre') ?? '')),
+                'motivo-activar' => $this->service->setMotivoActivo($id, true),
+                'motivo-desactivar' => $this->service->setMotivoActivo($id, false),
+                'motivo-editar' => $this->service->updateMotivoNombre(
+                    $id,
+                    (string) ($request->input('nombre') ?? '')
+                ),
+                'motivos-listar' => [
+                    'ok' => true,
+                    'message' => 'OK',
+                    'motivos' => $this->repo->allMotivos(),
+                    'motivos_activos' => $this->repo->activeMotivos(),
+                ],
                 default => ['ok' => false, 'message' => 'Acción desconocida'],
             };
         } catch (\Throwable $e) {

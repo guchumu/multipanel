@@ -240,6 +240,48 @@ final class PeticionesService
     /**
      * @return array{ok: bool, message: string}
      */
+    /**
+     * @return array{ok: bool, message: string, id?: int, motivos?: array<int, array<string, mixed>>}
+     */
+    public function createMotivo(string $nombre): array
+    {
+        $result = $this->repo->createMotivo($nombre);
+        if (!empty($result['ok'])) {
+            $result['motivos'] = $this->repo->allMotivos();
+            $result['motivos_activos'] = $this->repo->activeMotivos();
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{ok: bool, message: string, motivos?: array<int, array<string, mixed>>}
+     */
+    public function setMotivoActivo(int $id, bool $activo): array
+    {
+        $result = $this->repo->setMotivoActivo($id, $activo);
+        if (!empty($result['ok'])) {
+            $result['motivos'] = $this->repo->allMotivos();
+            $result['motivos_activos'] = $this->repo->activeMotivos();
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array{ok: bool, message: string, motivos?: array<int, array<string, mixed>>}
+     */
+    public function updateMotivoNombre(int $id, string $nombre): array
+    {
+        $result = $this->repo->updateMotivoNombre($id, $nombre);
+        if (!empty($result['ok'])) {
+            $result['motivos'] = $this->repo->allMotivos();
+            $result['motivos_activos'] = $this->repo->activeMotivos();
+        }
+
+        return $result;
+    }
+
     public function denegar(int $id, int $motivoId): array
     {
         $row = $this->repo->find($id);

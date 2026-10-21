@@ -3,6 +3,7 @@
 /** @var array $counts */
 /** @var array $items */
 /** @var array $motivos */
+/** @var array $allMotivos */
 /** @var array $platformsById */
 /** @var list<int> $needsTmdbIds */
 /** @var string $filter */
@@ -29,6 +30,12 @@ $hasTmdb = $hasTmdb ?? false;
         <a href="/settings#peticiones" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-database me-1"></i>BD remota
         </a>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnGestionMotivos"
+                <?= !$configured ? 'disabled' : '' ?>
+                data-bs-toggle="modal" data-bs-target="#modalMotivos"
+                title="Crear y activar/desactivar mensajes de denegación">
+            <i class="bi bi-chat-left-text me-1"></i>Mensajes denegación
+        </button>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnComprobarServidor"
                 <?= !$configured ? 'disabled' : '' ?>
                 title="Si una denegada ya está en Plex o Jellyfin, se marca como subida y deja de aparecer aquí">
@@ -217,12 +224,95 @@ if ($hasMore):
                     <option value="<?= (int) $m['id'] ?>"><?= e((string) ($m['nombre'] ?? '')) ?></option>
                     <?php endforeach; ?>
                 </select>
+                <div class="form-text">Gestiona los textos en «Mensajes denegación».</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="submit" class="btn btn-warning">Denegar</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Modal gestionar motivos / mensajes de denegación -->
+<div class="modal fade" id="modalMotivos" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mensajes de denegación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">
+                    Estos textos se envían por Telegram al denegar («Motivo: …»).
+                    Solo los <strong>activos</strong> aparecen al denegar. Desactivar no borra el historial.
+                </p>
+                <form id="formNuevoMotivo" class="row g-2 align-items-end mb-3">
+                    <div class="col">
+                        <label class="form-label small mb-1" for="nuevo_motivo_nombre">Nuevo mensaje</label>
+                        <input type="text" class="form-control" id="nuevo_motivo_nombre" maxlength="500"
+                               placeholder="Ej. No está disponible en calidad aceptable" required <?= !$configured ? 'disabled' : '' ?>>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary" <?= !$configured ? 'disabled' : '' ?>>
+                            <i class="bi bi-plus-lg me-1"></i>Crear
+                        </button>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 3rem">ID</th>
+                                <th>Mensaje</th>
+                                <th style="width: 6rem">Estado</th>
+                                <th style="width: 10rem" class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="motivosTableBody">
+                        <?php
+                        $allMotivos = $allMotivos ?? [];
+                        if ($allMotivos === []): ?>
+                            <tr class="motivos-empty"><td colspan="4" class="text-muted text-center py-3">No hay motivos todavía.</td></tr>
+                        <?php else: ?>
+                        <?php foreach ($allMotivos as $m): ?>
+                            <?php $activo = ((string) ($m['activo'] ?? '0') === '1'); ?>
+                            <tr data-motivo-id="<?= (int) $m['id'] ?>">
+                                <td class="small text-muted"><?= (int) $m['id'] ?></td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm motivo-nombre"
+                                           value="<?= e((string) ($m['nombre'] ?? '')) ?>" maxlength="500">
+                                </td>
+                                <td>
+                                    <span class="badge motivo-badge <?= $activo ? 'bg-success' : 'bg-secondary' ?>">
+                                        <?= $activo ? 'Activo' : 'Inactivo' ?>
+                                    </span>
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm btn-motivo-guardar" title="Guardar texto">
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                    <?php if ($activo): ?>
+                                    <button type="button" class="btn btn-outline-warning btn-sm btn-motivo-toggle" data-activo="0" title="Desactivar">
+                                        <i class="bi bi-pause"></i>
+                                    </button>
+                                    <?php else: ?>
+                                    <button type="button" class="btn btn-outline-success btn-sm btn-motivo-toggle" data-activo="1" title="Activar">
+                                        <i class="bi bi-play"></i>
+                                    </button>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -495,6 +585,94 @@ $scripts = <<<'JS'
     toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
     btn.disabled = false;
     if (data.ok && (data.updated || 0) > 0) location.reload();
+  });
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function refreshMotivoSelect(activos) {
+    const sel = document.getElementById('motivo_denegacion');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Selecciona…</option>' + (activos || []).map((m) =>
+      `<option value="${parseInt(m.id, 10)}">${escHtml(m.nombre || '')}</option>`
+    ).join('');
+    if (current && [...sel.options].some((o) => o.value === current)) {
+      sel.value = current;
+    }
+  }
+
+  function renderMotivosTable(motivos) {
+    const tbody = document.getElementById('motivosTableBody');
+    if (!tbody) return;
+    if (!motivos || !motivos.length) {
+      tbody.innerHTML = '<tr class="motivos-empty"><td colspan="4" class="text-muted text-center py-3">No hay motivos todavía.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = motivos.map((m) => {
+      const id = parseInt(m.id, 10);
+      const activo = String(m.activo) === '1';
+      const toggle = activo
+        ? `<button type="button" class="btn btn-outline-warning btn-sm btn-motivo-toggle" data-activo="0" title="Desactivar"><i class="bi bi-pause"></i></button>`
+        : `<button type="button" class="btn btn-outline-success btn-sm btn-motivo-toggle" data-activo="1" title="Activar"><i class="bi bi-play"></i></button>`;
+      return `<tr data-motivo-id="${id}">
+        <td class="small text-muted">${id}</td>
+        <td><input type="text" class="form-control form-control-sm motivo-nombre" value="${escHtml(m.nombre || '')}" maxlength="500"></td>
+        <td><span class="badge motivo-badge ${activo ? 'bg-success' : 'bg-secondary'}">${activo ? 'Activo' : 'Inactivo'}</span></td>
+        <td class="text-end text-nowrap">
+          <button type="button" class="btn btn-outline-secondary btn-sm btn-motivo-guardar" title="Guardar texto"><i class="bi bi-check-lg"></i></button>
+          ${toggle}
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function applyMotivosPayload(data) {
+    if (data.motivos) renderMotivosTable(data.motivos);
+    if (data.motivos_activos) refreshMotivoSelect(data.motivos_activos);
+  }
+
+  document.getElementById('formNuevoMotivo')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('nuevo_motivo_nombre');
+    const nombre = (input?.value || '').trim();
+    if (!nombre) return;
+    const { data } = await postAction({ accion: 'motivo-crear', nombre });
+    toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+    if (data.ok) {
+      if (input) input.value = '';
+      applyMotivosPayload(data);
+    }
+  });
+
+  document.getElementById('motivosTableBody')?.addEventListener('click', async (e) => {
+    const row = e.target.closest('tr[data-motivo-id]');
+    if (!row) return;
+    const id = parseInt(row.getAttribute('data-motivo-id') || '0', 10);
+    if (!id) return;
+
+    const toggleBtn = e.target.closest('.btn-motivo-toggle');
+    if (toggleBtn) {
+      const activar = toggleBtn.getAttribute('data-activo') === '1';
+      const { data } = await postAction({
+        accion: activar ? 'motivo-activar' : 'motivo-desactivar',
+        id,
+      });
+      toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+      if (data.ok) applyMotivosPayload(data);
+      return;
+    }
+
+    const saveBtn = e.target.closest('.btn-motivo-guardar');
+    if (saveBtn) {
+      const nombre = (row.querySelector('.motivo-nombre')?.value || '').trim();
+      const { data } = await postAction({ accion: 'motivo-editar', id, nombre });
+      toast(data.message || (data.ok ? 'OK' : 'Error'), !!data.ok);
+      if (data.ok) applyMotivosPayload(data);
+    }
   });
 })();
 </script>

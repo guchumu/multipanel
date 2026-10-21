@@ -40,6 +40,8 @@ Pestañas: Pendientes · En proceso · Denegadas · Todas.
 
 Acciones: aceptar, subir, denegar (+ motivo), borrar, editar título, añadir URL manual, actualizar carátulas TMDb.
 
+**Mensajes de denegación:** botón «Mensajes denegación» en la barra. Puedes crear textos nuevos en la tabla remota `motivo`, editarlos y activarlos/desactivarlos. Solo los activos salen al denegar (Telegram usa ese texto como «Motivo: …»).
+
 Las peticiones **iguales** (mismo IMDb, Filmaffinity o título) se muestran en **una sola ficha**, con el recuento y quiénes la pidieron. Aceptar / denegar / subir aplica a todas esas solicitudes y avisa por Telegram a todos a la vez.
 
 Avisos Telegram al aceptar / denegar / subir usando `idusuario` como chat id (mismo bot de Configuración → Telegram).
