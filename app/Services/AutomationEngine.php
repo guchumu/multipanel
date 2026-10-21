@@ -181,22 +181,11 @@ final class AutomationEngine
     /** @param array<string, mixed> $params */
     private function actionDeleteUser(array $params): void
     {
-        $daysOverdue = (int) ($params['days_overdue'] ?? 15);
-        $users = Database::getInstance()->fetchAll(
-            "SELECT * FROM media_users
-             WHERE status = 'suspended'
-             AND updated_at < DATE_SUB(NOW(), INTERVAL ? DAY)
-             AND deleted_at IS NULL",
-            [$daysOverdue]
-        );
-
-        foreach ($users as $row) {
-            $user = new MediaUser($row);
-            $user->status = 'deleted';
-            $user->deleted_at = date('Y-m-d H:i:s');
-            $user->save();
-            $this->audit->log('automation.delete', 'media_user', (int) $user->id);
-        }
+        // Desactivado: no borrar usuarios automáticamente desde automatizaciones.
+        // El borrado queda solo manual desde el panel.
+        Logger::info('Automation delete_user skipped (auto-delete disabled)', [
+            'days_overdue' => (int) ($params['days_overdue'] ?? 15),
+        ]);
     }
 
     /** @param array<string, mixed> $params */

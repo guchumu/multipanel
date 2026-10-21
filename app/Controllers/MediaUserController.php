@@ -248,7 +248,6 @@ class MediaUserController extends Controller
     public function expiring(Request $request): Response
     {
         $tenantId = (int) ($this->auth->user()->tenant_id ?? 1);
-        $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $longExpiredDays = 180;
         $page = max(1, (int) $request->input('page', 1));
@@ -713,7 +712,6 @@ class MediaUserController extends Controller
         } catch (\Throwable) {
             // No bloquear el listado si el backfill falla (JSON/metadata ausente).
         }
-        $this->dedupe->mergeDuplicatesForTenant($tenantId);
         $status = $request->input('status');
         $serverId = $request->input('server_id') ? (int) $request->input('server_id') : null;
         $onServerFilter = $request->input('on_server');
@@ -1351,13 +1349,12 @@ class MediaUserController extends Controller
             $warn = !empty($stats['warning']) ? ' ⚠ ' . (string) $stats['warning'] : '';
             $msg = $ok
                 ? sprintf(
-                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados, %d fantasmas archivados.%s%s',
+                    'Forzar sync (%s): %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s%s',
                     $server->name,
                     (int) ($stats['imported'] ?? 0),
                     (int) ($stats['updated'] ?? 0),
                     (int) ($stats['missing'] ?? 0),
                     (int) ($stats['restored'] ?? 0),
-                    (int) ($stats['archived_ghosts'] ?? 0),
                     $recovered,
                     $warn
                 )
@@ -1372,14 +1369,13 @@ class MediaUserController extends Controller
         $recovered = $this->recoverPanelFieldsAfterSync($tenantId);
         $warn = !empty($stats['warning']) ? ' ⚠ ' . (string) $stats['warning'] : '';
         Session::getInstance()->flash('success', sprintf(
-            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados, %d fantasmas archivados.%s%s',
+            'Forzar sincronización: %d/%d servidores. %d nuevos, %d actualizados, %d ausentes, %d restaurados.%s%s',
             $synced,
             $total,
             (int) ($stats['imported'] ?? 0),
             (int) ($stats['updated'] ?? 0),
             (int) ($stats['missing'] ?? 0),
             (int) ($stats['restored'] ?? 0),
-            (int) ($stats['archived_ghosts'] ?? 0),
             $recovered,
             $warn
         ));

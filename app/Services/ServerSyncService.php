@@ -567,12 +567,9 @@ final class ServerSyncService
             $warning = 'El servidor no devolvió usuarios: no se marcaron ausentes (evita falsos positivos).';
         }
 
-        // Fantasmas: fuera aquí pero el mismo email/external_id sigue en el otro Plex.
-        $ghost = (new MediaUserDedupeService())->archiveCrossServerGhosts(
-            (int) $server->tenant_id,
-            (int) $server->id
-        );
-        $archivedGhosts = (int) ($ghost['archived'] ?? 0);
+        // No archivar/borrar fichas automáticamente aquí: solo marcar on_server.
+        // La limpieza de fantasmas cross-server es manual (Duplicados / Fuera del servidor).
+        $archivedGhosts = 0;
 
         $count = $db->fetchOne(
             'SELECT COUNT(*) AS total FROM media_users WHERE server_id = ? AND deleted_at IS NULL',

@@ -159,14 +159,7 @@ final class CronService
     {
         $out('Checking concurrent stream limits...');
         try {
-            $dedupe = (new MediaUserDedupeService())->mergeDuplicatesForTenant($tenantId, false);
-            if (($dedupe['groups_merged'] ?? 0) > 0) {
-                $out(sprintf(
-                    '  Duplicados fusionados: %d grupos, %d fichas',
-                    (int) $dedupe['groups_merged'],
-                    (int) $dedupe['records_removed']
-                ));
-            }
+            // No auto-fusionar/borrar duplicados en cron: solo a petición desde Duplicados.
             $stats = (new ConcurrentStreamLimitService())->runForTenant($tenantId);
             $out(sprintf(
                 '  Checked sessions: %d, killed: %d (vídeo transcode: %d), violations logged: %d',
