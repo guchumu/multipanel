@@ -88,7 +88,7 @@ class MediaUserController extends Controller
         ));
 
         return $this->view('media_users.server_diff', [
-            'title' => 'Plex vs panel',
+            'title' => 'Inventario Plex ↔ panel',
             'diff' => $diff,
             'servers' => $plexServers,
             'currentServerId' => $serverId,
