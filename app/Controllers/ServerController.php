@@ -150,6 +150,144 @@ class ServerController extends Controller
         }
     }
 
+    /** A — Actualiza token del servidor con email/contraseña Plex (sin 2FA). */
+    public function refreshTokenLogin(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['ok' => false, 'message' => 'Servidor no encontrado'], 404);
+        }
+        if (!$server->isPlex()) {
+            return $this->json(['ok' => false, 'message' => 'Solo aplica a servidores Plex'], 422);
+        }
+
+        $login = trim((string) $request->input('login', ''));
+        $password = (string) $request->input('password', '');
+        if ($login === '' || $password === '') {
+            return $this->json(['ok' => false, 'message' => 'Email y contraseña Plex requeridos'], 422);
+        }
+
+        try {
+            $token = $this->discovery->obtainPlexTokenByPassword($login, $password);
+        } catch (\RuntimeException $e) {
+            return $this->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return $this->json($this->applyPlexToken($server, $token, 'login'));
+    }
+
+    /** B — Crea PIN + enlace app.plex.tv para autorizar (compatible 2FA). */
+    public function plexPinStart(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['ok' => false, 'message' => 'Servidor no encontrado'], 404);
+        }
+        if (!$server->isPlex()) {
+            return $this->json(['ok' => false, 'message' => 'Solo aplica a servidores Plex'], 422);
+        }
+
+        try {
+            $pin = $this->discovery->createPlexPin();
+            Session::getInstance()->set('plex_pin_' . $server->uuid, [
+                'id' => $pin['id'],
+                'code' => $pin['code'],
+                'created_at' => time(),
+            ]);
+
+            return $this->json([
+                'ok' => true,
+                'id' => $pin['id'],
+                'code' => $pin['code'],
+                'auth_url' => $pin['auth_url'],
+                'expires_in' => $pin['expires_in'],
+                'message' => 'Abre el enlace, inicia sesión en Plex y vuelve: el panel detectará el token solo.',
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->json(['ok' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /** B — Poll del PIN hasta obtener authToken y guardarlo en el servidor. */
+    public function plexPinPoll(Request $request, string $uuid): Response
+    {
+        $server = $this->servers->findByUuid($uuid);
+        if ($server === null) {
+            return $this->json(['ok' => false, 'message' => 'Servidor no encontrado'], 404);
+        }
+        if (!$server->isPlex()) {
+            return $this->json(['ok' => false, 'message' => 'Solo aplica a servidores Plex'], 422);
+        }
+
+        $pinId = (int) ($request->input('pin_id') ?? 0);
+        if ($pinId <= 0) {
+            $stored = Session::getInstance()->get('plex_pin_' . $server->uuid);
+            $pinId = (int) (is_array($stored) ? ($stored['id'] ?? 0) : 0);
+        }
+        if ($pinId <= 0) {
+            return $this->json(['ok' => false, 'pending' => false, 'message' => 'No hay PIN activo. Genera uno nuevo.'], 422);
+        }
+
+        try {
+            $check = $this->discovery->checkPlexPin($pinId);
+        } catch (\RuntimeException $e) {
+            return $this->json(['ok' => false, 'pending' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        if (!empty($check['pending']) || empty($check['token'])) {
+            return $this->json([
+                'ok' => true,
+                'pending' => true,
+                'pin_id' => $pinId,
+                'message' => 'Esperando autorización en Plex…',
+            ]);
+        }
+
+        Session::getInstance()->remove('plex_pin_' . $server->uuid);
+        $result = $this->applyPlexToken($server, (string) $check['token'], 'pin');
+
+        return $this->json($result + ['pending' => false, 'pin_id' => $pinId]);
+    }
+
+    /**
+     * @return array{ok: bool, message: string, token_preview?: string, synced?: bool}
+     */
+    private function applyPlexToken(Server $server, string $token, string $source): array
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return ['ok' => false, 'message' => 'Token vacío'];
+        }
+
+        $before = ['token' => substr((string) ($server->token ?? ''), 0, 6)];
+        $server->token = $token;
+        $server->save();
+        $this->audit->log('server.token_refreshed', 'server', (int) $server->id, $before, [
+            'source' => $source,
+            'token_preview' => substr($token, 0, 6) . '…',
+        ]);
+
+        $synced = false;
+        $syncNote = '';
+        try {
+            $synced = $this->sync->syncConnectionOnly($server, true);
+            if (!$synced) {
+                $syncNote = ' Token guardado, pero la conexión falló: ' . ($server->last_error ?? 'revisa URL/túnel.');
+            }
+        } catch (\Throwable $e) {
+            $syncNote = ' Token guardado; prueba de conexión: ' . $e->getMessage();
+        }
+
+        return [
+            'ok' => true,
+            'message' => ($synced
+                ? 'Token actualizado y conexión OK.'
+                : 'Token actualizado.' . $syncNote),
+            'token_preview' => substr($token, 0, 6) . '…',
+            'synced' => $synced,
+        ];
+    }
+
     public function discoverJellyfin(Request $request): Response
     {
         $host = trim((string) $request->input('url', ''));

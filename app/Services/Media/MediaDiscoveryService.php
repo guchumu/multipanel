@@ -15,6 +15,107 @@ final class MediaDiscoveryService
 {
     private const CLIENT_ID = 'multipanel-erp-discovery';
 
+    /**
+     * Solo obtiene el authToken de la cuenta (no guarda la contraseña).
+     * Falla si la cuenta tiene 2FA → usar createPlexPin / checkPlexPin.
+     */
+    public function obtainPlexTokenByPassword(string $login, string $password): string
+    {
+        return $this->loginPlex($login, $password);
+    }
+
+    /**
+     * Inicia autorización por PIN/enlace (compatible con 2FA).
+     *
+     * @return array{id: int, code: string, auth_url: string, expires_in: int}
+     */
+    public function createPlexPin(): array
+    {
+        $client = new Client([
+            'base_uri' => 'https://plex.tv',
+            'timeout' => 20,
+            'http_errors' => false,
+            'verify' => true,
+        ]);
+
+        try {
+            $response = $client->post('/api/v2/pins', [
+                'headers' => $this->plexHeaders(),
+                'query' => ['strong' => 'true'],
+            ]);
+            $code = $response->getStatusCode();
+            $body = json_decode($response->getBody()->getContents(), true);
+            if ($code < 200 || $code >= 300 || !is_array($body)) {
+                throw new \RuntimeException('plex.tv no generó el PIN (HTTP ' . $code . ').');
+            }
+
+            $pinId = (int) ($body['id'] ?? 0);
+            $pinCode = trim((string) ($body['code'] ?? ''));
+            if ($pinId <= 0 || $pinCode === '') {
+                throw new \RuntimeException('Respuesta de PIN incompleta desde plex.tv.');
+            }
+
+            $authUrl = 'https://app.plex.tv/auth#?' . http_build_query([
+                'clientID' => self::CLIENT_ID,
+                'code' => $pinCode,
+                'context[device][product]' => 'MultiPanel ERP',
+            ]);
+
+            return [
+                'id' => $pinId,
+                'code' => $pinCode,
+                'auth_url' => $authUrl,
+                'expires_in' => (int) ($body['expiresIn'] ?? 900),
+            ];
+        } catch (GuzzleException $e) {
+            Logger::error('Plex create PIN failed', ['error' => $e->getMessage()]);
+            throw new \RuntimeException('No se pudo crear el PIN de Plex: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Consulta si el PIN ya fue autorizado.
+     *
+     * @return array{pending: bool, token: ?string, id: int}
+     */
+    public function checkPlexPin(int $pinId): array
+    {
+        if ($pinId <= 0) {
+            throw new \InvalidArgumentException('PIN id inválido.');
+        }
+
+        $client = new Client([
+            'base_uri' => 'https://plex.tv',
+            'timeout' => 15,
+            'http_errors' => false,
+            'verify' => true,
+        ]);
+
+        try {
+            $response = $client->get('/api/v2/pins/' . $pinId, [
+                'headers' => $this->plexHeaders(),
+            ]);
+            $http = $response->getStatusCode();
+            $body = json_decode($response->getBody()->getContents(), true);
+            if ($http === 404) {
+                throw new \RuntimeException('El PIN ha caducado. Genera uno nuevo.');
+            }
+            if ($http < 200 || $http >= 300 || !is_array($body)) {
+                throw new \RuntimeException('No se pudo comprobar el PIN (HTTP ' . $http . ').');
+            }
+
+            $token = trim((string) ($body['authToken'] ?? ''));
+            if ($token !== '') {
+                return ['pending' => false, 'token' => $token, 'id' => $pinId];
+            }
+
+            return ['pending' => true, 'token' => null, 'id' => $pinId];
+        } catch (GuzzleException $e) {
+            Logger::error('Plex check PIN failed', ['pin_id' => $pinId, 'error' => $e->getMessage()]);
+            throw new \RuntimeException('Error al consultar el PIN: ' . $e->getMessage());
+        }
+    }
+
     /** @return array{token: string, servers: array<int, array<string, mixed>>} */
     public function discoverPlex(string $login, string $password): array
     {

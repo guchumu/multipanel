@@ -158,6 +158,9 @@ $router->group(['middleware' => [AuthMiddleware::class]], function ($router) {
     $router->post('/servers/libraries/empty-trash-all', [ServerController::class, 'emptyTrashAllServers'], 'servers.libraries.empty_trash_all_servers', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}/edit', [ServerController::class, 'edit'], 'servers.edit');
     $router->put('/servers/{uuid}', [ServerController::class, 'update'], 'servers.update', [CsrfMiddleware::class]);
+    $router->post('/servers/{uuid}/token/login', [ServerController::class, 'refreshTokenLogin'], 'servers.token.login', [CsrfMiddleware::class]);
+    $router->post('/servers/{uuid}/token/pin/start', [ServerController::class, 'plexPinStart'], 'servers.token.pin_start', [CsrfMiddleware::class]);
+    $router->post('/servers/{uuid}/token/pin/poll', [ServerController::class, 'plexPinPoll'], 'servers.token.pin_poll', [CsrfMiddleware::class]);
     $router->get('/servers/{uuid}', [ServerController::class, 'show'], 'servers.show');
     $router->post('/servers/{uuid}/sync', [ServerController::class, 'sync'], 'servers.sync', [CsrfMiddleware::class]);
     $router->post('/servers/{uuid}/libraries/scan-all', [ServerController::class, 'scanAllLibraries'], 'servers.libraries.scan_all', [CsrfMiddleware::class]);
